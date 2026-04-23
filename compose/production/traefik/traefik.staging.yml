@@ -1,0 +1,82 @@
+log:
+  level: DEBUG
+
+entryPoints:
+  web:
+    # http
+    address: ':80'
+  flower:
+    address: ':5555'
+
+http:
+  routers:
+    # Django API and Admin routes
+    django-router:
+      rule: '(PathPrefix(`/api`) || PathPrefix(`/admin`) || PathPrefix(`/send-email`))'
+      entryPoints:
+        - web
+      middlewares:
+        - csrf
+      service: django
+
+    # Separate router for WebSocket connections
+    django-ws-router:
+      rule: 'PathPrefix(`/ws`)'
+      entryPoints:
+        - web
+      middlewares:
+        - websocket
+      service: django
+
+    # Vue frontend, static and media - catch all other routes
+    nginx-router:
+      entryPoints:
+        - web
+      service: nginx
+      priority: 1  # Lower priority means this route is checked last
+
+    flower-secure-router:
+      rule: 'PathPrefix(`/`)'
+      entryPoints:
+        - flower
+      service: flower
+
+  middlewares:
+    debug:
+      headers:
+        customRequestHeaders:
+          X-Debug: "true"
+    websocket:
+      headers:
+        customRequestHeaders:
+          Connection: "Upgrade"
+          Upgrade: "websocket"
+    csrf:
+      # https://doc.traefik.io/traefik/master/middlewares/http/headers/#hostsproxyheaders
+      # https://docs.djangoproject.com/en/dev/ref/csrf/#ajax
+      headers:
+        hostsProxyHeaders: ['X-CSRFToken']
+
+  services:
+    django:
+      loadBalancer:
+        servers:
+          - url: http://django:5000
+        responseForwarding:
+          flushInterval: "1ms"  # This helps with WebSocket performance
+
+    flower:
+      loadBalancer:
+        servers:
+          - url: http://flower:5555
+
+    nginx:
+      loadBalancer:
+        servers:
+          - url: http://nginx:80
+
+providers:
+  # https://doc.traefik.io/traefik/master/providers/file/
+  file:
+    filename: /etc/traefik/traefik.yml
+    watch: true

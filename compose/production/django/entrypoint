@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -o errexit
+set -o pipefail
+set -o nounset
+
+# Fix permissions on media directory (needed for Docker volumes)
+# Create media directory structure if it doesn't exist and set proper ownership
+# This handles the case where Docker volumes are mounted with root ownership
+mkdir -p /app/backend/media/images
+chown -R django:django /app/backend/media || true
+chmod -R 755 /app/backend/media || true
+
+if [ -z "${POSTGRES_USER}" ]; then
+    base_postgres_image_default_user='postgres'
+    export POSTGRES_USER="${base_postgres_image_default_user}"
+fi
+export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+
+wait-for-it "${POSTGRES_HOST}:${POSTGRES_PORT}" -t 30
+
+>&2 echo 'PostgreSQL is available'
+
+# Switch to django user and execute the command
+exec gosu django "$@"
