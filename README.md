@@ -22,6 +22,9 @@ The Vite dev server will automatically run in docker when started with the docke
 ```sh
 cp ./envs/.local/.secrets.example ./envs/.local/.secrets
 docker-compose -f docker-compose.local.yml up
+
+# Then initialize the LLM models and API keys
+docker-compose -f docker-compose.local.yml run --rm django python manage.py init_llm_seed
 ```
 
 ##### From the console
