@@ -81,6 +81,10 @@ mm:
 migrate-%:
 	docker compose -f docker-compose.$*.yml run --rm django python manage.py migrate
 
+# Seed LLM models + API keys from config/settings/base.py (INIT_LLM_MODELS, INIT_API_KEYS)
+init-llm-%:
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py init_llm_seed
+
 pytest:
 	docker compose -f docker-compose.local.yml run --rm django pytest
 
