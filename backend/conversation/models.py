@@ -17,6 +17,7 @@ class ConversationSession(TimestampedBase):
     previous_speaker = models.CharField(max_length=100, null=True, blank=True)
     pending_forced_user_turn = models.BooleanField(default=False)
     terminate = models.BooleanField(default=False)
+    paused = models.BooleanField(default=False)
 
     max_turns = models.IntegerField(default=12)
 

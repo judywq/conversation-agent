@@ -67,6 +67,23 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({"type": "session_ended"})
             return
 
+        if msg_type == "pause":
+            if self.session_id is None:
+                await self.send_json({"type": "error", "message": "No active session"})
+                return
+            await self._set_paused(self.session_id, paused=True)
+            await self.send_json({"type": "paused"})
+            return
+
+        if msg_type == "resume":
+            if self.session_id is None:
+                await self.send_json({"type": "error", "message": "No active session"})
+                return
+            await self._set_paused(self.session_id, paused=False)
+            await self.send_json({"type": "resumed"})
+            await self._advance_loop()
+            return
+
         if msg_type == "user_turn":
             if self.session_id is None:
                 await self.send_json({"type": "error", "message": "No active session"})
@@ -95,6 +112,9 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         while True:
             session = await self._get_session(self.session_id)
             if session is None:
+                return
+            if session.paused:
+                await self.send_json({"type": "paused"})
                 return
 
             last_user_turn_index = await self._last_user_turn_index(session.id)
@@ -165,6 +185,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     def _mark_terminate(self, session_id: int) -> None:
         session = ConversationSession.objects.get(id=session_id)
         mark_terminate(session)
+
+    @database_sync_to_async
+    def _set_paused(self, session_id: int, *, paused: bool) -> None:
+        session = ConversationSession.objects.get(id=session_id)
+        session.paused = paused
+        session.save(update_fields=["paused", "updated_at"])
 
     @database_sync_to_async
     def _append_user_turn(self, session_id: int, *, utterance: str, source: str) -> TurnRecord:

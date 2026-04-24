@@ -1,6 +1,9 @@
 export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
   | { type: 'session_started'; session_id: number; topic: string }
+  | { type: 'paused' }
+  | { type: 'resumed' }
+  | { type: 'session_ended' }
   | { type: 'need_user_turn'; reason: string }
   | { type: 'turn'; turn: any }
   | { type: 'agent_status'; status: 'thinking' | 'finished' }

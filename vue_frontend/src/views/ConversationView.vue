@@ -26,6 +26,7 @@ const turns = ref<Turn[]>([])
 const agentStatus = ref<'idle' | 'thinking' | 'finished'>('idle')
 const needUserTurn = ref(false)
 const inputText = ref('')
+const isPaused = ref(false)
 
 const micState = ref<'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'>('idle')
 const mediaRecorder = ref<MediaRecorder | null>(null)
@@ -39,6 +40,18 @@ function handleEvent(e: ConversationWsEvent) {
   }
   if (e.type === 'session_started') {
     sessionId.value = e.session_id
+  }
+  if (e.type === 'paused') {
+    isPaused.value = true
+    agentStatus.value = 'idle'
+  }
+  if (e.type === 'resumed') {
+    isPaused.value = false
+  }
+  if (e.type === 'session_ended' || e.type === 'terminated') {
+    isPaused.value = false
+    needUserTurn.value = false
+    agentStatus.value = 'idle'
   }
   if (e.type === 'need_user_turn') {
     needUserTurn.value = true
@@ -65,6 +78,17 @@ function startSession() {
 
 function volunteer() {
   ws.send({ type: 'volunteer' })
+}
+
+function pauseOrResume() {
+  ws.send({ type: isPaused.value ? 'resume' : 'pause' })
+}
+
+function stopConversation() {
+  if (!sessionId.value) return
+  const ok = window.confirm('Stop the conversation? This will end the session.')
+  if (!ok) return
+  ws.send({ type: 'end_session' })
 }
 
 function sendTextTurn() {
@@ -146,11 +170,26 @@ onUnmounted(() => {
           <div class="flex gap-2">
             <Button :disabled="!canStart" @click="startSession">Start</Button>
             <Button variant="outline" :disabled="!sessionId" @click="volunteer">Request to speak</Button>
+            <Button
+              variant="outline"
+              :disabled="!sessionId"
+              @click="pauseOrResume"
+            >
+              {{ isPaused ? 'Resume' : 'Pause' }}
+            </Button>
+            <Button
+              variant="destructive"
+              :disabled="!sessionId"
+              @click="stopConversation"
+            >
+              Stop
+            </Button>
           </div>
         </div>
 
         <div class="text-sm text-muted-foreground">
           Status:
+          <span v-if="isPaused">Paused</span>
           <span v-if="agentStatus === 'thinking'">Agent thinking…</span>
           <span v-else-if="needUserTurn">Your turn</span>
           <span v-else>Idle</span>

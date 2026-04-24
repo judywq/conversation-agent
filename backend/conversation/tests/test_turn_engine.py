@@ -51,3 +51,10 @@ def test_append_turn_updates_session_state(user):
     assert session.turn_count == 1
     assert session.previous_speaker == "user"
 
+
+@pytest.mark.django_db
+def test_pause_flag_persists(user):
+    session = ConversationSession.objects.create(user=user, topic="t", paused=True)
+    session.refresh_from_db()
+    assert session.paused is True
+
