@@ -16,6 +16,8 @@ class ConversationSession(TimestampedBase):
     turn_count = models.IntegerField(default=0)
     previous_speaker = models.CharField(max_length=100, null=True, blank=True)
     pending_forced_user_turn = models.BooleanField(default=False)
+    # User override flag (e.g., "raise hand" request to speak)
+    user_override_requested = models.BooleanField(default=False)
     terminate = models.BooleanField(default=False)
     paused = models.BooleanField(default=False)
 

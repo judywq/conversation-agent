@@ -25,6 +25,7 @@ type Turn = {
 const turns = ref<Turn[]>([])
 const agentStatus = ref<'idle' | 'thinking' | 'finished'>('idle')
 const needUserTurn = ref(false)
+const needFirstTurnChoice = ref(false)
 const inputText = ref('')
 const isPaused = ref(false)
 
@@ -41,6 +42,10 @@ function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'session_started') {
     sessionId.value = e.session_id
   }
+  if (e.type === 'need_first_turn_choice') {
+    needFirstTurnChoice.value = true
+    needUserTurn.value = false
+  }
   if (e.type === 'paused') {
     isPaused.value = true
     agentStatus.value = 'idle'
@@ -51,10 +56,12 @@ function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'session_ended' || e.type === 'terminated') {
     isPaused.value = false
     needUserTurn.value = false
+    needFirstTurnChoice.value = false
     agentStatus.value = 'idle'
   }
   if (e.type === 'need_user_turn') {
     needUserTurn.value = true
+    needFirstTurnChoice.value = false
   }
   if (e.type === 'agent_status') {
     agentStatus.value = e.status
@@ -77,7 +84,7 @@ function startSession() {
 }
 
 function volunteer() {
-  ws.send({ type: 'volunteer' })
+  ws.send({ type: 'raise_hand' })
 }
 
 function pauseOrResume() {
@@ -97,6 +104,12 @@ function sendTextTurn() {
   ws.send({ type: 'user_turn', utterance: text, source: 'text' })
   inputText.value = ''
   needUserTurn.value = false
+}
+
+function chooseFirstTurn(speakFirst: boolean) {
+  ws.send({ type: 'first_turn_choice', speak_first: speakFirst })
+  needFirstTurnChoice.value = false
+  if (speakFirst) needUserTurn.value = true
 }
 
 async function startRecording() {
@@ -191,9 +204,20 @@ onUnmounted(() => {
           Status:
           <span v-if="isPaused">Paused</span>
           <span v-if="agentStatus === 'thinking'">Agent thinking…</span>
+          <span v-else-if="needFirstTurnChoice">Choose who speaks first</span>
           <span v-else-if="needUserTurn">Your turn</span>
           <span v-else>Idle</span>
         </div>
+
+        <Card v-if="needFirstTurnChoice" class="border">
+          <CardHeader>
+            <CardTitle class="text-base">Who speaks first?</CardTitle>
+          </CardHeader>
+          <CardContent class="flex flex-col gap-2 sm:flex-row">
+            <Button @click="chooseFirstTurn(true)">I’ll speak first</Button>
+            <Button variant="outline" @click="chooseFirstTurn(false)">Let an agent start</Button>
+          </CardContent>
+        </Card>
 
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Card class="border">
@@ -204,7 +228,9 @@ onUnmounted(() => {
               <div class="text-sm text-muted-foreground">Mic state: {{ micState }}</div>
               <div class="flex gap-2">
                 <Button
-                  :disabled="!needUserTurn || micState === 'recording' || micState === 'transcribing'"
+                  :disabled="
+                    !needUserTurn || needFirstTurnChoice || micState === 'recording' || micState === 'transcribing'
+                  "
                   @click="startRecording"
                 >
                   Record
@@ -226,7 +252,9 @@ onUnmounted(() => {
             </CardHeader>
             <CardContent class="space-y-3">
               <Textarea v-model="inputText" placeholder="Type your message…" class="min-h-[80px]" />
-              <Button :disabled="!needUserTurn || !inputText.trim()" @click="sendTextTurn">Send</Button>
+              <Button :disabled="!needUserTurn || needFirstTurnChoice || !inputText.trim()" @click="sendTextTurn">
+                Send
+              </Button>
             </CardContent>
           </Card>
         </div>

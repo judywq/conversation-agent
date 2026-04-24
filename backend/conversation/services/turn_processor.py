@@ -55,6 +55,12 @@ def set_pending_forced_user_turn(session: ConversationSession, *, pending: bool)
     return session
 
 
+def set_user_override_requested(session: ConversationSession, *, requested: bool) -> ConversationSession:
+    session.user_override_requested = requested
+    session.save(update_fields=["user_override_requested", "updated_at"])
+    return session
+
+
 def mark_terminate(session: ConversationSession) -> ConversationSession:
     session.terminate = True
     session.save(update_fields=["terminate", "updated_at"])

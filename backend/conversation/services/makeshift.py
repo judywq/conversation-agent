@@ -2,6 +2,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
+from backend.conversation.services.turn_processor import set_user_override_requested
 
 
 def invite_user(session: ConversationSession) -> TurnRecord:
@@ -17,6 +18,8 @@ def invite_user(session: ConversationSession) -> TurnRecord:
         target="user",
         source="system",
     )
+    # Once we issue an invitation, consume any outstanding override request.
+    set_user_override_requested(processed.session, requested=False)
     set_pending_forced_user_turn(processed.session, pending=True)
     return processed.turn
 

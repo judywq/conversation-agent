@@ -15,6 +15,181 @@ This system is delivered as a **web app** where the user can:
 - see when each AI agent is speaking
 - hear AI agents via voice playback
 
+### Conversation System Flow
+  
+1. Initialization Phase
+
+When the user lands on the page, they first enter a discussion topic.
+
+The system then checks whether the user is a first-time user.
+
+1.1 First-time users
+
+If the user is new, they are required to create a profile consisting of:
+
+Personality traits (OCEAN)
+The user completes a self-evaluation using five statements corresponding to:
+
+Openness
+Conscientiousness
+Extraversion
+Agreeableness
+Neuroticism
+
+Each trait is rated on a coarse scale (e.g., high / medium / low).
+
+Language proficiency (CEFR-aligned)
+The user listens to short audio clips related to the discussion topic and selects the level that best matches their comprehension ability.
+
+This information is stored as the user profile.
+
+1.2 Returning users
+
+If the user already has a profile, the system simply loads it.
+
+1.3 Agent creation
+
+After obtaining the user profile, the system creates three AI agents designed to complement the user.
+
+Agents are selected or constructed such that they are strong in traits where the user is weaker
+Each agent is assigned:
+a personality profile
+derived behavioral tendencies (e.g., leadership, supportiveness, skepticism)
+
+These personality traits are then injected into the prompts used for later utterance generation.
+
+1.4 Conversation state initialization
+
+The system initializes the conversation state, including:
+
+turn count = 0
+memory (short-term and session) = empty
+previous speaker = none
+override flags = false
+termination flag = false
+
+Control is then passed to the Turn Manager.
+
+2. Conversation Loop
+
+The conversation proceeds in an iterative loop controlled entirely by the Turn Manager.
+
+At each iteration, the Turn Manager performs:
+
+1. Termination check
+2. Next speaker selection
+3. First Turn Logic
+
+At the beginning of the discussion:
+
+The system asks whether the user wants to speak first
+Case A: User speaks first
+The user provides input directly
+This input does NOT go through the Facilitator
+It is sent directly to the Turn Processor
+Case B: User does not speak first
+The Turn Manager selects the agent with the highest leadership trait
+The system proceeds through the agent pipeline
+4. Agent Turn Pipeline
+
+When an agent is selected as the next speaker:
+
+4.1 Facilitator planning
+
+The Facilitator generates a structured instruction including:
+
+Speech Act (SA type) — based on the five categories and subtypes
+Target (who the utterance is addressing)
+Content requirement
+Retrieval requirement 
+
+The Facilitator determines what kind of speech act should be made, not the wording.
+
+4.2 Agent generation
+
+The selected agent:
+
+performs retrieval if required (memory / knowledge / etc.)
+generates an utterance using:
+its personality prompt
+facilitator instruction
+conversation context
+
+
+5. User Turn Pipeline
+
+When the user speaks (either voluntarily or after being selected):
+
+The user produces raw input
+The input bypasses the Facilitator
+It is sent directly to the Turn Processor
+
+6. Turn Processor (Core Module)
+
+All utterances (agent, user, or makeshift) pass through the Turn Processor.
+
+The Turn Processor performs:
+
+6.1 Speech Act classification (for user utterance only)
+
+By a fine-tuned LLM
+
+6.2 State update
+For agent utterance, copy metadata from facilitator, update turn counts, etc.
+For user utterance, get metadata from 6.1, update turn counts, etc.
+
+
+
+6.3 Memory update
+
+The utterance is stored in:
+
+short-term memory (recent context)
+session memory (full conversation)
+
+7. Turn Manager (Control Logic)
+
+After the Turn Processor updates the state, control returns to the Turn Manager.
+
+The Turn Manager decides the next speaker using rule-based logic, including:
+
+Speech Act type
+e.g., if SA = Directive and target is specific → target speaks next
+Target
+Turn counts / participation balance
+Conversation flow constraints: appointment of an agent or user
+
+If the target is “everyone”, fallback rules apply (e.g., least active speaker or role-based selection).
+
+8. User Override Mechanism
+
+a. At any time, the user can press a “raise hand” button.
+
+This sets an override flag
+The Turn Manager gives priority to the user in the next turn decision
+
+b. The user is selected by the Turn Manager as the next speaker, then the previous speaker will become a makeshift speaker and speak again to appoint the user.
+c. The user ends the discussion before the ending condition is met.
+
+9. Continuation and Termination
+
+At the start of each loop iteration:
+
+The Turn Manager checks whether the conversation should terminate
+
+If termination is true:
+
+the conversation ends
+no further speaker is assigned
+
+Otherwise:
+
+the next speaker is selected
+the loop continues
+
+
+### Conversation System Architecture
+
 Here is a workflow diagram illustrating the system architecture:
 
 ```mermaid
@@ -42,8 +217,9 @@ flowchart TD
 
     END[End conversation]
 
-    Q{User overrides: volunteering or appointed}
-    D{Speaker selection}
+    FTQ{First_turn_question:\nUser_speaks_first?}
+    Q{Override_flag_set?\nRaise_hand_pressed}
+    D{Next_speaker_selection}
 
     R[User requests to speak (UI button)]
     MIC[Microphone capture + speech-to-text]
@@ -73,13 +249,18 @@ flowchart TD
     TM -->|terminate = true| END
 
     %% first turn handling
-    TM -->|continue and turn_count = 0| Q
+    TM -->|continue and turn_count = 0| FTQ
+    FTQ -->|Yes| R
+    FTQ -->|No| D
 
-    Q -->|Yes| R
+    %% override can happen any time; it biases next selection to user
+    TM -->|continue and turn_count > 0| Q
+    Q -->|Yes| D
     Q -->|No| D
 
     D -->|next speaker = agent| F
-    D -->|next speaker = user| MS
+    D -->|next speaker = user\n(volunteered)| R
+    D -->|next speaker = user\n(appointed)| MS
 
     %% makeshift call to user
     MS --> TP --> M --> TM
@@ -293,6 +474,11 @@ while not state.terminate:
     if should_terminate(state):
         break
 
+    # Turn Manager owns control flow:
+    # - termination check
+    # - next speaker selection (rule-based)
+    # - first-turn logic (ask whether user speaks first)
+    # - override handling (raise-hand flag biases next selection)
     speaker = decide_next_speaker(state)
 
     if speaker == "agent":
@@ -301,11 +487,11 @@ while not state.terminate:
         audio = TTS(utterance)
         UI.play(audio)
 
-    elif speaker == "user":
+    elif speaker == "user":  # user utterance bypasses Facilitator
         utterance = User.input()
 
-    elif speaker == "makeshift":
-        utterance = invite_user()
+    elif speaker == "makeshift":  # used when user is appointed (non-volunteer)
+        utterance = invite_user()  # previous speaker allocates the floor to user
 
     state = TurnProcessor(utterance, state)
     Memory.update(state)

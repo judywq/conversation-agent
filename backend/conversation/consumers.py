@@ -11,6 +11,7 @@ from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import mark_terminate
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
+from backend.conversation.services.turn_processor import set_user_override_requested
 from backend.conversation.services.tts import synthesize_speech
 
 
@@ -31,6 +32,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
         self.session_id: int | None = None
         self.user_volunteered: bool = False
+        self.first_turn_choice: bool | None = None
         await self.send_json(
             {
                 "type": "connected",
@@ -52,11 +54,29 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     "topic": session.topic,
                 },
             )
+            # First-turn logic: ask whether the user wants to speak first.
+            self.first_turn_choice = None
+            await self.send_json({"type": "need_first_turn_choice"})
+            return
+
+        if msg_type == "first_turn_choice":
+            if self.session_id is None:
+                await self.send_json({"type": "error", "message": "No active session"})
+                return
+            speak_first = bool(content.get("speak_first"))
+            self.first_turn_choice = speak_first
+            if speak_first:
+                await self.send_json({"type": "need_user_turn", "reason": "first_turn_user"})
+                return
             await self._advance_loop()
             return
 
-        if msg_type == "volunteer":
-            self.user_volunteered = True
+        if msg_type in ("volunteer", "raise_hand"):
+            # Treat "volunteer" as a raise-hand override signal.
+            if self.session_id is None:
+                await self.send_json({"type": "error", "message": "No active session"})
+                return
+            await self._set_user_override_requested(self.session_id, requested=True)
             await self.send_json({"type": "user_volunteered"})
             await self._advance_loop()
             return
@@ -109,6 +129,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         if self.session_id is None:
             return
 
+        # If we haven't resolved first-turn choice yet, block the engine.
+        if self.first_turn_choice is None:
+            return
+
         while True:
             session = await self._get_session(self.session_id)
             if session is None:
@@ -158,19 +182,19 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     session=session,
                     agent_id="agent_1",
                     personality={"role": "pro"},
-                    traits={"style": "structured"},
+                    traits={"style": "structured", "leadership": 0.8},
                 ),
                 AgentProfile(
                     session=session,
                     agent_id="agent_2",
                     personality={"role": "con"},
-                    traits={"style": "critical"},
+                    traits={"style": "critical", "leadership": 0.4},
                 ),
                 AgentProfile(
                     session=session,
                     agent_id="agent_3",
                     personality={"role": "mediator"},
-                    traits={"style": "balanced"},
+                    traits={"style": "balanced", "leadership": 0.6},
                 ),
             ],
         )
@@ -210,9 +234,15 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _append_agent_llm_turn(self, session_id: int) -> TurnRecord:
         session = ConversationSession.objects.get(id=session_id)
-        idx = (session.turn_count % 3) + 1
-        agent_id = f"agent_{idx}"
-        agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
+        if session.turn_count == 0:
+            # First agent turn (when user didn't speak first): pick highest leadership.
+            agents = list(AgentProfile.objects.filter(session=session))
+            agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
+        else:
+            idx = (session.turn_count % 3) + 1
+            agent_id = f"agent_{idx}"
+            agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
+        agent_id = agent.agent_id
 
         plan = build_facilitator_plan(session, agent=agent)
         utterance = generate_agent_utterance(session, agent=agent, facilitator_plan=plan)
@@ -246,6 +276,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     def _set_pending_forced_user_turn(self, session_id: int, *, pending: bool) -> None:
         session = ConversationSession.objects.get(id=session_id)
         set_pending_forced_user_turn(session, pending=pending)
+
+    @database_sync_to_async
+    def _set_user_override_requested(self, session_id: int, *, requested: bool) -> None:
+        session = ConversationSession.objects.get(id=session_id)
+        set_user_override_requested(session, requested=requested)
 
     @database_sync_to_async
     def _last_user_turn_index(self, session_id: int) -> int | None:

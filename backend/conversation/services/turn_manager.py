@@ -42,6 +42,11 @@ def decide_next_speaker(
     if session.pending_forced_user_turn:
         return TurnDecision(terminate=False, next_speaker="user", reason="forced_user_turn")
 
+    # User override (raise hand): prioritize giving the floor to the user.
+    # We route through makeshift invitation to "appoint" the user.
+    if session.user_override_requested:
+        return TurnDecision(terminate=False, next_speaker="makeshift", reason="user_override_requested")
+
     if user_volunteered:
         return TurnDecision(terminate=False, next_speaker="user", reason="user_volunteered")
 
