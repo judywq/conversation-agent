@@ -11,16 +11,6 @@ from backend.users.models import UserProfile
 UserModel = get_user_model()
 
 
-class NativeLanguageChoiceField(serializers.ChoiceField):
-    """Reads/writes `UserProfile.native_language` while the serializer instance is a User."""
-
-    def get_attribute(self, instance):
-        profile = getattr(instance, "userprofile", None)
-        if not profile:
-            return None
-        return profile.native_language
-
-
 class UserProfileTextField(serializers.CharField):
     """Reads/writes a `UserProfile` string field while serializer instance is a User."""
 
@@ -66,11 +56,6 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     """
 
     must_change_password = serializers.SerializerMethodField()
-    native_language = NativeLanguageChoiceField(
-        choices=UserProfile.NATIVE_LANGUAGE_CHOICES,
-        allow_null=True,
-        required=False,
-    )
     ocean = UserProfileJSONField(profile_attr="ocean", required=False)
     cefr_level = UserProfileTextField(
         profile_attr="cefr_level",
@@ -98,7 +83,6 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "pk",
             *extra_fields,
             "must_change_password",
-            "native_language",
             "ocean",
             "cefr_level",
         )
@@ -111,15 +95,11 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         return False
 
     def update(self, instance, validated_data):
-        native_language = validated_data.pop("native_language", serializers.empty)
         ocean = validated_data.pop("ocean", serializers.empty)
         cefr_level = validated_data.pop("cefr_level", serializers.empty)
         user = super().update(instance, validated_data)
         if hasattr(user, "userprofile"):
             update_fields = []
-            if native_language is not serializers.empty:
-                user.userprofile.native_language = native_language
-                update_fields.append("native_language")
             if ocean is not serializers.empty:
                 user.userprofile.ocean = ocean or {}
                 update_fields.append("ocean")

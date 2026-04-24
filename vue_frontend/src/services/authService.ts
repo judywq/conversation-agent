@@ -49,7 +49,6 @@ export class AuthService {
   }
 
   public static async updateUser(data: {
-    native_language?: string | null
     ocean?: Record<string, string>
     cefr_level?: string | null
   }): Promise<any> {

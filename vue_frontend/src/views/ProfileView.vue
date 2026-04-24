@@ -10,25 +10,6 @@
       <CardContent class="space-y-4">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="space-y-2">
-            <label class="text-sm font-medium">Explanation language</label>
-            <Select v-model="nativeLanguageModel">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="Not set" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem :value="NATIVE_LANGUAGE_UNSET">Not set</SelectItem>
-                <SelectItem
-                  v-for="opt in NATIVE_LANGUAGE_OPTIONS"
-                  :key="opt.value"
-                  :value="opt.value"
-                >
-                  {{ opt.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div class="space-y-2">
             <label class="text-sm font-medium">CEFR level</label>
             <Select v-model="cefrLevelModel">
               <SelectTrigger class="w-full">
@@ -94,17 +75,10 @@ import {
 import { useToast } from '@/components/ui/toast/use-toast'
 import { AuthService } from '@/services/authService'
 import { useAuthStore } from '@/stores/auth'
-import {
-  NATIVE_LANGUAGE_OPTIONS,
-  NATIVE_LANGUAGE_UNSET,
-} from '@/constants/nativeLanguage'
 
 const authStore = useAuthStore()
 const { toast } = useToast()
 
-const nativeLanguageModel = ref<string>(
-  authStore.user?.native_language ?? NATIVE_LANGUAGE_UNSET,
-)
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
 const CEFR_UNSET = '__unset__'
 const cefrLevelModel = ref<string>(
@@ -115,15 +89,22 @@ const cefrLevelModel = ref<string>(
 
 const OCEAN_LEVELS = ['low', 'medium', 'high'] as const
 const OCEAN_UNSET = '__unset__'
+type OceanTraitKey =
+  | 'openness'
+  | 'conscientiousness'
+  | 'extraversion'
+  | 'agreeableness'
+  | 'neuroticism'
+
 const OCEAN_TRAITS = [
   { key: 'openness', label: 'Openness' },
   { key: 'conscientiousness', label: 'Conscientiousness' },
   { key: 'extraversion', label: 'Extraversion' },
   { key: 'agreeableness', label: 'Agreeableness' },
   { key: 'neuroticism', label: 'Neuroticism' },
-] as const
+] as const satisfies ReadonlyArray<{ key: OceanTraitKey; label: string }>
 
-const oceanModel = reactive<Record<string, string>>({
+const oceanModel = reactive<Record<OceanTraitKey, string>>({
   openness: authStore.user?.ocean?.openness ?? OCEAN_UNSET,
   conscientiousness: authStore.user?.ocean?.conscientiousness ?? OCEAN_UNSET,
   extraversion: authStore.user?.ocean?.extraversion ?? OCEAN_UNSET,
@@ -134,12 +115,6 @@ const oceanModel = reactive<Record<string, string>>({
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
 
-watch(
-  () => authStore.user?.native_language,
-  (v) => {
-    nativeLanguageModel.value = v ?? NATIVE_LANGUAGE_UNSET
-  },
-)
 watch(
   () => authStore.user?.cefr_level,
   (v) => {
@@ -167,7 +142,6 @@ async function handleSave() {
       if (v && v !== OCEAN_UNSET) oceanPayload[key] = v
     }
     const payload = {
-      native_language: nativeLanguageModel.value === NATIVE_LANGUAGE_UNSET ? (null as null) : nativeLanguageModel.value,
       cefr_level: cefrLevelModel.value === CEFR_UNSET ? (null as null) : cefrLevelModel.value,
       ocean: oceanPayload,
     }
