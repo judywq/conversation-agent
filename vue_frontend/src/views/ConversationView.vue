@@ -29,11 +29,34 @@ const needFirstTurnChoice = ref(false)
 const inputText = ref('')
 const isPaused = ref(false)
 
-const micState = ref<'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'>('idle')
+const micState = ref<'idle' | 'requesting' | 'recording' | 'preview' | 'transcribing' | 'error'>('idle')
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const recordedChunks = ref<Blob[]>([])
+const recordedBlob = ref<Blob | null>(null)
+const recordedUrl = ref<string | null>(null)
 
 const canStart = computed(() => connected.value && !sessionId.value)
+
+function nextLocalTurnIndex(): number {
+  const last = turns.value.at(-1)?.turn_index
+  return typeof last === 'number' ? last + 1 : turns.value.length
+}
+
+function pushLocalUserTurn(text: string) {
+  turns.value.push({
+    speaker: 'You',
+    speaker_type: 'user',
+    utterance: text,
+    turn_index: nextLocalTurnIndex(),
+  })
+}
+
+function clearRecordingPreview() {
+  if (recordedUrl.value) URL.revokeObjectURL(recordedUrl.value)
+  recordedUrl.value = null
+  recordedBlob.value = null
+  recordedChunks.value = []
+}
 
 function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'connected') {
@@ -101,6 +124,7 @@ function stopConversation() {
 function sendTextTurn() {
   const text = inputText.value.trim()
   if (!text) return
+  pushLocalUserTurn(text)
   ws.send({ type: 'user_turn', utterance: text, source: 'text' })
   inputText.value = ''
   needUserTurn.value = false
@@ -114,30 +138,19 @@ function chooseFirstTurn(speakFirst: boolean) {
 
 async function startRecording() {
   micState.value = 'requesting'
-  recordedChunks.value = []
+  clearRecordingPreview()
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
     recorder.ondataavailable = (evt) => {
       if (evt.data.size > 0) recordedChunks.value.push(evt.data)
     }
-    recorder.onstop = async () => {
+    recorder.onstop = () => {
       stream.getTracks().forEach((t) => t.stop())
-      micState.value = 'transcribing'
-      try {
-        const blob = new Blob(recordedChunks.value, { type: 'audio/webm' })
-        const text = await ConversationService.speechToText(blob)
-        ws.send({ type: 'user_turn', utterance: text, source: 'mic' })
-        needUserTurn.value = false
-        micState.value = 'idle'
-      } catch (err: any) {
-        micState.value = 'error'
-        toast({
-          title: 'Transcription failed',
-          description: err?.message ?? 'Failed to transcribe audio',
-          variant: 'destructive',
-        })
-      }
+      const blob = new Blob(recordedChunks.value, { type: 'audio/webm' })
+      recordedBlob.value = blob
+      recordedUrl.value = URL.createObjectURL(blob)
+      micState.value = 'preview'
     }
     recorder.start()
     mediaRecorder.value = recorder
@@ -157,6 +170,31 @@ function stopRecording() {
   mediaRecorder.value = null
 }
 
+async function sendRecording() {
+  if (!recordedBlob.value) return
+  micState.value = 'transcribing'
+  try {
+    const text = await ConversationService.speechToText(recordedBlob.value)
+    pushLocalUserTurn(text)
+    ws.send({ type: 'user_turn', utterance: text, source: 'mic' })
+    needUserTurn.value = false
+    clearRecordingPreview()
+    micState.value = 'idle'
+  } catch (err: any) {
+    micState.value = 'error'
+    toast({
+      title: 'Transcription failed',
+      description: err?.message ?? 'Failed to transcribe audio',
+      variant: 'destructive',
+    })
+  }
+}
+
+function redoRecording() {
+  clearRecordingPreview()
+  micState.value = 'idle'
+}
+
 onMounted(() => {
   ws.connect()
   const off = ws.onEvent(handleEvent)
@@ -164,6 +202,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearRecordingPreview()
   ws.close()
 })
 </script>
@@ -229,7 +268,11 @@ onUnmounted(() => {
               <div class="flex gap-2">
                 <Button
                   :disabled="
-                    !needUserTurn || needFirstTurnChoice || micState === 'recording' || micState === 'transcribing'
+                    !needUserTurn ||
+                    needFirstTurnChoice ||
+                    micState === 'recording' ||
+                    micState === 'preview' ||
+                    micState === 'transcribing'
                   "
                   @click="startRecording"
                 >
@@ -242,6 +285,15 @@ onUnmounted(() => {
                 >
                   Stop
                 </Button>
+              </div>
+
+              <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
+                <div class="text-sm font-medium">Preview recording</div>
+                <audio :src="recordedUrl" controls class="w-full" />
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <Button :disabled="!needUserTurn || needFirstTurnChoice" @click="sendRecording">Send</Button>
+                  <Button variant="outline" @click="redoRecording">Redo</Button>
+                </div>
               </div>
             </CardContent>
           </Card>
