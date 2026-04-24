@@ -9,6 +9,9 @@ export interface User {
   must_change_password: boolean;
   /** Present after backend supports it; may be missing in older cached auth state. */
   native_language?: NativeLanguageCode | null;
+  /** Conversation-system profile fields (may be missing in older cached auth state). */
+  ocean?: Record<string, string>;
+  cefr_level?: string | null;
 }
 
 export interface AuthState {

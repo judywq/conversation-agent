@@ -47,6 +47,19 @@ class UserProfile(models.Model):
         help_text="Language used for word explanations and UI copy where relevant.",
     )
 
+    # Conversation system profile fields
+    ocean = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="OCEAN self-evaluation levels, e.g. {'openness': 'high', ...}.",
+    )
+    cefr_level = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        help_text="CEFR level (e.g., A1, A2, B1, B2, C1, C2).",
+    )
+
     def __str__(self) -> str:
         return f"{self.user.name} ({self.user.email})"
 

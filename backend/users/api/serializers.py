@@ -21,6 +21,34 @@ class NativeLanguageChoiceField(serializers.ChoiceField):
         return profile.native_language
 
 
+class UserProfileTextField(serializers.CharField):
+    """Reads/writes a `UserProfile` string field while serializer instance is a User."""
+
+    def __init__(self, *, profile_attr: str, **kwargs):
+        super().__init__(**kwargs)
+        self.profile_attr = profile_attr
+
+    def get_attribute(self, instance):
+        profile = getattr(instance, "userprofile", None)
+        if not profile:
+            return None
+        return getattr(profile, self.profile_attr, None)
+
+
+class UserProfileJSONField(serializers.JSONField):
+    """Reads/writes a `UserProfile` JSON field while serializer instance is a User."""
+
+    def __init__(self, *, profile_attr: str, **kwargs):
+        super().__init__(**kwargs)
+        self.profile_attr = profile_attr
+
+    def get_attribute(self, instance):
+        profile = getattr(instance, "userprofile", None)
+        if not profile:
+            return None
+        return getattr(profile, self.profile_attr, None)
+
+
 class CustomLoginSerializer(LoginSerializer):
     @staticmethod
     def validate_email_verification_status(user, email=None):
@@ -43,6 +71,13 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         allow_null=True,
         required=False,
     )
+    ocean = UserProfileJSONField(profile_attr="ocean", required=False)
+    cefr_level = UserProfileTextField(
+        profile_attr="cefr_level",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
 
     class Meta:
         extra_fields = []
@@ -59,7 +94,14 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         if hasattr(UserModel, "last_name"):
             extra_fields.append("last_name")
         model = UserModel
-        fields = ("pk", *extra_fields, "must_change_password", "native_language")
+        fields = (
+            "pk",
+            *extra_fields,
+            "must_change_password",
+            "native_language",
+            "ocean",
+            "cefr_level",
+        )
         read_only_fields = ("email",)
 
     def get_must_change_password(self, obj):
@@ -70,10 +112,22 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
 
     def update(self, instance, validated_data):
         native_language = validated_data.pop("native_language", serializers.empty)
+        ocean = validated_data.pop("ocean", serializers.empty)
+        cefr_level = validated_data.pop("cefr_level", serializers.empty)
         user = super().update(instance, validated_data)
-        if native_language is not serializers.empty and hasattr(user, "userprofile"):
-            user.userprofile.native_language = native_language
-            user.userprofile.save(update_fields=["native_language"])
+        if hasattr(user, "userprofile"):
+            update_fields = []
+            if native_language is not serializers.empty:
+                user.userprofile.native_language = native_language
+                update_fields.append("native_language")
+            if ocean is not serializers.empty:
+                user.userprofile.ocean = ocean or {}
+                update_fields.append("ocean")
+            if cefr_level is not serializers.empty:
+                user.userprofile.cefr_level = cefr_level or ""
+                update_fields.append("cefr_level")
+            if update_fields:
+                user.userprofile.save(update_fields=update_fields)
         return user
 
 

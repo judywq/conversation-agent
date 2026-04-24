@@ -23,10 +23,9 @@ const logout = () => {
   authStore.logout(router)
 }
 const menuItems: Array<{ label: string; name: string }> = [
-  {
-    label: 'Dashboard',
-    name: 'dashboard',
-  },
+  { label: 'Dashboard', name: 'dashboard' },
+  { label: 'Conversation', name: 'conversation' },
+  { label: 'Profile', name: 'profile' },
 ]
 const isSheetOpen = ref(false)
 </script>

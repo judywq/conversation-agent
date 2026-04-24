@@ -48,7 +48,11 @@ export class AuthService {
     return response.data
   }
 
-  public static async updateUser(data: { native_language?: string | null }): Promise<any> {
+  public static async updateUser(data: {
+    native_language?: string | null
+    ocean?: Record<string, string>
+    cefr_level?: string | null
+  }): Promise<any> {
     const response = await api.patch('/dj-rest-auth/user/', data)
     return response.data
   }

@@ -36,6 +36,7 @@ urlpatterns += [
     # API base url
     # path("api/", include("config.api_router")),
     path("api/llm/", include("backend.llm_caller.api_urls")),
+    path("api/conversation/", include("backend.conversation.api_urls")),
     # DRF auth token
     path("api/auth-token/", obtain_auth_token),
     path("api/schema/", SpectacularAPIView.as_view(), name="api-schema"),
