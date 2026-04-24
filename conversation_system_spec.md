@@ -8,12 +8,22 @@ The system is governed by a **Turn Manager**, which determines both:
 
 All utterances are processed through a unified pipeline and stored in memory.
 
+This system is delivered as a **web app** where the user can:
+- log in and manage a profile
+- speak into their microphone to contribute turns
+- request a turn via a UI control
+- see when each AI agent is speaking
+- hear AI agents via voice playback
+
 Here is a workflow diagram illustrating the system architecture:
 
 ```mermaid
 flowchart TD
 
     S[User lands on page]
+    AUTH{Authenticated?}
+    LOGIN[Login / Sign up]
+    DASH[Conversation UI]
     T[User enters discussion topic]
     N{User profile available?}
 
@@ -35,16 +45,23 @@ flowchart TD
     Q{User overrides: volunteering or appointed}
     D{Speaker selection}
 
-    U[User input]
+    R[User requests to speak (UI button)]
+    MIC[Microphone capture + speech-to-text]
+    U[User input (transcript)]
     MS[Makeshift speaker: previous speaker invites user to speak]
     F[Facilitator plan: SA / subtype / target / content / retrieval]
     A[Agent utterance generation with retrieval]
+    TTS[Text-to-speech]
+    PLAY[Play agent voice audio]
+    UISTAT[UI: agent speaking status]
 
     TP[Turn Processor: normalize / metadata / count / state update]
     M[Memory: short-term and session]
 
     %% initialization
-    S --> T --> N
+    S --> AUTH
+    AUTH -->|No| LOGIN --> AUTH
+    AUTH -->|Yes| DASH --> T --> N
 
     N -->|No| P1
     P1 --> P2 --> PS --> AC
@@ -58,7 +75,7 @@ flowchart TD
     %% first turn handling
     TM -->|continue and turn_count = 0| Q
 
-    Q -->|Yes| U
+    Q -->|Yes| R
     Q -->|No| D
 
     D -->|next speaker = agent| F
@@ -68,10 +85,10 @@ flowchart TD
     MS --> TP --> M --> TM
 
     %% agent path
-    F --> A --> TP
+    F --> A --> UISTAT --> TTS --> PLAY --> TP
 
     %% user path
-    U --> TP
+    R --> MIC --> U --> TP
 
     %% loop back
     M --> TM
@@ -148,6 +165,7 @@ Characteristics:
 - produces raw input
 - does NOT go through Facilitator
 - may volunteer or be appointed
+- may provide input via microphone (speech-to-text) in the web app UI
 
 ---
 
@@ -199,13 +217,38 @@ Full conversation history
 
 ---
 
-## 4. Data Structures
+## 4. Web Application Requirements
+
+### 4.1 Authentication and profile management
+- The system MUST support **user login** and **profile management** in the web UI.
+- The system MUST persist the `UserProfile` per authenticated user, and load it on subsequent sessions.
+- The system SHOULD support basic account actions (e.g., view/update profile fields, sign out).
+
+### 4.2 Conversation UI
+- The UI MUST provide a control for the user to **request speaking** (a button).
+- When the user requests speaking, the UI MUST initiate **microphone capture** and produce a text transcript used as `User.input()`.
+- The UI SHOULD provide clear states for microphone usage (idle, requesting permission, recording, transcribing, error).
+
+### 4.3 Agent speaking status UI
+- The UI MUST display **AI agent speaking status** (e.g., which agent is currently speaking, and/or queued).
+- The UI SHOULD reflect transitions (thinking/generating, speaking/playing audio, finished).
+
+### 4.4 Agent voice playback
+- The system MUST support producing audible speech for agent utterances (text-to-speech).
+- The UI MUST play the AI agent audio for the user.
+- The system SHOULD allow selecting or mapping voices (e.g., aligned with profile or per-agent voice).
+ 
+---
+
+## 5. Data Structures
 
 ### UserProfile
 ```python
 class UserProfile:
     ocean: dict[str, str]  # e.g., {"openness": "high", "conscientiousness": "medium", ...}
     cefr_level: str
+    # web app identity linkage
+    user_id: str
 ```
 
 ### AgentProfile
@@ -235,11 +278,14 @@ class TurnRecord:
     subtype: str | None
     target: str | None
     turn_index: int
+    # web app / audio metadata (optional)
+    source: str | None  # e.g., "mic", "text"
+    audio_url: str | None  # agent audio asset location if generated
 ```
 
 ---
 
-## 5. Core Loop
+## 6. Core Loop
 
 ```python
 while not state.terminate:
@@ -252,6 +298,8 @@ while not state.terminate:
     if speaker == "agent":
         plan = Facilitator(...)
         utterance = Agent.generate(plan)
+        audio = TTS(utterance)
+        UI.play(audio)
 
     elif speaker == "user":
         utterance = User.input()
@@ -265,7 +313,7 @@ while not state.terminate:
 
 ---
 
-## 6. Special Logic: Forced User Turn
+## 7. Special Logic: Forced User Turn
 
 If user is selected but did not volunteer:
 
@@ -276,7 +324,7 @@ If user is selected but did not volunteer:
 
 ---
 
-## 7. Termination
+## 8. Termination
 
 Handled only by Turn Manager.
 
