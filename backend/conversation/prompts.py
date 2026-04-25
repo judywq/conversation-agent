@@ -6,6 +6,7 @@ from pathlib import Path
 
 PROMPT_KEY_AGENT_UTTERANCE = "agent_utterance"
 PROMPT_KEY_FACILITATOR_PLAN = "facilitator_plan"
+PROMPT_KEY_SPEECH_ACT_CLASSIFY = "speech_act_classify"
 
 _DEFAULT_PROMPTS_PATH = Path(__file__).resolve().parent / "data" / "conversation_llm_prompts.txt"
 

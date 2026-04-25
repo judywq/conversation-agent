@@ -28,7 +28,7 @@ ALLOWED_SA: dict[str, set[str]] = {
 }
 
 
-def _coerce_plan(payload: dict) -> dict:
+def coerce_speech_act_plan(payload: dict) -> dict:
     sa_type = str(payload.get("type") or "").upper()
     subtype = payload.get("subtype")
     subtype = str(subtype) if subtype is not None else None
@@ -96,5 +96,5 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
             parsed = {}
     except json.JSONDecodeError:
         parsed = {}
-    return _coerce_plan(parsed)
+    return coerce_speech_act_plan(parsed)
 

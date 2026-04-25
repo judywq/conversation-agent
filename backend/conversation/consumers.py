@@ -9,6 +9,7 @@ from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.agent import generate_agent_utterance
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
+from backend.conversation.services.turn_processor import append_user_turn_classified
 from backend.conversation.services.turn_processor import mark_terminate
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
@@ -115,7 +116,18 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 return
 
             source = str(content.get("source") or "text")
-            await self._append_user_turn(self.session_id, utterance=utterance, source=source)
+            _au = content.get("audio_url")
+            if _au is None:
+                audio_url = None
+            else:
+                s = str(_au).strip()
+                audio_url = s or None
+            await self._append_user_turn(
+                self.session_id,
+                utterance=utterance,
+                source=source,
+                audio_url=audio_url,
+            )
             await self._advance_loop()
             return
 
@@ -217,17 +229,20 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         session.save(update_fields=["paused", "updated_at"])
 
     @database_sync_to_async
-    def _append_user_turn(self, session_id: int, *, utterance: str, source: str) -> TurnRecord:
+    def _append_user_turn(
+        self,
+        session_id: int,
+        *,
+        utterance: str,
+        source: str,
+        audio_url: str | None = None,
+    ) -> TurnRecord:
         session = ConversationSession.objects.get(id=session_id)
-        processed = append_turn(
+        processed = append_user_turn_classified(
             session,
-            speaker="user",
-            speaker_type=TurnRecord.SPEAKER_TYPE_USER,
-            utterance=utterance,
-            speech_act="ASSERTIVES",
-            subtype="opinion",
-            target=None,
+            utterance,
             source=source,
+            audio_url=audio_url,
         )
         return processed.turn
 
