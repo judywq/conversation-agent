@@ -5,3 +5,6 @@ class ConversationConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "backend.conversation"
 
+    def ready(self) -> None:
+        import backend.conversation.admin  # noqa: F401, PLC0415
+

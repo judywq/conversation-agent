@@ -3,6 +3,8 @@ from langchain_core.messages import SystemMessage
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
+from backend.conversation.prompts import PROMPT_KEY_AGENT_UTTERANCE
+from backend.conversation.prompts import get_prompt_pair
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
@@ -19,23 +21,18 @@ def generate_agent_utterance(
 
     persona = agent.personality or {}
     traits = agent.traits or {}
-
+    pair = get_prompt_pair(PROMPT_KEY_AGENT_UTTERANCE)
     system = SystemMessage(
-        content=(
-            "You are an AI discussion participant. Follow the Facilitator Plan strictly.\n\n"
-            f"AgentId: {agent.agent_id}\n"
-            f"Persona: {persona}\n"
-            f"Traits: {traits}\n\n"
-            f"Topic: {session.topic}\n\n"
-            f"FacilitatorPlan: {facilitator_plan}\n"
+        content=pair.system_template.format(
+            agent_id=agent.agent_id,
+            persona=persona,
+            traits=traits,
+            topic=session.topic,
+            facilitator_plan=facilitator_plan,
         ),
     )
     human = HumanMessage(
-        content=(
-            "RecentTurns:\n"
-            f"{context}\n\n"
-            "Now produce the next utterance. Keep it concise and relevant."
-        ),
+        content=pair.user_template.format(context=context),
     )
 
     llm = get_default_chat_llm()

@@ -91,3 +91,29 @@ class TurnRecord(TimestampedBase):
     def __str__(self) -> str:
         return f"TurnRecord({self.session_id}#{self.turn_index}, {self.speaker_type}:{self.speaker})"
 
+
+class ConversationLLMPrompt(TimestampedBase):
+    """
+    DB-stored system/user templates for conversation services (agent, facilitator).
+    Seeded from backend/conversation/data/conversation_llm_prompts.txt via init_llm_seed.
+    """
+
+    key = models.SlugField(
+        max_length=64,
+        unique=True,
+        help_text="Stable id, e.g. agent_utterance or facilitator_plan",
+    )
+    system_template = models.TextField(help_text="str.format template for the system message")
+    user_template = models.TextField(
+        blank=True,
+        help_text="str.format template for the user/human message. If empty, facilitator uses a JSON body at runtime.",
+    )
+
+    class Meta:
+        ordering = ["key"]
+        verbose_name = "Conversation LLM prompt"
+        verbose_name_plural = "Conversation LLM prompts"
+
+    def __str__(self) -> str:
+        return f"ConversationLLMPrompt({self.key})"
+

@@ -5,6 +5,8 @@ from langchain_core.messages import SystemMessage
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
+from backend.conversation.prompts import PROMPT_KEY_FACILITATOR_PLAN
+from backend.conversation.prompts import get_prompt_pair
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
@@ -56,25 +58,33 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     turns = get_short_term_turns(session, limit=10)
     context = turns_to_messages(turns)
 
-    system = SystemMessage(
-        content=(
-            "You are the Facilitator for a multi-party discussion. "
-            "Output ONLY valid JSON with keys: "
-            "type, subtype, target, content_requirement, retrieval_requirement. "
-            "Speech act types must be one of: ASSERTIVES, DIRECTIVES, COMMISSIVES, EXPRESSIVES, DECLARATIONS. "
-            "Choose a subtype that matches the type."
-        ),
-    )
-    human = HumanMessage(
-        content=json.dumps(
-            {
-                "topic": session.topic,
-                "agent": {"agent_id": agent.agent_id, "personality": agent.personality, "traits": agent.traits},
-                "recent_turns": context,
-            },
-            ensure_ascii=False,
-        ),
-    )
+    pair = get_prompt_pair(PROMPT_KEY_FACILITATOR_PLAN)
+    system = SystemMessage(content=pair.system_template)
+    if pair.user_is_json_payload:
+        human = HumanMessage(
+            content=json.dumps(
+                {
+                    "topic": session.topic,
+                    "agent": {
+                        "agent_id": agent.agent_id,
+                        "personality": agent.personality,
+                        "traits": agent.traits,
+                    },
+                    "recent_turns": context,
+                },
+                ensure_ascii=False,
+            ),
+        )
+    else:
+        human = HumanMessage(
+            content=pair.user_template.format(
+                topic=session.topic,
+                agent_id=agent.agent_id,
+                personality=agent.personality,
+                traits=agent.traits,
+                context=context,
+            ),
+        )
 
     llm = get_default_chat_llm()
     result = llm.invoke([system, human])

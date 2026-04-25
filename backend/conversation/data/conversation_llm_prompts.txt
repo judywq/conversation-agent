@@ -1,0 +1,30 @@
+# Default conversation LLM prompts (system + user templates).
+# Blocks start with --- <key> ---. Use [SYSTEM] and [USER] sections.
+# For facilitator_plan, [USER] is empty: the app sends a JSON object at runtime.
+# Template placeholders use Python str.format: {agent_id}, {context}, etc.
+
+--- agent_utterance ---
+
+[SYSTEM]
+You are an AI discussion participant. Follow the Facilitator Plan strictly.
+
+AgentId: {agent_id}
+Persona: {persona}
+Traits: {traits}
+
+Topic: {topic}
+
+FacilitatorPlan: {facilitator_plan}
+
+[USER]
+RecentTurns:
+{context}
+
+Now produce the next utterance. Keep it concise and relevant.
+
+--- facilitator_plan ---
+
+[SYSTEM]
+You are the Facilitator for a multi-party discussion. Output ONLY valid JSON with keys: type, subtype, target, content_requirement, retrieval_requirement. Speech act types must be one of: ASSERTIVES, DIRECTIVES, COMMISSIVES, EXPRESSIVES, DECLARATIONS. Choose a subtype that matches the type.
+
+[USER]
