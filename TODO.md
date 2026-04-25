@@ -2,12 +2,15 @@
 
 This file is derived from the current codebase state (not just the spec). It is structured so multiple developers can work in parallel with minimal file overlap.
 
+**Recently landed (git history, highest level)**: `ConversationLLMPrompt` + admin + `init_llm_seed` prompt seeding; **user speech-act classification** in `turn_processor` (DB prompt key `speech_act_classify`); related updates to `consumers` / turn append path.
+
 ## Current baseline (what already exists)
 
 - **Turn loop (v1)**: `backend/conversation/consumers.py` runs a `while True` loop that calls `decide_next_speaker()` and then appends turns via `append_turn()` (plus makeshift invites). It also handles `pause/resume/end_session`, `raise_hand`, and “user speaks first” selection.
 - **Turn Manager (v1)**: `backend/conversation/services/turn_manager.py` implements a simple policy based on flags like `pending_forced_user_turn`, `user_override_requested`, and periodic invites.
-- **Facilitator + Agent generation (v1)**: `backend/conversation/services/facilitator.py` and `backend/conversation/services/agent.py` contain **hard-coded** system prompts using LangChain `SystemMessage`.
-- **Storage**: `ConversationSession`, `AgentProfile`, and `TurnRecord` exist in `backend/conversation/models.py`.
+- **Facilitator + Agent generation (v1)**: `facilitator.py` and `agent.py` load templates via `get_prompt_pair()` from the **`ConversationLLMPrompt`** model (defaults in `backend/conversation/data/conversation_llm_prompts.txt`, upserted by `python manage.py init_llm_seed`). LangChain `SystemMessage` / `HumanMessage` are built from those templates.
+- **User speech-act classification (v1)**: `append_user_turn_classified()` in `backend/conversation/services/turn_processor.py` calls an LLM using the `speech_act_classify` prompt key, then `coerce_speech_act_plan()` (shared with the facilitator) before persisting `TurnRecord.speech_act` / `subtype` / `target`. The WebSocket `user_turn` handler uses this path and can pass optional `audio_url` (classifier still works on the **transcript** in `utterance`).
+- **Storage**: `ConversationSession`, `AgentProfile`, `TurnRecord`, and **`ConversationLLMPrompt`** (with Django admin) exist in `backend/conversation/models.py`.
 - **TTS/STT**:
   - **TTS**: `backend/conversation/services/tts.py` uses OpenAI TTS, stores audio in `MEDIA_ROOT`, returns a public URL. `AgentProfile.voice` is used (default `"alloy"` when empty).
   - **STT**: `backend/conversation/services/stt.py` + `backend/conversation/api_views.py` implement `/conversation/stt/` (multipart `audio` upload) using OpenAI Whisper.
@@ -20,6 +23,10 @@ This file is derived from the current codebase state (not just the spec). It is 
 **Owner**: Backend dev (turn-taking / policy)  
 **Primary files**: `backend/conversation/services/turn_manager.py`, `backend/conversation/models.py`, `backend/conversation/tests/*`  
 **Avoids overlap with**: prompt refactors (Workstream C), TTS work (Workstream D), UI polish (Workstream E)
+
+### Baseline note
+
+- User `TurnRecord` rows now store **LLM-classified** `speech_act` / `subtype` / `target` (see `append_user_turn_classified`). **`decide_next_speaker()` in v1 still does not** use that metadata; this workstream is to wire policy to those fields (and agent/makeshift targets) when choosing the next speaker.
 
 ### What’s needed
 
@@ -53,9 +60,11 @@ This file is derived from the current codebase state (not just the spec). It is 
 
 **Owner**: Backend dev (orchestration / engine)  
 **Primary files**: `backend/conversation/consumers.py`, new `backend/conversation/services/*engine*.py` (or similar), `backend/conversation/services/turn_processor.py`  
-**Avoids overlap with**: prompt storage (Workstream C) by consuming prompts via a stable interface
+**Avoids overlap with**: Workstream C (classifier + agent/facilitator already use `get_prompt_pair`); this stream is about **control flow**, not prompt content.
 
 ### What’s needed
+
+**Partial today**: `turn_processor` handles persistence, flags, and **user speech-act classification** before append; the consumer still owns the main loop.
 
 Right now the WebSocket consumer (`ConversationConsumer._advance_loop`) owns most of the orchestration and mixes concerns:
 - selecting next speaker
@@ -98,38 +107,32 @@ Core improvements:
 ## Workstream C — Prompt management per agent (DB-backed, not hard-coded)
 
 **Owner**: Backend dev (models + prompt templating)  
-**Primary files**: `backend/conversation/services/facilitator.py`, `backend/conversation/services/agent.py`, new Django models/migrations, possibly reuse `backend/llm_caller/models.py::LLMConfig`  
-**Avoids overlap with**: UI (Workstream E) except possibly an admin view
+**Primary files**: `backend/conversation/models.py` (`ConversationLLMPrompt`), `backend/conversation/prompts.py`, `backend/conversation/data/conversation_llm_prompts.txt`, `backend/llm_caller/management/commands/init_llm_seed.py`, `backend/conversation/admin.py`  
+**Avoids overlap with**: UI (Workstream E) except admin
 
-### What’s needed
+### What’s already implemented (as of recent commits)
 
-Today, prompts are hard-coded in:
-- `backend/conversation/services/facilitator.py` (facilitator system prompt)
-- `backend/conversation/services/agent.py` (agent system prompt template)
-- `backend/conversation/services/makeshift.py` (invite string template)
+- **`ConversationLLMPrompt`** model: `key` (slug), `system_template`, `user_template`; registered in Django admin; bundled defaults seed from **`conversation_llm_prompts.txt`** (blocks `--- <key> ---` with `[SYSTEM]` / `[USER]`), upserted when running **`init_llm_seed`**.
+- **Keys in use** (all loadable via `get_prompt_pair` / `seed_conversation_llm_prompts`):
+  - **`agent_utterance`**: str.format in `agent.py` (`topic`, `agent_id`, `persona`, `traits`, `facilitator_plan`, `context`).
+  - **`facilitator_plan`**: empty `[USER]` in file → JSON human payload at runtime in `facilitator.py`.
+  - **`speech_act_classify`**: empty `[USER]` in file → JSON human (topic, utterance, `source` / `audio_url`, `previous_speaker`, `recent_turns`) in `turn_processor.py`.
+- **Fallback if DB is empty** (e.g. tests, fresh checkout): `get_prompt_pair` falls back to the same bundled `.txt` file.
 
-Implement **prompt templates stored in Django**, with different prompts for:
-- Facilitator planner prompt
-- Agent base prompt (shared), plus optional per-agent overrides
-- Makeshift invitation prompt/template
-- (Future) user speech-act classifier prompt (spec mentions, not currently implemented)
+### What’s still needed
 
-Implementation requirements:
-- **Model design**
-  - Either:
-    - Extend/reuse `backend/llm_caller/models.py::LLMConfig` (it already has `purpose`, `system_prompt`, `temperature`, `model`), adding conversation-specific purposes like `facilitator_plan`, `agent_utterance`, `makeshift_invite`.
-    - Or create a new `conversation.PromptTemplate` model that supports versioning + activation.
-- **Templating**
-  - Prompts must accept structured inputs already used today: `topic`, `agent.personality`, `agent.traits`, `recent_turns`, `facilitator_plan`.
-  - Keep “safe defaults” if no DB prompt is configured (for local dev / tests).
-- **Admin UX**
-  - Prompts should be editable in Django admin (existing admin patterns in `backend/llm_caller/admin.py` can be mirrored).
+- **Makeshift / system strings**: `backend/conversation/services/makeshift.py` still builds the invite string in code. Move to a new prompt key (e.g. `makeshift_invite`) in `ConversationLLMPrompt` + `conversation_llm_prompts.txt` and `init_llm_seed` upsert.
+- **Per-agent or per-user prompt overrides** (optional): today one shared `agent_utterance` for all agents; add override rules or extra keys if product requires distinct personas in DB.
+- **Versioning / activation**: single active row per `key` today; consider history, draft vs production, or environment-specific keys if ops need it.
+- **Demo / user-specific branching (optional)**: `UserProfile.is_demo_account` exists; prompt selection could branch on it once requirements are clear.
 
-### Acceptance criteria
+### Acceptance criteria (updated)
 
-- **No hard-coded prompt text** remains in `facilitator.py` / `agent.py` except fallback defaults.
-- **Configurable per-purpose prompts** can be changed in DB without redeploy.
-- **Demo/user-specific branching (optional)**: `UserProfile.is_demo_account` exists; prompt selection can optionally use it for demo prompts.
+- [x] **DB model + admin** for conversation LLM prompt templates.  
+- [x] **Facilitator, agent, and user speech-act classifier** prompts are driven by `ConversationLLMPrompt` (with file fallback), not string literals in service code.  
+- [x] **Seeding** via `init_llm_seed` (or make target `init-llm-*`) updates bundled prompt text in DB.  
+- [ ] **Makeshift invite** (and any other remaining literals) move to the same system.  
+- [ ] **Optional**: per-agent overrides, versioning, demo-specific prompts.
 
 ---
 
