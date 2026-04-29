@@ -2,123 +2,126 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
-PROMPT_KEY_AGENT_UTTERANCE = "agent_utterance"
-PROMPT_KEY_FACILITATOR_PLAN = "facilitator_plan"
-PROMPT_KEY_SPEECH_ACT_CLASSIFY = "speech_act_classify"
-
-_DEFAULT_PROMPTS_PATH = Path(__file__).resolve().parent / "data" / "conversation_llm_prompts.txt"
+_DEFAULT_PROMPTS_DIR = Path(__file__).resolve().parent / "data" / "prompts"
 
 
 @dataclass(frozen=True)
-class PromptPair:
-    """System and user text for a conversation LLM call."""
+class AgentPersonaPrompt:
+    persona_name: str
+    template: str
 
-    key: str
-    system_template: str
-    user_template: str
 
-    @property
-    def user_is_json_payload(self) -> bool:
-        return not (self.user_template and self.user_template.strip())
+@dataclass(frozen=True)
+class PromptCatalog:
+    agent_prompts: list[AgentPersonaPrompt]
+    facilitator_template: str
+    speech_act_classifier_template: str
 
 
 def default_prompts_path() -> Path:
-    return _DEFAULT_PROMPTS_PATH
+    return _DEFAULT_PROMPTS_DIR
 
 
-def load_prompt_blocks_from_file(path: Path | None = None) -> dict[str, PromptPair]:
-    """Parse conversation_llm_prompts.txt into prompt keys and templates."""
-    p = path or _DEFAULT_PROMPTS_PATH
-    text = p.read_text(encoding="utf-8")
-    return _parse_blocks(text)
-
-
-def _parse_blocks(text: str) -> dict[str, PromptPair]:
-    out: dict[str, PromptPair] = {}
-    for m in re.finditer(
-        r"^---\s*([a-zA-Z0-9_]+)\s*---\s*\n(.*?)(?=^---\s*[a-zA-Z0-9_]+\s*---\s*$|\Z)",
-        text,
-        re.MULTILINE | re.DOTALL,
-    ):
-        name, body = m.group(1), m.group(2)
-        system_t, user_t = _split_system_user(body)
-        out[name] = PromptPair(
-            key=name,
-            system_template=system_t,
-            user_template=user_t,
-        )
-    return out
-
-
-def _split_system_user(block: str) -> tuple[str, str]:
-    m_sys = re.search(r"\[SYSTEM\]\s*(.*?)(?=\[USER\]|$)", block, re.DOTALL)
-    m_user = re.search(r"\[USER\]\s*(.*)$", block, re.DOTALL)
-    system = m_sys.group(1).strip() if m_sys else ""
-    user = m_user.group(1).strip() if m_user else ""
-    return system, user
-
-
-def get_prompt_pair(key: str) -> PromptPair:
-    """
-    Return prompts for key from the database, or fall back to the bundled .txt file.
-    """
-    from django.db import DatabaseError
-
-    from backend.conversation.models import ConversationLLMPrompt
-
-    row = None
-    try:
-        row = (
-            ConversationLLMPrompt.objects.filter(key=key)
-            .order_by("id")
-            .first()
-        )
-    except DatabaseError:
-        row = None
-    if row is not None:
-        return PromptPair(
-            key=row.key,
-            system_template=row.system_template,
-            user_template=row.user_template,
-        )
-    data = load_prompt_blocks_from_file()
-    if key not in data:
-        msg = f"No prompt for key {key!r} in DB or {default_prompts_path()}"
+def load_prompts_catalog(path: Path | None = None) -> PromptCatalog:
+    p = path or _DEFAULT_PROMPTS_DIR
+    if not p.is_dir():
+        msg = f"Prompt source must be a directory: {p}"
         raise ValueError(msg)
-    return data[key]
+    return _load_prompts_from_directory(p)
 
 
-def seed_conversation_llm_prompts(*, dry_run: bool = False) -> list[str]:
+@lru_cache(maxsize=1)
+def get_prompts_catalog() -> PromptCatalog:
+    return load_prompts_catalog()
+
+
+def load_agent_persona_prompts() -> list[AgentPersonaPrompt]:
+    return get_prompts_catalog().agent_prompts
+
+
+def load_facilitator_prompt() -> str:
+    return get_prompts_catalog().facilitator_template
+
+
+def load_speech_act_classifier_prompt() -> str:
+    return get_prompts_catalog().speech_act_classifier_template
+
+
+def load_additional_prompt(name: str) -> str:
+    path = _DEFAULT_PROMPTS_DIR / name
+    if not path.exists():
+        msg = f"Prompt file not found: {path}"
+        raise ValueError(msg)
+    return path.read_text(encoding="utf-8").strip()
+
+
+def render_prompt_template(template: str, **values: object) -> str:
     """
-    Upsert ConversationLLMPrompt rows from the bundled conversation_llm_prompts.txt.
-    Returns human-readable log lines. Used by init_llm_seed.
+    Render only known {placeholder} tokens.
+    Leaves unrelated curly braces untouched (e.g. JSON examples in prompts).
     """
-    from backend.conversation.models import ConversationLLMPrompt
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{" + key + "}", str(value))
+    return rendered
 
-    data = load_prompt_blocks_from_file()
-    changes: list[str] = []
-    for key, pair in data.items():
-        obj = (
-            ConversationLLMPrompt.objects.filter(key=key)
-            .order_by("id")
-            .first()
-        )
-        created = obj is None
-        if obj is None:
-            obj = ConversationLLMPrompt(
-                key=key,
-                system_template=pair.system_template,
-                user_template=pair.user_template,
-            )
-        else:
-            obj.system_template = pair.system_template
-            obj.user_template = pair.user_template
 
-        changes.append(
-            f"ConversationLLMPrompt {'CREATE' if created else 'UPDATE'} {key}",
+def _load_prompts_from_directory(prompts_dir: Path) -> PromptCatalog:
+    shared_path = prompts_dir / "agent_shared.txt"
+    facilitator_path = prompts_dir / "facilitator.txt"
+    classifier_path = prompts_dir / "speech_act_classifier.txt"
+
+    if not shared_path.exists() or not facilitator_path.exists() or not classifier_path.exists():
+        msg = (
+            "Missing split prompt files in "
+            f"{prompts_dir}. Required: agent_shared.txt, facilitator.txt, speech_act_classifier.txt"
         )
-        if not dry_run:
-            obj.save()
-    return changes
+        raise ValueError(msg)
+
+    shared_template = shared_path.read_text(encoding="utf-8").strip()
+    facilitator_template = facilitator_path.read_text(encoding="utf-8").strip()
+    speech_act_classifier_template = classifier_path.read_text(encoding="utf-8").strip()
+
+    persona_files = sorted(prompts_dir.glob("agent_*.txt"))
+    persona_files = [p for p in persona_files if p.name != "agent_shared.txt"]
+    agent_prompts: list[AgentPersonaPrompt] = []
+    for persona_path in persona_files:
+        persona_raw = persona_path.read_text(encoding="utf-8").strip()
+        if not persona_raw:
+            continue
+        persona_name, persona_section = _extract_persona_file_parts(persona_raw, persona_path)
+        agent_prompts.append(
+            AgentPersonaPrompt(
+                persona_name=persona_name,
+                template=render_prompt_template(
+                    shared_template,
+                    persona_name=persona_name,
+                    persona_section=persona_section,
+                ),
+            ),
+        )
+
+    if not agent_prompts:
+        msg = f"No agent persona files found in {prompts_dir}"
+        raise ValueError(msg)
+
+    return PromptCatalog(
+        agent_prompts=agent_prompts,
+        facilitator_template=facilitator_template,
+        speech_act_classifier_template=speech_act_classifier_template,
+    )
+
+
+def _extract_persona_file_parts(text: str, path: Path) -> tuple[str, str]:
+    m = re.search(r"^PersonaName:\s*(.+)$", text, re.MULTILINE)
+    if not m:
+        msg = f"Missing 'PersonaName:' line in {path}"
+        raise ValueError(msg)
+    persona_name = m.group(1).strip()
+    persona_section = re.sub(r"^PersonaName:\s*.+$", "", text, count=1, flags=re.MULTILINE).strip()
+    return persona_name, persona_section
+
+

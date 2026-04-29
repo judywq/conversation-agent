@@ -8,28 +8,41 @@
         </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div class="space-y-2">
-            <label class="text-sm font-medium">CEFR level</label>
-            <Select v-model="cefrLevelModel">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="Not set" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem :value="CEFR_UNSET">Not set</SelectItem>
-                <SelectItem v-for="lvl in CEFR_LEVELS" :key="lvl" :value="lvl">
-                  {{ lvl }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+        <div class="space-y-2">
+          <div class="text-sm font-medium">How should we address you?</div>
+          <Input
+            v-model="preferredName"
+            placeholder="E.g., Alex"
+            class="w-full"
+          />
+          <div class="text-xs text-muted-foreground">
+            This name will be used by agents when they speak to you.
+          </div>
+        </div>
+
+        <div class="rounded-md border p-4 space-y-2">
+          <div class="text-sm font-medium">Current proficiency selection</div>
+          <div class="text-sm text-muted-foreground">
+            Latest selected CEFR level:
+            <span class="font-medium text-foreground">{{ authStore.user?.cefr_level || 'Not set yet' }}</span>
+          </div>
+          <div class="text-sm text-muted-foreground">
+            Choose a fresh CEFR listening sample for each new conversation topic before you start.
+          </div>
+          <div class="text-sm">
+            Profile status:
+            <span class="font-medium">{{ authStore.user?.profile_completed ? 'Complete' : 'Incomplete' }}</span>
           </div>
         </div>
 
         <div class="space-y-2">
-          <div class="text-sm font-medium">OCEAN self-evaluation</div>
+          <div class="text-sm font-medium">Personality self-evaluation</div>
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div v-for="trait in OCEAN_TRAITS" :key="trait.key" class="space-y-2">
-              <label class="text-sm text-muted-foreground">{{ trait.label }}</label>
+              <div class="space-y-1">
+                <label class="text-sm text-muted-foreground">{{ trait.label }}</label>
+                <div class="text-xs text-muted-foreground">{{ trait.description }}</div>
+              </div>
               <Select v-model="oceanModel[trait.key]">
                 <SelectTrigger class="w-full">
                   <SelectValue placeholder="Not set" />
@@ -65,6 +78,7 @@
 import { reactive, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -79,14 +93,6 @@ import { useAuthStore } from '@/stores/auth'
 const authStore = useAuthStore()
 const { toast } = useToast()
 
-const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
-const CEFR_UNSET = '__unset__'
-const cefrLevelModel = ref<string>(
-  authStore.user?.cefr_level && authStore.user.cefr_level.length > 0
-    ? authStore.user.cefr_level
-    : CEFR_UNSET,
-)
-
 const OCEAN_LEVELS = ['low', 'medium', 'high'] as const
 const OCEAN_UNSET = '__unset__'
 type OceanTraitKey =
@@ -96,13 +102,44 @@ type OceanTraitKey =
   | 'agreeableness'
   | 'neuroticism'
 
-const OCEAN_TRAITS = [
-  { key: 'openness', label: 'Openness' },
-  { key: 'conscientiousness', label: 'Conscientiousness' },
-  { key: 'extraversion', label: 'Extraversion' },
-  { key: 'agreeableness', label: 'Agreeableness' },
-  { key: 'neuroticism', label: 'Neuroticism' },
-] as const satisfies ReadonlyArray<{ key: OceanTraitKey; label: string }>
+type OceanTraitConfig = {
+  key: OceanTraitKey
+  label: string
+  description: string
+}
+
+const OCEAN_TRAITS: OceanTraitConfig[] = [
+  {
+    key: 'openness',
+    label: 'Openness',
+    description:
+      'Openness describes how willing you are to explore new ideas, perspectives, and experiences. Higher openness often means more curiosity and creativity, while lower openness often means preferring familiarity and structure.',
+  },
+  {
+    key: 'conscientiousness',
+    label: 'Conscientiousness',
+    description:
+      'Conscientiousness describes how organized, careful, and responsible you are. Higher conscientiousness often means planning carefully and noticing details, while lower conscientiousness often means being more spontaneous and less structured.',
+  },
+  {
+    key: 'extraversion',
+    label: 'Extraversion',
+    description:
+      'Extraversion describes how energetic, expressive, and socially active you are. Higher extraversion often means enjoying lively interaction, while lower extraversion often means being quieter and more reflective.',
+  },
+  {
+    key: 'agreeableness',
+    label: 'Agreeableness',
+    description:
+      'Agreeableness describes how cooperative, kind, and supportive you are with other people. Higher agreeableness often means being patient and encouraging, while lower agreeableness often means being more direct or skeptical.',
+  },
+  {
+    key: 'neuroticism',
+    label: 'Neuroticism',
+    description:
+      'Neuroticism describes how strongly you experience stress, worry, or emotional ups and downs. Higher neuroticism often means greater sensitivity to pressure, while lower neuroticism often means feeling calmer and steadier.',
+  },
+]
 
 const oceanModel = reactive<Record<OceanTraitKey, string>>({
   openness: authStore.user?.ocean?.openness ?? OCEAN_UNSET,
@@ -112,15 +149,11 @@ const oceanModel = reactive<Record<OceanTraitKey, string>>({
   neuroticism: authStore.user?.ocean?.neuroticism ?? OCEAN_UNSET,
 })
 
+const preferredName = ref(authStore.user?.preferred_name ?? '')
+
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
 
-watch(
-  () => authStore.user?.cefr_level,
-  (v) => {
-    cefrLevelModel.value = v && v.length > 0 ? v : CEFR_UNSET
-  },
-)
 watch(
   () => authStore.user?.ocean,
   (v) => {
@@ -142,8 +175,8 @@ async function handleSave() {
       if (v && v !== OCEAN_UNSET) oceanPayload[key] = v
     }
     const payload = {
-      cefr_level: cefrLevelModel.value === CEFR_UNSET ? (null as null) : cefrLevelModel.value,
       ocean: oceanPayload,
+      preferred_name: preferredName.value,
     }
     const user = await AuthService.updateUser(payload)
     authStore.user = user

@@ -51,6 +51,8 @@ export class AuthService {
   public static async updateUser(data: {
     ocean?: Record<string, string>
     cefr_level?: string | null
+    cefr_sample_topic?: string | null
+    cefr_sample_choices?: Array<{ level: string; text: string; audio_url?: string | null }>
   }): Promise<any> {
     const response = await api.patch('/dj-rest-auth/user/', data)
     return response.data

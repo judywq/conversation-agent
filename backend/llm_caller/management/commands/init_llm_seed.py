@@ -6,7 +6,6 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from backend.conversation.prompts import seed_conversation_llm_prompts
 from backend.llm_caller.models import APIKey
 from backend.llm_caller.models import LLMModel
 
@@ -14,7 +13,7 @@ from backend.llm_caller.models import LLMModel
 class Command(BaseCommand):
     help = (
         "Seed LLM models and API keys from config.settings.base INIT_* settings, "
-        "and conversation system/user prompt templates from conversation_llm_prompts.txt."
+        "while runtime conversation prompts are loaded from backend/conversation/data/prompts/."
     )
 
     def add_arguments(self, parser):
@@ -35,7 +34,7 @@ class Command(BaseCommand):
             self.stderr.write(
                 self.style.WARNING(
                     "INIT_LLM_MODELS and INIT_API_KEYS must both be defined as lists in settings. "
-                    "Skipping LLM model and API key seed; still seeding conversation LLM prompts.",
+                    "Skipping LLM model and API key seed.",
                 ),
             )
 
@@ -114,9 +113,6 @@ class Command(BaseCommand):
 
                     if not dry_run:
                         obj.save()
-
-            for line in seed_conversation_llm_prompts(dry_run=dry_run):
-                changes.append(line)
 
             if dry_run:
                 transaction.set_rollback(True)

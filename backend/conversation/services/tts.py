@@ -33,7 +33,7 @@ def synthesize_speech(
         model=model,
         voice=voice,
         input=text,
-        format=audio_format,
+        response_format=audio_format,
     )
     audio_bytes = response.read()
 

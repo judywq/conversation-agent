@@ -1,6 +1,7 @@
 export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
   | { type: 'session_started'; session_id: number; topic: string }
+  | { type: 'participants'; participants: Array<{ id: string; name: string; type: 'user' | 'agent'; persona_name?: string }> }
   | { type: 'need_first_turn_choice' }
   | { type: 'paused' }
   | { type: 'resumed' }

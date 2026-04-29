@@ -8,6 +8,14 @@ export interface User {
   /** Conversation-system profile fields (may be missing in older cached auth state). */
   ocean?: Record<string, string>;
   cefr_level?: string | null;
+  profile_completed?: boolean;
+  cefr_sample_topic?: string | null;
+  cefr_sample_choices?: Array<{
+    level: string;
+    text: string;
+    audio_url?: string | null;
+  }>;
+  preferred_name?: string | null;
 }
 
 export interface AuthState {

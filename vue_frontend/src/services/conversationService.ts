@@ -1,5 +1,11 @@
 import api from '@/services/api'
 
+export interface CefrSample {
+  level: string
+  text: string
+  audio_url?: string | null
+}
+
 export class ConversationService {
   static async speechToText(audio: Blob): Promise<string> {
     const form = new FormData()
@@ -12,6 +18,15 @@ export class ConversationService {
       },
     })
     return res.data.text
+  }
+
+  static async generateCefrSamples(topic: string): Promise<{ topic: string; samples: CefrSample[] }> {
+    const res = await api.post<{ topic: string; samples: CefrSample[] }>('/conversation/cefr-samples/', {
+      topic,
+    }, {
+      timeout: 60000,
+    })
+    return res.data
   }
 }
 

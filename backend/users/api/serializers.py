@@ -39,6 +39,20 @@ class UserProfileJSONField(serializers.JSONField):
         return getattr(profile, self.profile_attr, None)
 
 
+class UserProfileBooleanField(serializers.BooleanField):
+    """Reads/writes a `UserProfile` boolean field while serializer instance is a User."""
+
+    def __init__(self, *, profile_attr: str, **kwargs):
+        super().__init__(**kwargs)
+        self.profile_attr = profile_attr
+
+    def get_attribute(self, instance):
+        profile = getattr(instance, "userprofile", None)
+        if not profile:
+            return None
+        return getattr(profile, self.profile_attr, None)
+
+
 class CustomLoginSerializer(LoginSerializer):
     @staticmethod
     def validate_email_verification_status(user, email=None):
@@ -59,6 +73,20 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     ocean = UserProfileJSONField(profile_attr="ocean", required=False)
     cefr_level = UserProfileTextField(
         profile_attr="cefr_level",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    profile_completed = UserProfileBooleanField(profile_attr="profile_completed", required=False, read_only=True)
+    cefr_sample_topic = UserProfileTextField(
+        profile_attr="cefr_sample_topic",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    cefr_sample_choices = UserProfileJSONField(profile_attr="cefr_sample_choices", required=False)
+    preferred_name = UserProfileTextField(
+        profile_attr="preferred_name",
         required=False,
         allow_blank=True,
         allow_null=True,
@@ -85,6 +113,10 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "must_change_password",
             "ocean",
             "cefr_level",
+            "profile_completed",
+            "cefr_sample_topic",
+            "cefr_sample_choices",
+            "preferred_name",
         )
         read_only_fields = ("email",)
 
@@ -97,6 +129,9 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     def update(self, instance, validated_data):
         ocean = validated_data.pop("ocean", serializers.empty)
         cefr_level = validated_data.pop("cefr_level", serializers.empty)
+        cefr_sample_topic = validated_data.pop("cefr_sample_topic", serializers.empty)
+        cefr_sample_choices = validated_data.pop("cefr_sample_choices", serializers.empty)
+        preferred_name = validated_data.pop("preferred_name", serializers.empty)
         user = super().update(instance, validated_data)
         if hasattr(user, "userprofile"):
             update_fields = []
@@ -106,6 +141,25 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             if cefr_level is not serializers.empty:
                 user.userprofile.cefr_level = cefr_level or ""
                 update_fields.append("cefr_level")
+            if cefr_sample_topic is not serializers.empty:
+                user.userprofile.cefr_sample_topic = cefr_sample_topic or ""
+                update_fields.append("cefr_sample_topic")
+            if cefr_sample_choices is not serializers.empty:
+                user.userprofile.cefr_sample_choices = cefr_sample_choices or []
+                update_fields.append("cefr_sample_choices")
+            if preferred_name is not serializers.empty:
+                user.userprofile.preferred_name = (preferred_name or "").strip()
+                update_fields.append("preferred_name")
+            if ocean is not serializers.empty:
+                required_traits = {
+                    "openness",
+                    "conscientiousness",
+                    "extraversion",
+                    "agreeableness",
+                    "neuroticism",
+                }
+                user.userprofile.profile_completed = required_traits.issubset(set((ocean or {}).keys()))
+                update_fields.append("profile_completed")
             if update_fields:
                 user.userprofile.save(update_fields=update_fields)
         return user

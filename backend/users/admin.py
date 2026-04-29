@@ -177,7 +177,16 @@ class UserAdmin(auth_admin.UserAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "must_change_password", "is_demo_account"]
-    list_filter = ["is_demo_account", "must_change_password"]
+    list_display = ["id", "user", "must_change_password", "is_demo_account", "profile_completed", "cefr_level"]
+    list_filter = ["is_demo_account", "must_change_password", "profile_completed", "cefr_level"]
     search_fields = ["user__name", "user__email"]
-    fields = ["user", "must_change_password", "is_demo_account"]
+    fields = [
+        "user",
+        "must_change_password",
+        "is_demo_account",
+        "ocean",
+        "cefr_level",
+        "profile_completed",
+        "cefr_sample_topic",
+        "cefr_sample_choices",
+    ]

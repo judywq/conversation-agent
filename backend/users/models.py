@@ -40,6 +40,28 @@ class UserProfile(models.Model):
         default="",
         help_text="CEFR level (e.g., A1, A2, B1, B2, C1, C2).",
     )
+    profile_completed = models.BooleanField(
+        default=False,
+        help_text="Whether the user has completed the required personality profile.",
+    )
+    cefr_sample_topic = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Topic for which the latest CEFR listening choice was confirmed.",
+    )
+    cefr_sample_choices = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Latest generated CEFR listening samples for the selected topic.",
+    )
+
+    preferred_name = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="How the user would like to be addressed in the conversation.",
+    )
 
     def __str__(self) -> str:
         return f"{self.user.name} ({self.user.email})"

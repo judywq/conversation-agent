@@ -21,7 +21,7 @@ class ConversationSession(TimestampedBase):
     terminate = models.BooleanField(default=False)
     paused = models.BooleanField(default=False)
 
-    max_turns = models.IntegerField(default=12)
+    max_turns = models.IntegerField(default=50)
 
     def __str__(self) -> str:
         return f"ConversationSession({self.id}, user={self.user_id}, turns={self.turn_count})"
@@ -38,6 +38,7 @@ class AgentProfile(TimestampedBase):
         related_name="agent_profiles",
     )
     agent_id = models.CharField(max_length=100)
+    display_name = models.CharField(max_length=80, blank=True, default="")
     personality = models.JSONField(default=dict, blank=True)
     traits = models.JSONField(default=dict, blank=True)
     voice = models.CharField(max_length=100, blank=True, default="")
@@ -79,23 +80,24 @@ class TurnRecord(TimestampedBase):
     target = models.CharField(max_length=200, null=True, blank=True)
 
     turn_index = models.IntegerField()
+    subturn_index = models.IntegerField(default=0)
 
     # Web / audio metadata
     source = models.CharField(max_length=50, null=True, blank=True)  # e.g., "mic", "text"
     audio_url = models.URLField(max_length=1000, null=True, blank=True)
 
     class Meta:
-        ordering = ["turn_index"]
-        unique_together = [("session", "turn_index")]
+        ordering = ["turn_index", "subturn_index"]
+        unique_together = [("session", "turn_index", "subturn_index")]
 
     def __str__(self) -> str:
-        return f"TurnRecord({self.session_id}#{self.turn_index}, {self.speaker_type}:{self.speaker})"
+        return f"TurnRecord({self.session_id}#{self.turn_index}.{self.subturn_index}, {self.speaker_type}:{self.speaker})"
 
 
 class ConversationLLMPrompt(TimestampedBase):
     """
-    DB-stored system/user templates for conversation services (agent, facilitator).
-    Seeded from backend/conversation/data/conversation_llm_prompts.txt via init_llm_seed.
+    Legacy prompt storage model kept for backward compatibility.
+    Runtime prompt loading now comes from backend/conversation/data/prompts/.
     """
 
     key = models.SlugField(

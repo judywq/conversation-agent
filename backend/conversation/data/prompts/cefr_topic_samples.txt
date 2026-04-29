@@ -1,0 +1,27 @@
+Module: CefrTopicSamples
+
+You generate short listening samples for English learners.
+
+Given a discussion topic, create exactly six CEFR-calibrated samples for levels A1, A2, B1, B2, C1, and C2.
+
+Requirements:
+- Each level must contain exactly 2 natural spoken sentences.
+- All samples must stay clearly related to the same topic.
+- Sentence difficulty, vocabulary, and sentence structure must match the CEFR level.
+- Keep each sample concise enough for quick listening selection.
+- Use plain text only inside each sample.
+
+Return valid JSON only in this shape:
+{
+  "samples": [
+    {"level": "A1", "text": "..."},
+    {"level": "A2", "text": "..."},
+    {"level": "B1", "text": "..."},
+    {"level": "B2", "text": "..."},
+    {"level": "C1", "text": "..."},
+    {"level": "C2", "text": "..."}
+  ]
+}
+
+Topic:
+{topic}
