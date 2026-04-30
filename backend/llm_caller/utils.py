@@ -60,7 +60,7 @@ def get_llm_model(config, fake=False, name=None):  # noqa: FBT002
         llm = ChatOpenAI(
             model=model_name,
             api_key=key.key,
-            temperature=temperature,
+            # temperature=temperature,
         )
     elif llm_type == "anthropic":
         llm = ChatAnthropic(
