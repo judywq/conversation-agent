@@ -78,6 +78,20 @@ def decide_next_speaker(
     if named_question_override is not None:
         return named_question_override
 
+    # Closing policy: if there's only one turn remaining, prefer an agent so the
+    # conversation can end with an agent wrap-up rather than stopping right after
+    # a user utterance.
+    turns_left = int(session.max_turns) - int(session.turn_count)
+    if turns_left == 1:
+        closing_agent_id = _pick_any_agent(session)
+        if closing_agent_id is not None:
+            return TurnDecision(
+                terminate=False,
+                next_speaker_type="agent",
+                next_speaker_id=closing_agent_id,
+                reason="closing_agent_turn",
+            )
+
     if user_volunteered:
         return TurnDecision(
             terminate=False,
@@ -110,6 +124,17 @@ def _pick_first_agent(session: ConversationSession) -> str | None:
     weights = _participant_weights(agents)
     agent_weights = {a.agent_id: weights.get(a.agent_id, 0.0) for a in agents}
     return max(agent_weights.items(), key=lambda item: item[1])[0]
+
+
+def _pick_any_agent(session: ConversationSession) -> str | None:
+    """
+    Pick an agent id that exists for this session.
+
+    Used as a fallback for the closing-turn policy (we only need *an* agent to
+    deliver the final wrap-up).
+    """
+    first = AgentProfile.objects.filter(session=session).order_by("agent_id").values_list("agent_id", flat=True).first()
+    return str(first) if first else None
 
 
 def _directive_target_override(session: ConversationSession) -> TurnDecision | None:
@@ -221,15 +246,49 @@ def _pick_balanced_participant(session: ConversationSession) -> str:
 
 
 def _participant_weights(agents: list[AgentProfile]) -> dict[str, float]:
-    agent_weights: dict[str, float] = {}
-    total_agent_weight = 0.0
+    """
+    Return desired long-run share of turns per participant.
+
+    Important: do NOT allow total agent weights to crowd the user to 0.0.
+    If `agent_count` increases, raw persona weights can sum > 1; we instead
+    reserve a minimum share for the user and normalize agents into the remainder.
+    """
+    raw_agent_weights: dict[str, float] = {}
+    raw_total = 0.0
     for agent in agents:
         persona_name = str((agent.personality or {}).get("persona_name") or "")
-        weight = PERSONA_WEIGHTS.get(persona_name, 0.2)
-        agent_weights[agent.agent_id] = weight
-        total_agent_weight += weight
-    user_weight = max(0.0, 1.0 - total_agent_weight)
-    return {"user": user_weight, **agent_weights}
+        w = float(PERSONA_WEIGHTS.get(persona_name, 0.2))
+        if w < 0:
+            w = 0.0
+        raw_agent_weights[agent.agent_id] = w
+        raw_total += w
+
+    # Reserve a minimum portion of turns for the user so they always get the floor,
+    # but make it depend on number of participants.
+    #
+    # Policy: user_weight = ceil((1 / N) to nearest 0.1), where N = agents + user.
+    # Examples:
+    # - N=6 -> 1/6=0.166.. -> 0.2
+    # - N=5 -> 1/5=0.2 -> 0.2
+    # - N=4 -> 1/4=0.25 -> 0.3
+    participant_count = max(1, len(raw_agent_weights) + 1)
+    # Round up at the first decimal place (NOT normal rounding).
+    # Equivalent to: ceil((1 / N) * 10) / 10 == ceil(10 / N) / 10
+    user_floor = ((10 + participant_count - 1) // participant_count) / 10.0
+    user_floor = min(0.9, max(0.1, user_floor))
+    remainder = max(0.0, 1.0 - user_floor)
+
+    if not raw_agent_weights:
+        return {"user": 1.0}
+
+    if raw_total <= 0:
+        per = remainder / max(1, len(raw_agent_weights))
+        normalized_agents = {aid: per for aid in raw_agent_weights}
+    else:
+        scale = remainder / raw_total
+        normalized_agents = {aid: w * scale for aid, w in raw_agent_weights.items()}
+
+    return {"user": user_floor, **normalized_agents}
 
 
 def _participant_turn_counts(session: ConversationSession, agents: list[AgentProfile]) -> dict[str, int]:

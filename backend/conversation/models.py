@@ -21,7 +21,11 @@ class ConversationSession(TimestampedBase):
     terminate = models.BooleanField(default=False)
     paused = models.BooleanField(default=False)
 
-    max_turns = models.IntegerField(default=50)
+    max_turns = models.IntegerField(default=20)
+    agent_count = models.IntegerField(default=3)
+
+    # Running counts of speech acts for facilitator target-mix guidance (major + ASSERTIVES/DIRECTIVES subtypes).
+    speech_act_counters = models.JSONField(default=dict, blank=True)
 
     def __str__(self) -> str:
         return f"ConversationSession({self.id}, user={self.user_id}, turns={self.turn_count})"

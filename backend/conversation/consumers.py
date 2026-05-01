@@ -3,6 +3,7 @@ import random
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.conf import settings
 from django.contrib.auth import get_user_model
 
 from backend.conversation.models import AgentProfile
@@ -23,11 +24,22 @@ from backend.conversation.services.names import pick_unique_names
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
+def _slugify_agent_id(text: str) -> str:
+    """
+    Create a stable-ish, URL/ID-safe agent id derived from persona_name.
+    """
+    import re
+
+    s = str(text or "").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "agent"
+
 
 def select_agent_personas_for_session(ocean: dict[str, str], *, count: int = 3):
     selected = select_complementary_agent_personas(ocean, count=count)
     if len(selected) < count:
-        msg = "backend/conversation/data/prompts/ must provide at least three agent personas"
+        msg = f"backend/conversation/data/prompts/ must provide at least {count} agent personas"
         raise ValueError(msg)
     random.shuffle(selected)
     return selected
@@ -90,6 +102,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
 
         if msg_type == "start_session":
             topic = str(content.get("topic") or "")
+            requested_agent_count = content.get("agent_count")
+            try:
+                agent_count = int(requested_agent_count) if requested_agent_count is not None else None
+            except Exception:
+                agent_count = None
             if not topic.strip():
                 await self.send_json({"type": "error", "message": "Enter a discussion topic before starting."})
                 return
@@ -100,7 +117,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if str(profile_gate["cefr_sample_topic"] or "").strip() != topic.strip():
                 await self.send_json({"type": "error", "message": "Choose a CEFR listening level for this topic before starting."})
                 return
-            session = await self._create_session(topic=topic)
+            session = await self._create_session(topic=topic, agent_count=agent_count)
             self.session_id = session.id
             await self.send_json(
                 {
@@ -245,21 +262,31 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 continue
 
     @database_sync_to_async
-    def _create_session(self, *, topic: str) -> ConversationSession:
+    def _create_session(self, *, topic: str, agent_count: int | None = None) -> ConversationSession:
         user = self.scope["user"]
-        session = ConversationSession.objects.create(user=user, topic=topic)
+        desired_count = agent_count
+        if desired_count is None:
+            desired_count = int(getattr(settings, "CONVERSATION_AGENT_COUNT", 3) or 3)
+        desired_count = max(1, min(5, int(desired_count)))
+        session = ConversationSession.objects.create(user=user, topic=topic, agent_count=desired_count)
         ocean = user.userprofile.ocean if hasattr(user, "userprofile") else {}
         user_cefr_level = user.userprofile.cefr_level if hasattr(user, "userprofile") else ""
         # Agents should match the user's selected level (no longer forced higher).
         agent_cefr_level = str(user_cefr_level or "").upper().strip() or "B2"
-        selected_prompts = select_agent_personas_for_session(ocean, count=3)
+        selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
         display_names = pick_unique_names(len(selected_prompts))
-        leadership_by_slot = [0.8, 0.4, 0.6]
-        AgentProfile.objects.bulk_create(
-            [
+        used_ids: set[str] = set()
+        agent_rows: list[AgentProfile] = []
+        for idx, selected in enumerate(selected_prompts):
+            base = _slugify_agent_id(selected.prompt.persona_name)
+            candidate = base
+            if candidate in used_ids:
+                candidate = f"{base}_{idx + 1}"
+            used_ids.add(candidate)
+            agent_rows.append(
                 AgentProfile(
                     session=session,
-                    agent_id=f"agent_{idx + 1}",
+                    agent_id=candidate,
                     display_name=display_names[idx],
                     personality={
                         "persona_name": selected.prompt.persona_name,
@@ -268,14 +295,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     },
                     traits={
                         "style": selected.prompt.persona_name.lower().replace(" ", "_"),
-                        "leadership": leadership_by_slot[idx],
                         "proficiency_level": agent_cefr_level,
                         "complementary_score": selected.complementary_score,
                     },
-                )
-                for idx, selected in enumerate(selected_prompts)
-            ],
-        )
+                ),
+            )
+        AgentProfile.objects.bulk_create(agent_rows)
         return session
 
     @database_sync_to_async

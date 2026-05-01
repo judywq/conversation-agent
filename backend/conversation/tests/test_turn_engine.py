@@ -107,6 +107,27 @@ def test_weighted_balancing_selects_agent_with_biggest_deficit(user):
 
 
 @pytest.mark.django_db
+def test_last_turn_prefers_agent_wrap_up(user):
+    """
+    Regression: previously, at turn_count == max_turns - 1 the policy could still
+    choose the user, leading to an immediate termination after the user spoke and
+    no final agent wrap-up.
+    """
+    session = ConversationSession.objects.create(user=user, topic="t", turn_count=19, max_turns=20)
+    AgentProfile.objects.bulk_create(
+        [
+            AgentProfile(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"}),
+            AgentProfile(session=session, agent_id="agent_2", personality={"persona_name": "Fact Checker"}),
+        ],
+    )
+    decision = decide_next_speaker(session, user_volunteered=True, last_user_turn_index=18)
+    assert decision.terminate is False
+    assert decision.next_speaker_type == "agent"
+    assert decision.next_speaker_id in {"agent_1", "agent_2"}
+    assert decision.reason == "closing_agent_turn"
+
+
+@pytest.mark.django_db
 def test_directive_target_agent_forces_next_speaker(user):
     session = ConversationSession.objects.create(user=user, topic="t")
     AgentProfile.objects.bulk_create(
