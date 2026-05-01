@@ -20,6 +20,7 @@ const cefrSamples = ref<CefrSample[]>([])
 const cefrSampleList = computed<CefrSample[]>(() => cefrSamples.value)
 const selectedCefrLevel = ref<string | null>(null)
 const isGeneratingCefr = ref(false)
+const agentCount = ref<number>(3)
 
 type Participant = {
   id: string
@@ -47,6 +48,7 @@ const needUserTurn = ref(false)
 const needFirstTurnChoice = ref(false)
 const inputText = ref('')
 const isPaused = ref(false)
+const isEnded = ref(false)
 
 const micState = ref<'idle' | 'requesting' | 'recording' | 'preview' | 'transcribing' | 'error'>('idle')
 const mediaRecorder = ref<MediaRecorder | null>(null)
@@ -128,6 +130,20 @@ function handleEvent(e: ConversationWsEvent) {
   }
   if (e.type === 'session_started') {
     sessionId.value = e.session_id
+    // Starting a new session should clear old logs.
+    isEnded.value = false
+    isPaused.value = false
+    needUserTurn.value = false
+    needFirstTurnChoice.value = false
+    agentStatus.value = 'idle'
+    turns.value = []
+    participants.value = []
+    audioQueue.value = []
+    if (currentAudio.value) {
+      currentAudio.value.pause()
+      currentAudio.value.currentTime = 0
+      currentAudio.value = null
+    }
   }
   if (e.type === 'participants') {
     participants.value = e.participants ?? []
@@ -144,13 +160,13 @@ function handleEvent(e: ConversationWsEvent) {
     isPaused.value = false
   }
   if (e.type === 'session_ended' || e.type === 'terminated') {
+    // Preserve logs on termination/end; only reset the live session controls.
+    isEnded.value = true
     isPaused.value = false
     needUserTurn.value = false
     needFirstTurnChoice.value = false
     agentStatus.value = 'idle'
     sessionId.value = null
-    turns.value = []
-    participants.value = []
     audioQueue.value = []
     if (currentAudio.value) {
       currentAudio.value.pause()
@@ -159,6 +175,7 @@ function handleEvent(e: ConversationWsEvent) {
     }
   }
   if (e.type === 'need_user_turn') {
+    isEnded.value = false
     needUserTurn.value = true
     needFirstTurnChoice.value = false
   }
@@ -166,6 +183,7 @@ function handleEvent(e: ConversationWsEvent) {
     agentStatus.value = e.status
   }
   if (e.type === 'turn') {
+    isEnded.value = false
     turns.value.push(e.turn)
     if (e.turn.speaker_type === 'user') needUserTurn.value = false
     if (e.turn.audio_url) {
@@ -186,7 +204,7 @@ function startSession() {
     .then((user) => {
       authStore.user = user
       authStore.saveState()
-      ws.send({ type: 'start_session', topic: topic.value.trim() })
+      ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
     })
     .catch((err: any) => {
       toast({
@@ -348,7 +366,8 @@ onUnmounted(() => {
 
         <div class="text-sm text-muted-foreground">
           Status:
-          <span v-if="isPaused">Paused</span>
+          <span v-if="isEnded">Ended</span>
+          <span v-else-if="isPaused">Paused</span>
           <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
           <span v-else-if="!selectedCefrLevel">Generate and choose a CEFR sample</span>
           <span v-else-if="agentStatus === 'thinking'">Agent thinking…</span>
@@ -356,6 +375,27 @@ onUnmounted(() => {
           <span v-else-if="needUserTurn">Your turn</span>
           <span v-else>Idle</span>
         </div>
+
+        <Card class="border">
+          <CardHeader>
+            <CardTitle class="text-base">Agents</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-2">
+            <div class="text-sm text-muted-foreground">
+              Choose how many agent participants to include (1–5).
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-sm font-medium w-28">Agent count</div>
+              <select
+                v-model.number="agentCount"
+                class="h-9 rounded-md border bg-background px-3 text-sm"
+                :disabled="!!sessionId"
+              >
+                <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card class="border">
           <CardHeader>

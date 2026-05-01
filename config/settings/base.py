@@ -45,6 +45,11 @@ LOCALE_PATHS = [str(BASE_DIR / "locale")]
 
 DOMAIN_NAME = env.str("DJANGO_DOMAIN_NAME", default="localhost:8000")
 
+# Conversation
+# ------------------------------------------------------------------------------
+# For quick testing, you can override via env var CONVERSATION_AGENT_COUNT.
+CONVERSATION_AGENT_COUNT = env.int("CONVERSATION_AGENT_COUNT", default=3)
+
 # DATABASES
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
