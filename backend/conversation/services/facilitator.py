@@ -145,6 +145,165 @@ ALLOWED_SA: dict[str, set[str]] = {
     for sa_type, items in ALLOWED_TAXONOMY.items()
 }
 
+# Corpus empirical proportions (major SA types).
+SA_TARGET_WEIGHTS_MAJOR: dict[str, float] = {
+    "ASSERTIVES": 0.74,
+    "COMMISSIVES": 0.01,
+    "DECLARATIONS": 0.01,
+    "DIRECTIVES": 0.15,
+    "EXPRESSIVES": 0.09,
+}
+
+# Conditional subtype proportions within ASSERTIVES (sum = 1.0).
+SA_TARGET_WEIGHTS_ASSERTIVES_SUBTYPES: dict[str, float] = {
+    "confirm": 0.03,
+    "hypothesize": 0.04,
+    "inform": 0.72,
+    "opinion": 0.21,
+}
+
+# Conditional subtype proportions within DIRECTIVES (sum = 1.0).
+SA_TARGET_WEIGHTS_DIRECTIVES_SUBTYPES: dict[str, float] = {
+    "invite": 0.08,
+    "request_action": 0.04,
+    "request_confirm": 0.12,
+    "request_info": 0.61,
+    "request_permission": 0.01,
+    "suggest": 0.14,
+}
+
+_GAP_EPSILON = 0.02
+
+
+def _normalized_speech_act_counters(raw: object) -> dict[str, dict[str, object]]:
+    if not isinstance(raw, dict):
+        return {"major": {}, "subtype": {"ASSERTIVES": {}, "DIRECTIVES": {}}}
+    major = raw.get("major")
+    if not isinstance(major, dict):
+        major = {}
+    subtype_root = raw.get("subtype")
+    if not isinstance(subtype_root, dict):
+        subtype_root = {}
+    assertives_sub = subtype_root.get("ASSERTIVES")
+    directives_sub = subtype_root.get("DIRECTIVES")
+    if not isinstance(assertives_sub, dict):
+        assertives_sub = {}
+    if not isinstance(directives_sub, dict):
+        directives_sub = {}
+    return {
+        "major": dict(major),
+        "subtype": {"ASSERTIVES": dict(assertives_sub), "DIRECTIVES": dict(directives_sub)},
+    }
+
+
+def build_speech_act_distribution_for_prompt(session: ConversationSession) -> dict[str, str]:
+    """
+    Strings for facilitator template: corpus targets, raw counters, empirical rates, steering hint.
+    """
+    norm = _normalized_speech_act_counters(session.speech_act_counters)
+    major: dict[str, int] = {k: int(v) for k, v in norm["major"].items() if isinstance(v, (int, float))}
+    total_major = sum(major.values())
+
+    subtype_root = norm["subtype"]
+    assert isinstance(subtype_root, dict)
+    assertives_sub = {
+        k: int(v)
+        for k, v in subtype_root.get("ASSERTIVES", {}).items()
+        if isinstance(v, (int, float))
+    }
+    directives_sub = {
+        k: int(v)
+        for k, v in subtype_root.get("DIRECTIVES", {}).items()
+        if isinstance(v, (int, float))
+    }
+
+    major_rates: dict[str, float] = {}
+    if total_major > 0:
+        for t in SA_TARGET_WEIGHTS_MAJOR:
+            major_rates[t] = major.get(t, 0) / total_major
+
+    assertives_total = sum(assertives_sub.values())
+    directives_total = sum(directives_sub.values())
+
+    assertives_rates: dict[str, float] = {}
+    if assertives_total > 0:
+        for st in SA_TARGET_WEIGHTS_ASSERTIVES_SUBTYPES:
+            assertives_rates[st] = assertives_sub.get(st, 0) / assertives_total
+
+    directives_rates: dict[str, float] = {}
+    if directives_total > 0:
+        for st in SA_TARGET_WEIGHTS_DIRECTIVES_SUBTYPES:
+            directives_rates[st] = directives_sub.get(st, 0) / directives_total
+
+    hint_parts: list[str] = []
+    if total_major <= 0:
+        hint_parts.append(
+            "No classified speech acts counted yet in this session; treat corpus targets as priors when choosing type/subtype.",
+        )
+    else:
+        under_maj = sorted(
+            t
+            for t, wt in SA_TARGET_WEIGHTS_MAJOR.items()
+            if wt - major_rates.get(t, 0.0) > _GAP_EPSILON
+        )
+        if under_maj:
+            hint_parts.append(
+                "Major types currently below corpus share (consider steering toward): "
+                + ", ".join(under_maj)
+                + ".",
+            )
+
+    if assertives_total > 0:
+        under_as = sorted(
+            st
+            for st, wt in SA_TARGET_WEIGHTS_ASSERTIVES_SUBTYPES.items()
+            if wt - assertives_rates.get(st, 0.0) > _GAP_EPSILON
+        )
+        if under_as:
+            hint_parts.append(
+                "Within ASSERTIVES, subtypes below conditional corpus share: " + ", ".join(under_as) + ".",
+            )
+
+    if directives_total > 0:
+        under_ds = sorted(
+            st
+            for st, wt in SA_TARGET_WEIGHTS_DIRECTIVES_SUBTYPES.items()
+            if wt - directives_rates.get(st, 0.0) > _GAP_EPSILON
+        )
+        if under_ds:
+            hint_parts.append(
+                "Within DIRECTIVES, subtypes below conditional corpus share: " + ", ".join(under_ds) + ".",
+            )
+
+    summary_obj = {
+        "major_counts": major,
+        "total_classified_turns": total_major,
+        "major_empirical_rates": major_rates,
+        "assertives_subtype_counts": assertives_sub,
+        "assertives_total": assertives_total,
+        "assertives_empirical_rates_within_type": assertives_rates,
+        "directives_subtype_counts": directives_sub,
+        "directives_total": directives_total,
+        "directives_empirical_rates_within_type": directives_rates,
+        "steering_hint": " ".join(hint_parts) if hint_parts else "Distribution is close to corpus targets on recorded dimensions; choose naturally by context.",
+    }
+
+    return {
+        "sa_target_weights_major": json.dumps(SA_TARGET_WEIGHTS_MAJOR, ensure_ascii=False, indent=2),
+        "sa_target_weights_assertives_subtypes": json.dumps(
+            SA_TARGET_WEIGHTS_ASSERTIVES_SUBTYPES,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        "sa_target_weights_directives_subtypes": json.dumps(
+            SA_TARGET_WEIGHTS_DIRECTIVES_SUBTYPES,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        "sa_session_counts": json.dumps(norm, ensure_ascii=False, indent=2),
+        "sa_session_summary": json.dumps(summary_obj, ensure_ascii=False, indent=2),
+    }
+
 
 def coerce_speech_act_plan(payload: dict) -> dict:
     speech_act = payload.get("speech_act")
@@ -192,7 +351,6 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     history = json.dumps(context, ensure_ascii=False, indent=2)
     participants = ["user", *list(session.agent_profiles.order_by("agent_id").values_list("agent_id", flat=True))]
     participants_map = _participants_name_map(session)
-    directives_rate = _recent_directives_rate(session, lookback=20)
     speech_act_options = ALLOWED_TAXONOMY
     template = load_facilitator_prompt()
     next_turn_count = int(session.turn_count) + 1
@@ -206,6 +364,7 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
         "proficiency_level": str((agent.traits or {}).get("proficiency_level") or ""),
         "style": str((agent.traits or {}).get("style") or ""),
     }
+    sa_ctx = build_speech_act_distribution_for_prompt(session)
     prompt_text = render_prompt_template(
         template,
         next_speaker=next_speaker_name,
@@ -217,11 +376,11 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
         is_ending="true" if is_ending else "false",
         participants=json.dumps(participants, ensure_ascii=False),
         participants_map=json.dumps(participants_map, ensure_ascii=False),
-        directives_rate=f"{directives_rate:.3f}",
         agent_profile=json.dumps(chosen_agent_profile, ensure_ascii=False),
         topic=session.topic,
         history=history,
         speech_act_options=json.dumps(speech_act_options, ensure_ascii=False),
+        **sa_ctx,
     )
 
     system = SystemMessage(content=prompt_text)
@@ -248,19 +407,4 @@ def _participants_name_map(session: ConversationSession) -> dict[str, str]:
         mapping[a.agent_id] = (a.display_name or a.agent_id).strip()
     return mapping
 
-
-def _recent_directives_rate(session: ConversationSession, *, lookback: int = 20) -> float:
-    turns = (
-        TurnRecord.objects.filter(session=session, speaker_type=TurnRecord.SPEAKER_TYPE_AGENT)
-        .order_by("-turn_index", "-subturn_index")[:lookback]
-    )
-    total = 0
-    directives = 0
-    for t in turns:
-        total += 1
-        if str(t.speech_act or "").upper() == "DIRECTIVES":
-            directives += 1
-    if total <= 0:
-        return 0.0
-    return directives / total
 

@@ -8,6 +8,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.prompts import load_speech_act_classifier_prompt
 from backend.conversation.prompts import render_prompt_template
+from backend.conversation.services.facilitator import ALLOWED_SA
 from backend.conversation.services.facilitator import ALLOWED_TAXONOMY
 from backend.conversation.services.facilitator import coerce_speech_act_plan
 from backend.conversation.services.llm import get_default_chat_llm
@@ -136,6 +137,50 @@ def _apply_name_target_fallback(
     return plan
 
 
+_MAJOR_SA_TYPES = frozenset(ALLOWED_SA.keys())
+
+
+def _normalize_speech_act_counters(raw: object) -> dict[str, object]:
+    if not isinstance(raw, dict):
+        return {"major": {}, "subtype": {"ASSERTIVES": {}, "DIRECTIVES": {}}}
+    major = raw.get("major")
+    if not isinstance(major, dict):
+        major = {}
+    subtype_root = raw.get("subtype")
+    if not isinstance(subtype_root, dict):
+        subtype_root = {}
+    assertives_sub = subtype_root.get("ASSERTIVES")
+    directives_sub = subtype_root.get("DIRECTIVES")
+    if not isinstance(assertives_sub, dict):
+        assertives_sub = {}
+    if not isinstance(directives_sub, dict):
+        directives_sub = {}
+    return {
+        "major": dict(major),
+        "subtype": {"ASSERTIVES": dict(assertives_sub), "DIRECTIVES": dict(directives_sub)},
+    }
+
+
+def _increment_speech_act_counters(session: ConversationSession, metadata: TurnMetadata) -> None:
+    sa_type = str(metadata.type or "").strip().upper()
+    if not sa_type or sa_type not in _MAJOR_SA_TYPES:
+        return
+    counters = _normalize_speech_act_counters(session.speech_act_counters)
+    major = counters["major"]
+    assert isinstance(major, dict)
+    major[sa_type] = int(major.get(sa_type, 0)) + 1
+
+    if sa_type in ("ASSERTIVES", "DIRECTIVES"):
+        st = metadata.subtype
+        st_norm = str(st).strip().lower() if st is not None else ""
+        if st_norm and st_norm in ALLOWED_SA.get(sa_type, set()):
+            sub_map = counters["subtype"][sa_type]
+            assert isinstance(sub_map, dict)
+            sub_map[st_norm] = int(sub_map.get(st_norm, 0)) + 1
+
+    session.speech_act_counters = counters
+
+
 def metadata_from_plan(plan: dict) -> TurnMetadata:
     normalized = coerce_speech_act_plan(plan)
     return TurnMetadata(
@@ -244,6 +289,8 @@ def append_turn(
         audio_url=audio_url,
     )
 
+    _increment_speech_act_counters(session, metadata)
+
     # Update state (but makeshift doesn't count as a separate turn)
     if speaker_type != TurnRecord.SPEAKER_TYPE_MAKESHIFT:
         session.turn_count += 1
@@ -252,9 +299,12 @@ def append_turn(
             update_fields=[
                 "turn_count",
                 "previous_speaker",
+                "speech_act_counters",
                 "updated_at",
             ],
         )
+    else:
+        session.save(update_fields=["speech_act_counters", "updated_at"])
 
     return ProcessedTurn(turn=turn, session=session)
 

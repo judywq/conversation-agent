@@ -45,6 +45,11 @@ def test_append_user_turn_classified_uses_llm_speech_act_metadata(user):
     assert turn.source == "text"
     assert turn.audio_url is None
 
+    processed.session.refresh_from_db()
+    assert processed.session.speech_act_counters["major"]["EXPRESSIVES"] == 1
+    assert processed.session.speech_act_counters["subtype"]["ASSERTIVES"] == {}
+    assert processed.session.speech_act_counters["subtype"]["DIRECTIVES"] == {}
+
 
 @pytest.mark.django_db
 def test_classify_user_speech_act_falls_back_on_invalid_json(user):

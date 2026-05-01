@@ -14,7 +14,15 @@ OCEAN_ARCHETYPE_MAP = {
 }
 
 LEVEL_SCORE = {"low": 2, "medium": 1, "high": 0}
-NEUROTICISM_SCORE = {"low": 2, "medium": 1, "high": -1}
+NEUROTICISM_SCORE = {"low": 2, "medium": 1, "high": 0}
+
+PERSONA_PRIORITY = {
+    "Idea Explorer": 0,
+    "Supportive Builder": 1,
+    "Discussion Driver": 2,
+    "Tense Skeptic": 3,
+    "Fact Checker": 4,
+}
 
 
 @dataclass(frozen=True)
@@ -48,7 +56,7 @@ def select_complementary_agent_personas(ocean: dict[str, str], *, count: int = 3
         selections,
         key=lambda item: (
             -item.complementary_score,
-            item.prompt.persona_name == "Tense Skeptic",
+            PERSONA_PRIORITY.get(item.prompt.persona_name, 999),
             item.prompt.persona_name,
         ),
     )
