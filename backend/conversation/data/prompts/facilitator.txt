@@ -19,13 +19,10 @@ Participants:
 Participants (id -> display name):
 {participants_map}
 
-Recent DIRECTIVES rate (0.0 to 1.0):
-{directives_rate}
-
-Upcoming turn count (1-based, excludes makeshift appendices):
+Upcoming turn count:
 {turn_count}
 
-Maximum turns (excludes makeshift appendices):
+Maximum turns:
 {max_turns}
 
 Beginning flag:
@@ -49,6 +46,21 @@ Discussion history:
 Speech act options:
 {speech_act_options}
 
+Corpus target weights (major SA types, empirical proportions):
+{sa_target_weights_major}
+
+Corpus target weights (conditional within ASSERTIVES):
+{sa_target_weights_assertives_subtypes}
+
+Corpus target weights (conditional within DIRECTIVES):
+{sa_target_weights_directives_subtypes}
+
+This session speech-act counters (running counts):
+{sa_session_counts}
+
+This session distribution summary (empirical rates vs corpus, steering hint):
+{sa_session_summary}
+
 # Task
 
 Generate ONE instruction object for the next speaker.
@@ -58,7 +70,12 @@ Generate ONE instruction object for the next speaker.
 - Prefer targeting the most relevant participant from the last turn when appropriate.
 - If the history is empty (no prior turns), ask a simple opening question aligned with the topic.
 - Keep "content_requirement" to at most TWO sentences. Be concise and actionable.
-- If {directives_rate} >= 0.300, avoid choosing DIRECTIVES unless absolutely necessary.
+
+# Speech-act distribution (soft guidance)
+- Corpus targets describe typical proportions of SA types (and ASSERTIVES/DIRECTIVES subtypes). Prefer choices that move this session's running distribution toward those proportions, using `sa_session_summary` (especially `steering_hint`) as a guide.
+- When you choose ASSERTIVES, weigh subtype toward `sa_target_weights_assertives_subtypes` relative to how often each subtype has appeared so far in this session.
+- When you choose DIRECTIVES, weigh subtype toward `sa_target_weights_directives_subtypes` relative to how often each subtype has appeared so far in this session.
+- These weights do NOT override turn-boundary rules (`is_beginning`, `is_ending`).
 
 
 # Turn-boundary rules (must follow)
@@ -87,7 +104,7 @@ If {next_speaker_type} is "agent":
 # Constraints
 
 - Select "type" and "subtype" ONLY from the above taxonomy. Do NOT invent new ones.
-- Use the speaker's profile from {agents} to guide behavior.
+- Use the speaker's profile from {agent_profile} to guide behavior.
 - Choose a clear target:
   - a specific participant (for responses, questions, challenges)
   - "everyone" (for general contributions)

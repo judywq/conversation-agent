@@ -33,8 +33,7 @@ Do not include explanations outside JSON.
     "type": "<type>",
     "subtype": "<subtype>"
   },
-  "content_requirement": "<brief content note or empty string>",
-  "retrieval_requirement": "<web_search | memory | exemplar | none>"
+  "content_requirement": "<brief content note or empty string>"
 }
 
 # Field Notes
@@ -42,10 +41,8 @@ Do not include explanations outside JSON.
 - `speaker` must always be `"user"`.
 - `target` should identify the intended addressee when possible.
   - If the utterance addresses a specific participant by NAME (e.g., "Lucas, ..."), map that name to the participant id using {participants}.
-  - Use `"user"` to target the user, or `"agent_1"`, `"agent_2"`, etc. for agents.
-  - Otherwise use `"everyone"` or `null`.
+  - Otherwise use `"everyone"`.
 - `content_requirement` should briefly summarize what the utterance is doing or emphasizing.
-- `retrieval_requirement` should usually be `"none"` for normal user utterances unless context clearly indicates otherwise.
 
 # Constraints
 
