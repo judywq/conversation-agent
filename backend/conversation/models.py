@@ -98,6 +98,41 @@ class TurnRecord(TimestampedBase):
         return f"TurnRecord({self.session_id}#{self.turn_index}.{self.subturn_index}, {self.speaker_type}:{self.speaker})"
 
 
+class KnowledgeSnippet(TimestampedBase):
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    source_uri = models.CharField(max_length=1000, blank=True, default="")
+    source_label = models.CharField(max_length=255, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["title", "id"]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class TurnRetrieval(TimestampedBase):
+    turn = models.ForeignKey(
+        TurnRecord,
+        on_delete=models.CASCADE,
+        related_name="retrieval_traces",
+    )
+    query = models.TextField(blank=True, default="")
+    requested_sources = models.JSONField(default=list, blank=True)
+    source_statuses = models.JSONField(default=dict, blank=True)
+    items = models.JSONField(default=list, blank=True)
+    rendered_context = models.TextField(blank=True, default="")
+    error_message = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["turn_id", "id"]
+
+    def __str__(self) -> str:
+        return f"TurnRetrieval(turn={self.turn_id}, query={self.query})"
+
+
 class ConversationLLMPrompt(TimestampedBase):
     """
     Legacy prompt storage model kept for backward compatibility.
@@ -122,4 +157,3 @@ class ConversationLLMPrompt(TimestampedBase):
 
     def __str__(self) -> str:
         return f"ConversationLLMPrompt({self.key})"
-
