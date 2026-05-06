@@ -10,6 +10,7 @@ from backend.conversation.models import TurnRetrieval
 from backend.conversation.services.retrieval import map_retrieval_sources
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.turn_processor import append_turn
+from backend.users.tests.factories import UserFactory
 
 
 @pytest.mark.django_db
@@ -155,6 +156,65 @@ def test_session_source_finds_earlier_turn(user) -> None:
     assert context.items[0].source == "session"
     assert context.items[0].metadata["turn_index"] == 0
     assert "climate policy" in context.items[0].excerpt
+
+
+@pytest.mark.django_db
+def test_session_source_skips_sessions_owned_by_another_user(user) -> None:
+    other_user = UserFactory()
+    session = ConversationSession.objects.create(user=other_user, topic="planning")
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="I want to practice private climate policy debates.",
+    )
+
+    context = retrieve("climate policy", session=session, user=user, sources={"session"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["session"] == "skipped"
+    assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_mixed_sources_are_ranked_globally_before_top_k(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="planning")
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="climate policy climate policy climate policy",
+    )
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="recent one",
+    )
+    append_turn(
+        session,
+        speaker="agent_2",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="recent two",
+    )
+    append_turn(
+        session,
+        speaker="agent_3",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="recent three",
+    )
+    KnowledgeSnippet.objects.create(
+        title="Local note",
+        content="climate",
+        source_uri="course://climate",
+        source_label="Course Handbook",
+    )
+
+    context = retrieve("climate policy", session=session, user=user, sources={"knowledge", "session"}, top_k=1)
+
+    assert len(context.items) == 1
+    assert context.items[0].source == "session"
+    assert context.items[0].metadata["turn_index"] == 0
 
 
 @pytest.mark.django_db

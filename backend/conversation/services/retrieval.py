@@ -207,7 +207,10 @@ def retrieve(
         if source == "memory":
             found, status = _retrieve_memory()
         elif source == "session":
-            found, status = _retrieve_session(session, query, top_k=top_k)
+            if session.user_id != getattr(user, "id", None):
+                found, status = [], SOURCE_SKIPPED
+            else:
+                found, status = _retrieve_session(session, query, top_k=top_k)
         elif source == "knowledge":
             found, status = _retrieve_knowledge(query, top_k=top_k)
         else:
@@ -215,12 +218,13 @@ def retrieve(
         source_statuses[source] = status
         items.extend(found)
 
-    rendered_context = _render_context(items[:top_k], source_statuses)
+    ranked_items = sorted(items, key=lambda item: item.score, reverse=True)[:top_k]
+    rendered_context = _render_context(ranked_items, source_statuses)
     return RetrievedContext(
         query=query,
         requested_sources=requested_sources,
         source_statuses=source_statuses,
-        items=items[:top_k],
+        items=ranked_items,
         rendered_context=rendered_context,
     )
 
