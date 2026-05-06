@@ -7,6 +7,7 @@ from typing import Any
 from django.contrib.auth import get_user_model
 
 from backend.conversation.models import ConversationSession
+from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
 
@@ -92,6 +93,91 @@ def _render_context(items: list[RetrievedItem], source_statuses: dict[str, str])
     return "\n".join(lines)
 
 
+def _score_text(query_terms: list[str], *parts: str) -> float:
+    haystack = " ".join(parts).casefold()
+    return float(sum(1 for term in query_terms if term in haystack))
+
+
+def _retrieve_memory() -> tuple[list[RetrievedItem], str]:
+    return [], SOURCE_NOT_CONFIGURED
+
+
+def _retrieve_session(
+    session: ConversationSession,
+    query: str,
+    *,
+    top_k: int,
+) -> tuple[list[RetrievedItem], str]:
+    terms = _tokenize(query)
+    if not terms:
+        return [], SOURCE_NO_RESULTS
+
+    recent_indexes = list(
+        session.turns.order_by("-turn_index")
+        .values_list("turn_index", flat=True)
+        .distinct()[:3],
+    )
+    candidates = []
+    for turn in session.turns.exclude(turn_index__in=recent_indexes).order_by("-turn_index", "-subturn_index"):
+        score = _score_text(terms, turn.utterance)
+        if score <= 0:
+            continue
+        candidates.append((score + (turn.turn_index / 1000.0), turn))
+
+    if not candidates:
+        return [], SOURCE_NO_RESULTS
+
+    items = [
+        RetrievedItem(
+            source="session",
+            title=f"Conversation turn {turn.turn_index}",
+            excerpt=_excerpt(turn.utterance),
+            score=score,
+            metadata={
+                "turn_id": turn.id,
+                "turn_index": turn.turn_index,
+                "subturn_index": turn.subturn_index,
+                "speaker": turn.speaker,
+                "speaker_type": turn.speaker_type,
+            },
+        )
+        for score, turn in sorted(candidates, key=lambda x: x[0], reverse=True)[:top_k]
+    ]
+    return items, SOURCE_SUCCESS
+
+
+def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem], str]:
+    terms = _tokenize(query)
+    if not terms:
+        return [], SOURCE_NO_RESULTS
+
+    candidates = []
+    for snippet in KnowledgeSnippet.objects.filter(is_active=True):
+        score = _score_text(terms, snippet.content, snippet.source_label)
+        title_score = _score_text(terms, snippet.title) * 2.0
+        total = score + title_score
+        if total <= 0:
+            continue
+        candidates.append((total, snippet))
+
+    if not candidates:
+        return [], SOURCE_NO_RESULTS
+
+    items = [
+        RetrievedItem(
+            source="knowledge",
+            title=snippet.title,
+            excerpt=_excerpt(snippet.content),
+            source_uri=snippet.source_uri,
+            source_label=snippet.source_label,
+            score=score,
+            metadata={"knowledge_snippet_id": snippet.id, "metadata": snippet.metadata},
+        )
+        for score, snippet in sorted(candidates, key=lambda x: x[0], reverse=True)[:top_k]
+    ]
+    return items, SOURCE_SUCCESS
+
+
 def retrieve(
     query: str,
     *,
@@ -117,6 +203,17 @@ def retrieve(
     for source in requested_sources:
         if source not in SUPPORTED_SOURCES:
             source_statuses[source] = SOURCE_SKIPPED
+            continue
+        if source == "memory":
+            found, status = _retrieve_memory()
+        elif source == "session":
+            found, status = _retrieve_session(session, query, top_k=top_k)
+        elif source == "knowledge":
+            found, status = _retrieve_knowledge(query, top_k=top_k)
+        else:
+            found, status = [], SOURCE_SKIPPED
+        source_statuses[source] = status
+        items.extend(found)
 
     rendered_context = _render_context(items[:top_k], source_statuses)
     return RetrievedContext(

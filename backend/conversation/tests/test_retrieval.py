@@ -107,3 +107,80 @@ def test_retrieve_unsupported_source_is_skipped(user) -> None:
     assert context.items == []
     assert context.source_statuses == {"unknown": "skipped"}
     assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_memory_source_returns_not_configured(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="memory")
+
+    context = retrieve("my goals", session=session, user=user, sources={"memory"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["memory"] == "not-configured"
+    assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_session_source_finds_earlier_turn(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="planning")
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="I want to practice climate policy debates.",
+    )
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Let's start with introductions.",
+    )
+    append_turn(
+        session,
+        speaker="agent_2",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="We can discuss tradeoffs.",
+    )
+    append_turn(
+        session,
+        speaker="agent_3",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Recent context should be excluded if configured.",
+    )
+
+    context = retrieve("climate policy", session=session, user=user, sources={"session"}, top_k=5)
+
+    assert context.source_statuses["session"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].source == "session"
+    assert context.items[0].metadata["turn_index"] == 0
+    assert "climate policy" in context.items[0].excerpt
+
+
+@pytest.mark.django_db
+def test_knowledge_source_returns_citation(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="Seminar participation policy",
+        content="Students should cite the course handbook when discussing attendance.",
+        source_uri="course://handbook#participation",
+        source_label="Course Handbook",
+    )
+
+    context = retrieve("attendance handbook", session=session, user=user, sources={"knowledge"}, top_k=5)
+
+    assert context.source_statuses["knowledge"] == "success"
+    assert context.items[0].source == "knowledge"
+    assert context.items[0].title == "Seminar participation policy"
+    assert context.items[0].source_uri == "course://handbook#participation"
+    assert "Seminar participation policy" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_knowledge_source_reports_no_results(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+
+    context = retrieve("attendance handbook", session=session, user=user, sources={"knowledge"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["knowledge"] == "no-results"
