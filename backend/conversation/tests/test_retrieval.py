@@ -1,5 +1,8 @@
+from django.contrib import admin
+from django.test import RequestFactory
 import pytest
 
+from backend.conversation.admin import TurnRetrievalAdmin
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
@@ -42,3 +45,18 @@ def test_turn_retrieval_links_to_agent_turn(user) -> None:
 
     assert trace.turn == processed.turn
     assert str(trace) == f"TurnRetrieval(turn={processed.turn.id}, query=course policy)"
+
+
+@pytest.mark.django_db
+def test_turn_retrieval_admin_disables_add_delete_permissions(user) -> None:
+    user.is_staff = True
+    user.is_superuser = True
+    user.save(update_fields=["is_staff", "is_superuser"])
+
+    request = RequestFactory().get("/admin/conversation/turnretrieval/")
+    request.user = user
+    model_admin = TurnRetrievalAdmin(TurnRetrieval, admin.site)
+
+    assert model_admin.has_add_permission(request) is False
+    assert model_admin.has_delete_permission(request) is False
+    assert model_admin.has_change_permission(request) is True
