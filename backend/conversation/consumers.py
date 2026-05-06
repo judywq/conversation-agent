@@ -9,9 +9,11 @@ from django.contrib.auth import get_user_model
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
+from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
 from backend.conversation.services.agent_selection import select_complementary_agent_personas
 from backend.conversation.services.facilitator import build_facilitator_plan
-from backend.conversation.services.agent import generate_agent_utterance
+from backend.conversation.services.names import pick_unique_names
+from backend.conversation.services.retrieval import persist_turn_retrieval
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import mark_terminate
@@ -20,7 +22,6 @@ from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
 from backend.conversation.services.tts import synthesize_speech
-from backend.conversation.services.names import pick_unique_names
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
@@ -399,7 +400,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         agent_id = agent.agent_id
 
         plan = build_facilitator_plan(session, agent=agent)
-        utterance = generate_agent_utterance(session, agent=agent, facilitator_plan=plan)
+        generated = generate_agent_utterance_with_retrieval(session, agent=agent, facilitator_plan=plan)
+        utterance = generated.utterance
         audio_url = None
         try:
             voice = agent.voice or "alloy"
@@ -416,6 +418,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             source="llm",
             audio_url=audio_url,
         )
+        persist_turn_retrieval(processed.turn, generated.retrieval_context)
         return processed.turn
 
     @database_sync_to_async
@@ -471,4 +474,3 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             "audio_url": turn.audio_url,
             "created_at": turn.created_at.isoformat() if turn.created_at else None,
         }
-

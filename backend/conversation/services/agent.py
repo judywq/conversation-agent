@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass
 
 from langchain_core.messages import SystemMessage
 
@@ -11,9 +12,18 @@ from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
+from backend.conversation.services.retrieval import RetrievedContext
+from backend.conversation.services.retrieval import map_retrieval_sources
+from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.web_search import build_web_search_query
-from backend.conversation.services.web_search import fetch_web_search_context
-from backend.conversation.services.web_search import wants_web_search
+
+_AGENT_RETRIEVAL_TOP_K = 5
+
+
+@dataclass(frozen=True)
+class GeneratedAgentUtterance:
+    utterance: str
+    retrieval_context: RetrievedContext
 
 
 def _user_display_name(session: ConversationSession) -> str:
@@ -161,26 +171,61 @@ def _limit_to_three_sentences(utterance: str) -> str:
     return " ".join(parts[:3]).strip()
 
 
+def _build_agent_retrieval_query(session: ConversationSession, facilitator_plan: dict) -> str:
+    return build_web_search_query(
+        topic=session.topic or "",
+        content_requirement=str(facilitator_plan.get("content_requirement") or ""),
+        last_speaker_line=get_last_speaker_utterance(session),
+    )
+
+
+def _build_agent_retrieval_context(
+    session: ConversationSession,
+    facilitator_plan: dict,
+) -> RetrievedContext:
+    retrieval_query = _build_agent_retrieval_query(session, facilitator_plan)
+    sources = map_retrieval_sources(facilitator_plan.get("retrieval_requirement"))
+    if not sources:
+        return RetrievedContext(
+            query=retrieval_query,
+            requested_sources=[],
+            source_statuses={"none": "skipped"},
+            items=[],
+            rendered_context="No retrieval requested. Continue using conversation context only.",
+        )
+
+    return retrieve(
+        retrieval_query,
+        session=session,
+        user=session.user,
+        sources=sources,
+        top_k=_AGENT_RETRIEVAL_TOP_K,
+    )
+
+
 def generate_agent_utterance(
     session: ConversationSession,
     *,
     agent: AgentProfile,
     facilitator_plan: dict,
 ) -> str:
+    return generate_agent_utterance_with_retrieval(
+        session,
+        agent=agent,
+        facilitator_plan=facilitator_plan,
+    ).utterance
+
+
+def generate_agent_utterance_with_retrieval(
+    session: ConversationSession,
+    *,
+    agent: AgentProfile,
+    facilitator_plan: dict,
+) -> GeneratedAgentUtterance:
     turns = get_short_term_turns(session, limit=3)
     context = turns_to_messages(turns)
     history = json.dumps(context, ensure_ascii=False, indent=2)
-
-    retrieval_requirement = facilitator_plan.get("retrieval_requirement")
-    if wants_web_search(retrieval_requirement):
-        search_query = build_web_search_query(
-            topic=session.topic or "",
-            content_requirement=str(facilitator_plan.get("content_requirement") or ""),
-            last_speaker_line=get_last_speaker_utterance(session),
-        )
-        retrieved_context = fetch_web_search_context(search_query)
-    else:
-        retrieved_context = "(No web retrieval requested.)"
+    retrieval_context = _build_agent_retrieval_context(session, facilitator_plan)
 
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")
@@ -201,7 +246,7 @@ def generate_agent_utterance(
         speech_act_type=str(facilitator_plan.get("type") or "ASSERTIVES"),
         speech_act_subtype=str(facilitator_plan.get("subtype") or "inform"),
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
-        retrieved_context=retrieved_context,
+        retrieved_context=retrieval_context.rendered_context,
     )
     system = SystemMessage(content=prompt_text)
 
@@ -212,11 +257,15 @@ def generate_agent_utterance(
     speech_act_subtype = str(facilitator_plan.get("subtype") or "")
     target_display_name = _target_display_name(session, str(facilitator_plan.get("target") or ""))
     cleaned = _limit_to_two_questions(_strip_dash_punctuation(_strip_bracketed_text(text.strip())))
-    cleaned = _avoid_question_ending_when_not_request(cleaned, speech_act_type=speech_act_type, speech_act_subtype=speech_act_subtype)
+    cleaned = _avoid_question_ending_when_not_request(
+        cleaned,
+        speech_act_type=speech_act_type,
+        speech_act_subtype=speech_act_subtype,
+    )
     cleaned = _limit_to_three_sentences(cleaned)
-    return _enforce_directive_target_name(
+    utterance = _enforce_directive_target_name(
         cleaned,
         speech_act_type=speech_act_type,
         target_display_name=target_display_name,
     )
-
+    return GeneratedAgentUtterance(utterance=utterance, retrieval_context=retrieval_context)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 from django.contrib.auth import get_user_model
@@ -10,6 +11,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.services.web_search import fetch_web_search_context
 
 User = get_user_model()
 
@@ -19,6 +21,7 @@ SOURCE_SKIPPED = "skipped"
 SOURCE_NOT_CONFIGURED = "not-configured"
 SOURCE_FAILED = "failed"
 SUPPORTED_SOURCES = {"web", "session", "memory", "knowledge"}
+_WEB_STATUS_PREFIX = "(Web search"
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,7 @@ class RetrievedContext:
     source_statuses: dict[str, str]
     items: list[RetrievedItem]
     rendered_context: str
+    source_messages: dict[str, str] = field(default_factory=dict)
     error_message: str = ""
 
 
@@ -73,10 +77,23 @@ def _excerpt(text: str, *, max_chars: int = 360) -> str:
     return clean[: max_chars - 1].rstrip() + "..."
 
 
-def _render_context(items: list[RetrievedItem], source_statuses: dict[str, str]) -> str:
+def _render_context(
+    items: list[RetrievedItem],
+    source_statuses: dict[str, str],
+    *,
+    source_messages: dict[str, str] | None = None,
+) -> str:
     if not items:
         if source_statuses == {"none": SOURCE_SKIPPED}:
             return "No retrieval requested. Continue using conversation context only."
+        messages = [message for message in (source_messages or {}).values() if message]
+        if messages:
+            return "\n".join(
+                [
+                    *messages,
+                    "Continue using conversation context only; do not invent citations.",
+                ],
+            )
         return (
             "No usable retrieved information was found. Continue using conversation context only; "
             "do not invent citations."
@@ -100,6 +117,39 @@ def _score_text(query_terms: list[str], *parts: str) -> float:
 
 def _retrieve_memory() -> tuple[list[RetrievedItem], str]:
     return [], SOURCE_NOT_CONFIGURED
+
+
+def _retrieve_web(query: str) -> tuple[list[RetrievedItem], str, str]:
+    q = (query or "").strip()
+    if not q:
+        return [], SOURCE_SKIPPED, "(No search query could be built; proceed using discussion context only.)"
+
+    rendered = (fetch_web_search_context(q) or "").strip()
+    if not rendered:
+        return [], SOURCE_NO_RESULTS, "(Web search returned empty content.)"
+
+    if (rendered.startswith(_WEB_STATUS_PREFIX) or rendered.startswith("(No search query")) and rendered.endswith(")"):
+        lowered = rendered.casefold()
+        if "disabled" in lowered or "not configured" in lowered:
+            return [], SOURCE_SKIPPED, rendered
+        if "no search query could be built" in lowered:
+            return [], SOURCE_SKIPPED, rendered
+        if "failed" in lowered:
+            return [], SOURCE_FAILED, rendered
+        if "empty content" in lowered or "no usable snippets" in lowered:
+            return [], SOURCE_NO_RESULTS, rendered
+        return [], SOURCE_NO_RESULTS, rendered
+
+    return [
+        RetrievedItem(
+            source="web",
+            title="Web search results",
+            excerpt=rendered,
+            source_label="Web search",
+            score=1000.0,
+            metadata={"search_query": q},
+        ),
+    ], SOURCE_SUCCESS, ""
 
 
 def _retrieve_session(
@@ -188,6 +238,7 @@ def retrieve(
 ) -> RetrievedContext:
     requested_sources = sorted(sources)
     source_statuses: dict[str, str] = {}
+    source_messages: dict[str, str] = {}
     items: list[RetrievedItem] = []
 
     if not requested_sources:
@@ -204,7 +255,11 @@ def retrieve(
         if source not in SUPPORTED_SOURCES:
             source_statuses[source] = SOURCE_SKIPPED
             continue
-        if source == "memory":
+        if source == "web":
+            found, status, message = _retrieve_web(query)
+            if message:
+                source_messages[source] = message
+        elif source == "memory":
             found, status = _retrieve_memory()
         elif source == "session":
             if session.user_id != getattr(user, "id", None):
@@ -219,13 +274,18 @@ def retrieve(
         items.extend(found)
 
     ranked_items = sorted(items, key=lambda item: item.score, reverse=True)[:top_k]
-    rendered_context = _render_context(ranked_items, source_statuses)
+    rendered_context = _render_context(
+        ranked_items,
+        source_statuses,
+        source_messages=source_messages,
+    )
     return RetrievedContext(
         query=query,
         requested_sources=requested_sources,
         source_statuses=source_statuses,
         items=ranked_items,
         rendered_context=rendered_context,
+        source_messages=source_messages,
     )
 
 

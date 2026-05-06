@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.test import RequestFactory
+from django.test import override_settings
 import pytest
 
 from backend.conversation.admin import TurnRetrievalAdmin
@@ -7,7 +8,10 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.services.retrieval import RetrievedContext
+from backend.conversation.services.retrieval import RetrievedItem
 from backend.conversation.services.retrieval import map_retrieval_sources
+from backend.conversation.services.retrieval import persist_turn_retrieval
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.turn_processor import append_turn
 from backend.users.tests.factories import UserFactory
@@ -119,6 +123,39 @@ def test_memory_source_returns_not_configured(user) -> None:
     assert context.items == []
     assert context.source_statuses["memory"] == "not-configured"
     assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+@override_settings(WEB_SEARCH_ENABLED=False, WEB_SEARCH_API_URL="https://example.com/search")
+def test_web_source_disabled_returns_prompt_safe_status(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="climate")
+
+    context = retrieve("Topic: climate", session=session, user=user, sources={"web"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["web"] == "skipped"
+    assert context.source_messages["web"].startswith("(Web search is disabled")
+    assert "Web search is disabled" in context.rendered_context
+    assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_web_source_wraps_fetch_result_as_item(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="climate")
+    fetched = "1.\n   Title: Climate outlook\n   Organization: NOAA\n   Excerpt: Sea levels rose."
+    monkeypatch.setattr(
+        "backend.conversation.services.retrieval.fetch_web_search_context",
+        lambda query: fetched,
+    )
+
+    context = retrieve("Topic: climate", session=session, user=user, sources={"web"}, top_k=5)
+
+    assert context.source_statuses["web"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].source == "web"
+    assert context.items[0].excerpt == fetched
+    assert context.items[0].metadata["search_query"] == "Topic: climate"
+    assert "Climate outlook" in context.rendered_context
 
 
 @pytest.mark.django_db
@@ -244,3 +281,44 @@ def test_knowledge_source_reports_no_results(user) -> None:
 
     assert context.items == []
     assert context.source_statuses["knowledge"] == "no-results"
+
+
+@pytest.mark.django_db
+def test_persist_turn_retrieval_stores_trace_for_agent_turn(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    processed = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="The handbook covers participation.",
+        source="llm",
+    )
+    context = RetrievedContext(
+        query="attendance handbook",
+        requested_sources=["web", "knowledge"],
+        source_statuses={"web": "success", "knowledge": "success"},
+        items=[
+            RetrievedItem(
+                source="web",
+                title="Attendance policy",
+                excerpt="Students should attend.",
+                metadata={"search_query": "attendance handbook"},
+            ),
+            RetrievedItem(
+                source="knowledge",
+                title="Course handbook",
+                excerpt="Participation matters.",
+                source_uri="course://handbook",
+            ),
+        ],
+        rendered_context="Retrieved information:\n1. Source: web",
+    )
+
+    trace = persist_turn_retrieval(processed.turn, context)
+
+    assert trace.turn == processed.turn
+    assert trace.query == "attendance handbook"
+    assert trace.requested_sources == ["web", "knowledge"]
+    assert trace.source_statuses == {"web": "success", "knowledge": "success"}
+    assert trace.items[0]["metadata"]["search_query"] == "attendance handbook"
+    assert trace.rendered_context == "Retrieved information:\n1. Source: web"

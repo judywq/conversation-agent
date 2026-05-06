@@ -1,9 +1,18 @@
 import pytest
 
-from backend.conversation.services.agent import _enforce_directive_target_name
+from backend.conversation.models import AgentProfile
+from backend.conversation.models import ConversationSession
+from backend.conversation.models import TurnRecord
+from backend.conversation.services import agent as agent_service
 from backend.conversation.services.agent import _avoid_question_ending_when_not_request
+from backend.conversation.services.agent import _build_agent_retrieval_context
+from backend.conversation.services.agent import _enforce_directive_target_name
 from backend.conversation.services.agent import _limit_to_three_sentences
 from backend.conversation.services.agent import _strip_bracketed_text
+from backend.conversation.services.agent import generate_agent_utterance
+from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
+from backend.conversation.services.retrieval import RetrievedContext
+from backend.conversation.services.turn_processor import append_turn
 
 
 def test_enforce_directive_target_name_prepends_when_missing():
@@ -61,3 +70,206 @@ def test_limit_to_three_sentences_truncates():
     out = _limit_to_three_sentences("One. Two! Three? Four. Five.")
     assert out == "One. Two! Three?"
 
+
+def _make_session_with_agent(user):
+    session = ConversationSession.objects.create(user=user, topic="Climate policy")
+    agent = AgentProfile.objects.create(
+        session=session,
+        agent_id="agent_1",
+        display_name="Alex",
+        personality={},
+        traits={"proficiency_level": "B2"},
+    )
+    return session, agent
+
+
+@pytest.mark.django_db
+def test_build_agent_retrieval_context_routes_web_search_to_unified_sources(user, monkeypatch):
+    session, _agent = _make_session_with_agent(user)
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="We should ground this in recent evidence.",
+        source="text",
+    )
+    captured = {}
+
+    def fake_retrieve(query, *, session, user, sources, top_k):
+        captured["query"] = query
+        captured["session"] = session
+        captured["user"] = user
+        captured["sources"] = sources
+        captured["top_k"] = top_k
+        return RetrievedContext(
+            query=query,
+            requested_sources=sorted(sources),
+            source_statuses={"web": "success", "knowledge": "success"},
+            items=[],
+            rendered_context="Retrieved information:\n1. Source: web",
+        )
+
+    monkeypatch.setattr(agent_service, "retrieve", fake_retrieve)
+
+    context = _build_agent_retrieval_context(
+        session,
+        {
+            "retrieval_requirement": "web_search",
+            "content_requirement": "Use a recent policy example.",
+        },
+    )
+
+    assert captured["sources"] == {"web", "knowledge"}
+    assert captured["session"] == session
+    assert captured["user"] == user
+    assert captured["top_k"] == 5
+    assert "Topic: Climate policy" in captured["query"]
+    assert "Facilitator instruction: Use a recent policy example." in captured["query"]
+    assert "Latest turn: We should ground this in recent evidence." in captured["query"]
+    assert context.rendered_context == "Retrieved information:\n1. Source: web"
+
+
+@pytest.mark.django_db
+def test_build_agent_retrieval_context_routes_memory_to_unified_sources(user, monkeypatch):
+    session, _agent = _make_session_with_agent(user)
+    captured = {}
+
+    def fake_retrieve(query, *, session, user, sources, top_k):
+        captured["sources"] = sources
+        return RetrievedContext(
+            query=query,
+            requested_sources=sorted(sources),
+            source_statuses={"memory": "not-configured", "session": "no-results", "knowledge": "no-results"},
+            items=[],
+            rendered_context=(
+                "No usable retrieved information was found. Continue using conversation context only; "
+                "do not invent citations."
+            ),
+        )
+
+    monkeypatch.setattr(agent_service, "retrieve", fake_retrieve)
+
+    _build_agent_retrieval_context(
+        session,
+        {
+            "retrieval_requirement": "memory",
+            "content_requirement": "Recall earlier preferences.",
+        },
+    )
+
+    assert captured["sources"] == {"memory", "session", "knowledge"}
+
+
+@pytest.mark.django_db
+def test_build_agent_retrieval_context_skips_retrieve_when_not_requested(user, monkeypatch):
+    session, _agent = _make_session_with_agent(user)
+
+    def fail_retrieve(*args, **kwargs):
+        raise AssertionError("retrieve() should not be called when no retrieval is requested")
+
+    monkeypatch.setattr(agent_service, "retrieve", fail_retrieve)
+
+    context = _build_agent_retrieval_context(
+        session,
+        {
+            "retrieval_requirement": "none",
+            "content_requirement": "Keep it conversational.",
+        },
+    )
+
+    assert context.requested_sources == []
+    assert context.source_statuses == {"none": "skipped"}
+    assert "No retrieval requested" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_generate_agent_utterance_injects_unified_retrieved_context(user, monkeypatch):
+    session, agent = _make_session_with_agent(user)
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="Can you support that with a source?",
+        source="text",
+    )
+    monkeypatch.setattr(
+        agent_service,
+        "_build_agent_retrieval_context",
+        lambda session, facilitator_plan: RetrievedContext(
+            query="query",
+            requested_sources=["web", "knowledge"],
+            source_statuses={"web": "success", "knowledge": "success"},
+            items=[],
+            rendered_context="Retrieved information:\n1. Source: knowledge\n   Title: Course handbook",
+        ),
+    )
+    captured = {}
+
+    class FakeResult:
+        content = "I think the course handbook supports that."
+
+    class FakeLLM:
+        def invoke(self, messages):
+            captured["system_prompt"] = messages[0].content
+            return FakeResult()
+
+    monkeypatch.setattr(agent_service, "get_default_chat_llm", lambda: FakeLLM())
+
+    utterance = generate_agent_utterance(
+        session,
+        agent=agent,
+        facilitator_plan={
+            "retrieval_requirement": "web_search",
+            "type": "ASSERTIVES",
+            "subtype": "inform",
+            "content_requirement": "Use evidence.",
+        },
+    )
+
+    assert utterance == "I think the course handbook supports that."
+    assert "Retrieved information:\n1. Source: knowledge\n   Title: Course handbook" in captured["system_prompt"]
+    assert "Retrieved web context" not in captured["system_prompt"]
+    assert "today only web search is implemented" not in captured["system_prompt"]
+
+
+@pytest.mark.django_db
+def test_generate_agent_utterance_with_retrieval_returns_context_for_persistence(user, monkeypatch):
+    session, agent = _make_session_with_agent(user)
+    retrieval_context = RetrievedContext(
+        query="query",
+        requested_sources=["memory", "session"],
+        source_statuses={"memory": "not-configured", "session": "no-results"},
+        items=[],
+        rendered_context=(
+            "No usable retrieved information was found. Continue using conversation context only; "
+            "do not invent citations."
+        ),
+    )
+    monkeypatch.setattr(
+        agent_service,
+        "_build_agent_retrieval_context",
+        lambda session, facilitator_plan: retrieval_context,
+    )
+
+    class FakeResult:
+        content = "Let's continue from what we already discussed."
+
+    class FakeLLM:
+        def invoke(self, messages):
+            return FakeResult()
+
+    monkeypatch.setattr(agent_service, "get_default_chat_llm", lambda: FakeLLM())
+
+    generated = generate_agent_utterance_with_retrieval(
+        session,
+        agent=agent,
+        facilitator_plan={
+            "retrieval_requirement": "memory",
+            "type": "ASSERTIVES",
+            "subtype": "inform",
+            "content_requirement": "Use context.",
+        },
+    )
+
+    assert generated.utterance == "Let's continue from what we already discussed."
+    assert generated.retrieval_context == retrieval_context
