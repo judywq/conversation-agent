@@ -26,6 +26,14 @@ def get_short_term_turns(session: ConversationSession, *, limit: int = 10) -> li
     return list(session.turns.filter(turn_index__in=selected_set).order_by("turn_index", "subturn_index"))
 
 
+def get_last_speaker_utterance(session: ConversationSession) -> str:
+    """Latest completed line in the session (most recent turn row by index)."""
+    last = session.turns.order_by("-turn_index", "-subturn_index").first()
+    if last is None:
+        return ""
+    return (last.utterance or "").strip()
+
+
 def turns_to_messages(turns: Iterable[TurnRecord]) -> list[dict[str, str]]:
     """
     Lightweight adapter used by LLM prompt builders.

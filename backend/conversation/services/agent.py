@@ -8,8 +8,12 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.prompts import load_agent_persona_prompts
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
+from backend.conversation.services.web_search import build_web_search_query
+from backend.conversation.services.web_search import fetch_web_search_context
+from backend.conversation.services.web_search import wants_web_search
 
 
 def _user_display_name(session: ConversationSession) -> str:
@@ -167,6 +171,17 @@ def generate_agent_utterance(
     context = turns_to_messages(turns)
     history = json.dumps(context, ensure_ascii=False, indent=2)
 
+    retrieval_requirement = facilitator_plan.get("retrieval_requirement")
+    if wants_web_search(retrieval_requirement):
+        search_query = build_web_search_query(
+            topic=session.topic or "",
+            content_requirement=str(facilitator_plan.get("content_requirement") or ""),
+            last_speaker_line=get_last_speaker_utterance(session),
+        )
+        retrieved_context = fetch_web_search_context(search_query)
+    else:
+        retrieved_context = "(No web retrieval requested.)"
+
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")
     template = next(
@@ -186,6 +201,7 @@ def generate_agent_utterance(
         speech_act_type=str(facilitator_plan.get("type") or "ASSERTIVES"),
         speech_act_subtype=str(facilitator_plan.get("subtype") or "inform"),
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
+        retrieved_context=retrieved_context,
     )
     system = SystemMessage(content=prompt_text)
 

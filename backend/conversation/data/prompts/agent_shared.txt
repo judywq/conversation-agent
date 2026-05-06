@@ -38,18 +38,31 @@ Speech act (dominant):
 Content requirement:
 {content_requirement}
 
-<!-- retrieved_information (reserved for future RAG) -->
+# Retrieved information (RAG)
+
+<!-- Target shape once all retrieval modes are wired (web, exemplar, session/long-term memory). -->
 <!--
 "retrieved_information": {
   "source": "web | speech act exemplar | memory | null",
-  "content": "..."
+  "content": "...",
+  "web_provenance": {
+    "title": "...",
+    "author": "...",
+    "organization": "...",
+    "url": "..."
+  }
 }
 -->
+
+Live fields (today only web search is implemented; exemplar and memory will add more blocks later):
+Retrieved web context (facilitator retrieval need = web_search only; includes per-result title, author, organization, URL, and excerpt when the API provides them; may state skipped, disabled, or failed):
+{retrieved_context}
 
 # Generation Guidelines
 
 - Follow the dominant speech act, but you may include minor additional acts to make your speech natural.
 - Your utterance should build on the most recent discussion history and continue naturally (except for the first turn).
+- When retrieved web context lists sources with title, organization, or author, lean on those for attribution (e.g. name the organization or article naturally); do not invent authors or outlets. Exemplar and memory retrieval are not injected yet; rely on discussion history until those sources exist.
 - For ASSERTIVES / EXPRESSIVES / COMMISSIVES / DECLARATIONS: prefer ending with a statement (period) most of the time.
 - Directives should use a question ending.
 - If the dominant speech act type is DIRECTIVES and the target_display_name is not empty, address the target by name naturally (e.g., "{target_display_name}, ...").

@@ -50,6 +50,12 @@ DOMAIN_NAME = env.str("DJANGO_DOMAIN_NAME", default="localhost:8000")
 # For quick testing, you can override via env var CONVERSATION_AGENT_COUNT.
 CONVERSATION_AGENT_COUNT = env.int("CONVERSATION_AGENT_COUNT", default=3)
 
+# Facilitator web_search retrieval: POST JSON body {"query": "..."} to this URL (optional Bearer token).
+WEB_SEARCH_ENABLED = env.bool("WEB_SEARCH_ENABLED", default=False)
+WEB_SEARCH_API_URL = env.str("WEB_SEARCH_API_URL", default="")
+WEB_SEARCH_API_KEY = env.str("WEB_SEARCH_API_KEY", default="")
+WEB_SEARCH_TIMEOUT_SEC = env.float("WEB_SEARCH_TIMEOUT_SEC", default=15.0)
+
 # DATABASES
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
@@ -487,6 +493,14 @@ INIT_LLM_MODELS = [
         "is_default": False,
         "is_active": True,
         "order": 70,
+    },
+    {
+        "llm_type": "openai",
+        "name": "gpt-5-search-api",
+        "display_name": "GPT-5 Search API",
+        "is_default": False,
+        "is_active": True,
+        "order": 13,
     },
 ]
 
