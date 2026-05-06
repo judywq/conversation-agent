@@ -13,7 +13,7 @@ from backend.conversation.services.agent import generate_agent_utterance_with_re
 from backend.conversation.services.agent_selection import select_complementary_agent_personas
 from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_unique_names
-from backend.conversation.services.retrieval import persist_turn_retrieval
+from backend.conversation.services.retrieval import persist_turn_retrieval_safely
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import mark_terminate
@@ -418,7 +418,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             source="llm",
             audio_url=audio_url,
         )
-        persist_turn_retrieval(processed.turn, generated.retrieval_context)
+        persist_turn_retrieval_safely(processed.turn, generated.retrieval_context)
         return processed.turn
 
     @database_sync_to_async

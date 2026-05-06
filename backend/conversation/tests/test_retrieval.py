@@ -12,6 +12,7 @@ from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import RetrievedItem
 from backend.conversation.services.retrieval import map_retrieval_sources
 from backend.conversation.services.retrieval import persist_turn_retrieval
+from backend.conversation.services.retrieval import persist_turn_retrieval_safely
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.turn_processor import append_turn
 from backend.users.tests.factories import UserFactory
@@ -354,3 +355,29 @@ def test_persist_turn_retrieval_stores_trace_for_agent_turn(user) -> None:
     assert trace.source_statuses == {"web": "success", "knowledge": "success"}
     assert trace.items[0]["metadata"]["search_query"] == "attendance handbook"
     assert trace.rendered_context == "Retrieved information:\n1. Source: web"
+
+
+@pytest.mark.django_db
+def test_persist_turn_retrieval_safely_suppresses_trace_errors(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    processed = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="The handbook covers participation.",
+        source="llm",
+    )
+    context = RetrievedContext(
+        query="attendance handbook",
+        requested_sources=["knowledge"],
+        source_statuses={"knowledge": "success"},
+        items=[],
+        rendered_context="Retrieved information:",
+    )
+
+    def fail_persist(turn, context):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("backend.conversation.services.retrieval.persist_turn_retrieval", fail_persist)
+
+    assert persist_turn_retrieval_safely(processed.turn, context) is None

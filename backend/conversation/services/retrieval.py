@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from dataclasses import field
@@ -14,6 +15,7 @@ from backend.conversation.models import TurnRetrieval
 from backend.conversation.services.web_search import fetch_web_search_context
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 SOURCE_SUCCESS = "success"
 SOURCE_NO_RESULTS = "no-results"
@@ -301,3 +303,11 @@ def persist_turn_retrieval(turn: TurnRecord, context: RetrievedContext) -> TurnR
         rendered_context=context.rendered_context,
         error_message=context.error_message,
     )
+
+
+def persist_turn_retrieval_safely(turn: TurnRecord, context: RetrievedContext) -> TurnRetrieval | None:
+    try:
+        return persist_turn_retrieval(turn, context)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Retrieval trace persistence failed for turn %s: %s", turn.id, exc)
+        return None
