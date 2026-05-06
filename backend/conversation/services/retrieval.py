@@ -63,6 +63,8 @@ def map_retrieval_sources(retrieval_requirement: str | None) -> set[str]:
         return {"web", "knowledge"}
     if raw == "memory":
         return {"memory", "session", "knowledge"}
+    if raw and raw != "none":
+        return {raw}
     return set()
 
 

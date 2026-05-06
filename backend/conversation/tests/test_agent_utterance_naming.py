@@ -183,6 +183,23 @@ def test_build_agent_retrieval_context_skips_retrieve_when_not_requested(user, m
 
 
 @pytest.mark.django_db
+def test_build_agent_retrieval_context_traces_unsupported_requirement(user):
+    session, _agent = _make_session_with_agent(user)
+
+    context = _build_agent_retrieval_context(
+        session,
+        {
+            "retrieval_requirement": "exemplar",
+            "content_requirement": "Use a speech act example.",
+        },
+    )
+
+    assert context.requested_sources == ["exemplar"]
+    assert context.source_statuses == {"exemplar": "skipped"}
+    assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
 def test_generate_agent_utterance_injects_unified_retrieved_context(user, monkeypatch):
     session, agent = _make_session_with_agent(user)
     append_turn(

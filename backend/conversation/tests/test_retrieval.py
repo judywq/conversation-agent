@@ -76,8 +76,8 @@ def test_map_retrieval_sources() -> None:
     assert map_retrieval_sources("memory") == {"memory", "session", "knowledge"}
     assert map_retrieval_sources("none") == set()
     assert map_retrieval_sources("") == set()
-    assert map_retrieval_sources("exemplar") == set()
-    assert map_retrieval_sources("surprise") == set()
+    assert map_retrieval_sources("exemplar") == {"exemplar"}
+    assert map_retrieval_sources("surprise") == {"surprise"}
 
 
 @pytest.mark.django_db
@@ -156,6 +156,38 @@ def test_web_source_wraps_fetch_result_as_item(user, monkeypatch) -> None:
     assert context.items[0].excerpt == fetched
     assert context.items[0].metadata["search_query"] == "Topic: climate"
     assert "Climate outlook" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_web_source_failed_request_returns_failed_status(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="climate")
+    monkeypatch.setattr(
+        "backend.conversation.services.retrieval.fetch_web_search_context",
+        lambda query: "(Web search failed; proceed without verified external facts.)",
+    )
+
+    context = retrieve("Topic: climate", session=session, user=user, sources={"web"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["web"] == "failed"
+    assert "Web search failed" in context.source_messages["web"]
+    assert "Web search failed" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_web_source_empty_result_returns_no_results_status(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="climate")
+    monkeypatch.setattr(
+        "backend.conversation.services.retrieval.fetch_web_search_context",
+        lambda query: "(Web search returned no usable snippets.)",
+    )
+
+    context = retrieve("Topic: climate", session=session, user=user, sources={"web"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["web"] == "no-results"
+    assert "no usable snippets" in context.source_messages["web"]
+    assert "no usable snippets" in context.rendered_context
 
 
 @pytest.mark.django_db
