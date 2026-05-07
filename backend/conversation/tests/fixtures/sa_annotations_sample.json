@@ -1,0 +1,51 @@
+[
+  {
+    "file_name": "CDIS01A.txt",
+    "sentence": "I wonder whether there are any questions you'd like to ask.",
+    "context": {
+      "previous_sentence": null,
+      "next_sentence": "Nobody."
+    },
+    "SA_type": "DIRECTIVES",
+    "subtype": "invite"
+  },
+  {
+    "file_name": "CDIS01A.txt",
+    "sentence": "I wonder whether there are any questions you'd like to ask.",
+    "context": {
+      "previous_sentence": null,
+      "next_sentence": "Nobody."
+    },
+    "SA_type": "DIRECTIVES",
+    "subtype": "invite"
+  },
+  {
+    "file_name": "CDIS01A.txt",
+    "sentence": "Yeah.",
+    "context": {
+      "previous_sentence": "Do you agree?",
+      "next_sentence": "Good."
+    },
+    "SA_type": "EXPRESSIVES",
+    "subtype": "acknowledge"
+  },
+  {
+    "file_name": "CDIS01A.txt",
+    "sentence": "Yeah.",
+    "context": {
+      "previous_sentence": "Is January correct?",
+      "next_sentence": "January."
+    },
+    "SA_type": "ASSERTIVES",
+    "subtype": "confirm"
+  },
+  {
+    "file_name": "BROKEN.txt",
+    "context": {
+      "previous_sentence": null,
+      "next_sentence": null
+    },
+    "SA_type": "ASSERTIVES",
+    "subtype": "inform"
+  }
+]
