@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="knowledgesnippet",
             name="embedding_model",
-            field=models.CharField(blank=True, default="", max_length=100),
+            field=models.CharField(blank=True, default="", max_length=100, null=True),
         ),
         migrations.AddField(
             model_name="knowledgesnippet",
@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="knowledgesnippet",
             name="embedding_text_hash",
-            field=models.CharField(blank=True, default="", max_length=64),
+            field=models.CharField(blank=True, default="", max_length=64, null=True),
         ),
         migrations.AddField(
             model_name="knowledgesnippet",

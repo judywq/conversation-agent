@@ -108,9 +108,9 @@ class KnowledgeSnippet(TimestampedBase):
     is_active = models.BooleanField(default=True)
     metadata = models.JSONField(default=dict, blank=True)
     embedding = VectorField(dimensions=1536, null=True, blank=True)
-    embedding_model = models.CharField(max_length=100, blank=True, default="")
+    embedding_model = models.CharField(max_length=100, null=True, blank=True, default="")
     embedding_dimensions = models.PositiveIntegerField(null=True, blank=True)
-    embedding_text_hash = models.CharField(max_length=64, blank=True, default="")
+    embedding_text_hash = models.CharField(max_length=64, null=True, blank=True, default="")
     embedding_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
