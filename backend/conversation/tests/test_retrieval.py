@@ -620,6 +620,70 @@ def test_persist_turn_retrieval_stores_trace_for_agent_turn(user) -> None:
 
 
 @pytest.mark.django_db
+def test_persist_turn_retrieval_stores_exemplar_trace_for_agent_turn(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    processed = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Could you clarify what kind of data you mean?",
+        source="llm",
+    )
+    rendered_context = (
+        "Retrieved information:\n"
+        "Speech Act examples are style and intent guidance only.\n"
+        "Do not treat them as factual citations or source claims.\n"
+        "1. Source: exemplar\n"
+        "   Title: ULECD040 DIRECTIVES/request_info #2\n"
+        "   URI: elfa-sa://ULECD040.txt#import-key-1\n"
+        "   Speech Act: DIRECTIVES/request_info\n"
+        "   Source file: ULECD040.txt\n"
+        "   Previous: have you made any user studies\n"
+        "   Next: what do you mean the catalogues\n"
+        "   Snippet ID: 123\n"
+        "   Excerpt: have you any data on how people use the services"
+    )
+    context = RetrievedContext(
+        query="Topic: school\nFacilitator instruction: Ask for clarification.",
+        requested_sources=["exemplar"],
+        source_statuses={"exemplar": "success"},
+        items=[
+            RetrievedItem(
+                source="exemplar",
+                title="ULECD040 DIRECTIVES/request_info #2",
+                excerpt="have you any data on how people use the services",
+                source_uri="elfa-sa://ULECD040.txt#import-key-1",
+                source_label="ULECD040.txt",
+                score=0.1,
+                metadata={
+                    "knowledge_snippet_id": 123,
+                    "kind": "speech_act_exemplar",
+                    "SA_type": "DIRECTIVES",
+                    "subtype": "request_info",
+                    "file_name": "ULECD040.txt",
+                    "previous_sentence": "have you made any user studies",
+                    "next_sentence": "what do you mean the catalogues",
+                    "import_key": "import-key-1",
+                },
+            ),
+        ],
+        rendered_context=rendered_context,
+    )
+
+    trace = persist_turn_retrieval(processed.turn, context)
+
+    assert trace.turn == processed.turn
+    assert trace.requested_sources == ["exemplar"]
+    assert trace.source_statuses == {"exemplar": "success"}
+    assert trace.items[0]["source"] == "exemplar"
+    assert trace.items[0]["metadata"]["knowledge_snippet_id"] == 123
+    assert trace.items[0]["metadata"]["SA_type"] == "DIRECTIVES"
+    assert trace.items[0]["metadata"]["subtype"] == "request_info"
+    assert trace.items[0]["source_label"] == "ULECD040.txt"
+    assert trace.rendered_context == rendered_context
+
+
+@pytest.mark.django_db
 def test_persist_turn_retrieval_safely_suppresses_trace_errors(user, monkeypatch) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     processed = append_turn(
