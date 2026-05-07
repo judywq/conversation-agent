@@ -1,7 +1,7 @@
+import pytest
 from django.contrib import admin
 from django.test import RequestFactory
 from django.test import override_settings
-import pytest
 
 from backend.conversation.admin import TurnRetrievalAdmin
 from backend.conversation.models import ConversationSession
