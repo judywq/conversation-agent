@@ -8,6 +8,7 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from pgvector.django import CosineDistance
 
 from backend.conversation.models import ConversationSession
@@ -234,13 +235,19 @@ def _retrieve_web(query: str) -> tuple[list[RetrievedItem], str, str]:
     ], SOURCE_SUCCESS, ""
 
 
+def _normal_knowledge_snippets() -> Any:
+    return KnowledgeSnippet.objects.filter(is_active=True).filter(
+        Q(metadata__kind__isnull=True) | ~Q(metadata__kind="speech_act_exemplar"),
+    )
+
+
 def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_KnowledgeCandidate]:
     terms = _tokenize(query)
     if not terms or candidate_count <= 0:
         return []
 
     scored_candidates = []
-    for snippet in KnowledgeSnippet.objects.filter(is_active=True):
+    for snippet in _normal_knowledge_snippets():
         score = _score_text(terms, snippet.content, snippet.source_label)
         title_score = _score_text(terms, snippet.title) * 2.0
         total = score + title_score
@@ -271,8 +278,7 @@ def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> tuple[l
         return [], SOURCE_NO_RESULTS
 
     try:
-        snippets = KnowledgeSnippet.objects.filter(
-            is_active=True,
+        snippets = _normal_knowledge_snippets().filter(
             embedding__isnull=False,
             embedding_model=_expected_embedding_model(),
             embedding_dimensions=_expected_embedding_dimensions(),

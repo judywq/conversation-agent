@@ -3,12 +3,12 @@ from django.test import RequestFactory
 from django.test import override_settings
 import pytest
 
-from backend.conversation.services import retrieval as retrieval_service
 from backend.conversation.admin import TurnRetrievalAdmin
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.services import retrieval as retrieval_service
 from backend.conversation.services.embeddings import fake_embedding
 from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import RetrievedItem
@@ -535,6 +535,33 @@ def test_knowledge_source_reports_failed_when_vector_fails_without_keyword_hits(
 
     assert context.items == []
     assert context.source_statuses["knowledge"] == "failed"
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_knowledge_source_excludes_speech_act_exemplars(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "clarify point"
+    KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(query, session=session, user=user, sources={"knowledge"}, top_k=5)
+
+    assert context.items == []
+    assert context.source_statuses["knowledge"] == "no-results"
 
 
 @pytest.mark.django_db
