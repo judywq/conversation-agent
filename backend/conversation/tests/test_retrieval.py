@@ -407,6 +407,78 @@ def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -
 
 
 @pytest.mark.django_db
+def test_exemplar_rendered_context_marks_examples_as_style_guidance(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="ULECD040 DIRECTIVES/request_info #2",
+        content="have you any data on how people use the services",
+        source_uri="elfa-sa://ULECD040.txt#import-key-1",
+        source_label="ULECD040.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "ULECD040.txt",
+            "previous_sentence": "have you made any user studies",
+            "next_sentence": "what do you mean the catalogues",
+            "import_key": "import-key-1",
+        },
+    )
+
+    context = retrieve(
+        "latest classroom turn",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert "Speech Act examples are style and intent guidance only." in context.rendered_context
+    assert "Do not treat them as factual citations or source claims." in context.rendered_context
+    assert "have you any data on how people use the services" in context.rendered_context
+    assert "Speech Act: DIRECTIVES/request_info" in context.rendered_context
+    assert "Source file: ULECD040.txt" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_exemplar_no_results_message_mentions_no_usable_examples(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="Invite exemplar",
+        content="Would anyone like to add something?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-3",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "invite",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-3",
+        },
+    )
+
+    context = retrieve(
+        "show me an example",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="ASSERTIVES",
+        speech_act_subtype="inform",
+    )
+
+    assert context.items == []
+    assert context.source_statuses["exemplar"] == "no-results"
+    assert "No usable Speech Act examples were found." in context.rendered_context
+    assert "Continue using conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
 def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     matching = KnowledgeSnippet.objects.create(

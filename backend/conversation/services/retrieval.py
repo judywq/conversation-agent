@@ -94,6 +94,14 @@ def _render_context(
         if source_statuses == {"none": SOURCE_SKIPPED}:
             return "No retrieval requested. Continue using conversation context only."
         messages = [message for message in (source_messages or {}).values() if message]
+        if "exemplar" in source_statuses:
+            return "\n".join(
+                [
+                    *messages,
+                    "No usable Speech Act examples were found.",
+                    "Continue using conversation context only; do not invent citations.",
+                ],
+            )
         if messages:
             return "\n".join(
                 [
@@ -107,6 +115,13 @@ def _render_context(
         )
 
     lines = ["Retrieved information:"]
+    if any(item.source == "exemplar" for item in items):
+        lines.extend(
+            [
+                "Speech Act examples are style and intent guidance only.",
+                "Do not treat them as factual citations or source claims.",
+            ],
+        )
     for index, item in enumerate(items, start=1):
         label = item.title or item.source_label or f"{item.source} source"
         lines.append(f"{index}. Source: {item.source}")
