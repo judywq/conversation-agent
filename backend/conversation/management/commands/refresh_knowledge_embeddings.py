@@ -19,7 +19,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--stale",
             action="store_true",
-            help="Also refresh snippets whose stored embedding text hash is stale.",
+            help="Also refresh snippets whose stored embedding text, model, or dimensions are stale.",
         )
         parser.add_argument(
             "--limit",
