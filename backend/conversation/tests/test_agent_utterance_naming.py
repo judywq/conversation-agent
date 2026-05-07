@@ -2,6 +2,7 @@ import pytest
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
+from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.services import agent as agent_service
 from backend.conversation.services.agent import _avoid_question_ending_when_not_request
@@ -312,6 +313,70 @@ def test_generate_agent_utterance_injects_unified_retrieved_context(user, monkey
     assert "Retrieved information:\n1. Source: knowledge\n   Title: Course handbook" in captured["system_prompt"]
     assert "Retrieved web context" not in captured["system_prompt"]
     assert "today only web search is implemented" not in captured["system_prompt"]
+
+
+@pytest.mark.django_db
+def test_generate_agent_utterance_injects_speech_act_exemplar_guidance(user, monkeypatch):
+    session, agent = _make_session_with_agent(user)
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="I am not sure what evidence you mean.",
+        source="text",
+    )
+    snippet = KnowledgeSnippet.objects.create(
+        title="ULECD040 DIRECTIVES/request_info #2",
+        content="have you any data on how people use the services",
+        source_uri="elfa-sa://ULECD040.txt#import-key-1",
+        source_label="ULECD040.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "ULECD040.txt",
+            "previous_sentence": "have you made any user studies",
+            "next_sentence": "what do you mean the catalogues",
+            "import_key": "import-key-1",
+        },
+    )
+    captured = {}
+
+    class FakeResult:
+        content = "Could you say what data you mean, Alex?"
+
+    class FakeLLM:
+        def invoke(self, messages):
+            captured["system_prompt"] = messages[0].content
+            return FakeResult()
+
+    monkeypatch.setattr(agent_service, "get_default_chat_llm", lambda: FakeLLM())
+
+    generated = generate_agent_utterance_with_retrieval(
+        session,
+        agent=agent,
+        facilitator_plan={
+            "retrieval_requirement": "speech act exemplar",
+            "type": "DIRECTIVES",
+            "subtype": "request_info",
+            "target": "user",
+            "content_requirement": "Ask for clarification about the evidence.",
+        },
+    )
+
+    prompt = captured["system_prompt"]
+    assert generated.retrieval_context.source_statuses["exemplar"] == "success"
+    assert generated.retrieval_context.items[0].metadata["knowledge_snippet_id"] == snippet.id
+    assert "have you any data on how people use the services" in prompt
+    assert "Speech Act: DIRECTIVES/request_info" in prompt
+    assert "Source file: ULECD040.txt" in prompt
+    assert "Previous: have you made any user studies" in prompt
+    assert "Next: what do you mean the catalogues" in prompt
+    assert f"Snippet ID: {snippet.id}" in prompt
+    assert "Speech Act examples are style and intent guidance only." in prompt
+    assert "Speech Act examples in retrieved context are style and intent guidance only." in prompt
+    assert "Do not cite Speech Act examples as evidence" in prompt
 
 
 @pytest.mark.django_db
