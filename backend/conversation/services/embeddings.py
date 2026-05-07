@@ -46,9 +46,26 @@ def fake_embedding(text: str, dimensions: int = 1536) -> list[float]:
     return [rng.uniform(-1.0, 1.0) for _ in range(dimensions)]
 
 
+def _embedding_provider() -> str:
+    provider = str(getattr(settings, "EMBEDDING_PROVIDER", "openai")).strip().casefold()
+    if provider not in {"fake", "openai"}:
+        raise RuntimeError(f"Unsupported EMBEDDING_PROVIDER: {provider}")
+    return provider
+
+
+def _expected_embedding_model(provider: str) -> str:
+    if provider == "fake":
+        return "fake"
+    return str(getattr(settings, "EMBEDDING_MODEL", ""))
+
+
+def _embedding_dimensions() -> int:
+    return int(getattr(settings, "EMBEDDING_DIMENSIONS", 1536))
+
+
 def generate_embedding(text: str) -> EmbeddingResult:
-    provider = getattr(settings, "EMBEDDING_PROVIDER", "openai")
-    dimensions = int(getattr(settings, "EMBEDDING_DIMENSIONS", 1536))
+    provider = _embedding_provider()
+    dimensions = _embedding_dimensions()
     text_hash = embedding_text_hash(text)
 
     if provider == "fake":
@@ -81,5 +98,12 @@ def generate_embedding(text: str) -> EmbeddingResult:
 
 
 def snippet_embedding_is_stale(snippet: Any) -> bool:
+    provider = _embedding_provider()
+    expected_model = _expected_embedding_model(provider)
+    expected_dimensions = _embedding_dimensions()
     text = build_knowledge_snippet_embedding_text(snippet)
-    return snippet.embedding_text_hash != embedding_text_hash(text)
+    return (
+        snippet.embedding_text_hash != embedding_text_hash(text)
+        or snippet.embedding_model != expected_model
+        or snippet.embedding_dimensions != expected_dimensions
+    )

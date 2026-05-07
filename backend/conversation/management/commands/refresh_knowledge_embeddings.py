@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from backend.conversation.models import KnowledgeSnippet
@@ -36,6 +37,8 @@ class Command(BaseCommand):
         include_stale = bool(options["stale"])
         dry_run = bool(options["dry_run"])
         limit = options["limit"]
+        if limit is not None and limit < 0:
+            raise CommandError("--limit must be greater than or equal to 0")
 
         query = KnowledgeSnippet.objects.filter(is_active=True)
         if not include_stale:
@@ -43,13 +46,13 @@ class Command(BaseCommand):
 
         snippets = []
         for snippet in query.order_by("id"):
+            if limit is not None and len(snippets) >= limit:
+                break
+
             if snippet.embedding is None:
                 snippets.append(snippet)
             elif include_stale and snippet_embedding_is_stale(snippet):
                 snippets.append(snippet)
-
-            if limit is not None and len(snippets) >= limit:
-                break
 
         if dry_run:
             self.stdout.write(
