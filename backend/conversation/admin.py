@@ -124,7 +124,7 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
 
     @admin.display(boolean=True, description="Embedding")
     def has_embedding(self, obj: KnowledgeSnippet) -> bool:
-        return bool(obj.embedding)
+        return obj.embedding is not None
 
     @admin.display(description="SA type")
     def metadata_sa_type(self, obj):
