@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from pgvector.django import HnswIndex
+from pgvector.django import VectorField
 
 from backend.core.models import TimestampedBase
 
@@ -105,8 +107,22 @@ class KnowledgeSnippet(TimestampedBase):
     source_label = models.CharField(max_length=255, blank=True, default="")
     is_active = models.BooleanField(default=True)
     metadata = models.JSONField(default=dict, blank=True)
+    embedding = VectorField(dimensions=1536, null=True, blank=True)
+    embedding_model = models.CharField(max_length=100, blank=True, default="")
+    embedding_dimensions = models.PositiveIntegerField(null=True, blank=True)
+    embedding_text_hash = models.CharField(max_length=64, blank=True, default="")
+    embedding_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        indexes = [
+            HnswIndex(
+                name="conv_know_emb_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+        ]
         ordering = ["title", "id"]
 
     def __str__(self) -> str:

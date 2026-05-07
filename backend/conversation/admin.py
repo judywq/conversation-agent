@@ -82,6 +82,9 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
         "source_label",
         "source_uri",
         "is_active",
+        "has_embedding",
+        "embedding_model",
+        "embedding_updated_at",
         "updated_at",
     ]
     list_display_links = ["title", "id"]
@@ -118,6 +121,10 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
     @admin.display(description="Content")
     def content_excerpt(self, obj):
         return Truncator(obj.content).chars(80, truncate="...")
+
+    @admin.display(boolean=True, description="Embedding")
+    def has_embedding(self, obj: KnowledgeSnippet) -> bool:
+        return bool(obj.embedding)
 
     @admin.display(description="SA type")
     def metadata_sa_type(self, obj):

@@ -506,11 +506,23 @@ INIT_LLM_MODELS = [
 
 # Text-game seed data (genres + prompt templates) was removed.
 
+OPENAI_API_KEY = env.str("OPENAI_API_KEY", default="")
+EMBEDDING_PROVIDER = env.str("EMBEDDING_PROVIDER", default="openai")
+EMBEDDING_MODEL = env.str("EMBEDDING_MODEL", default="text-embedding-3-small")
+EMBEDDING_DIMENSIONS = env.int("EMBEDDING_DIMENSIONS", default=1536)
+EMBEDDING_BATCH_SIZE = env.int("EMBEDDING_BATCH_SIZE", default=50)
+VECTOR_RECALL_ENABLED = env.bool("VECTOR_RECALL_ENABLED", default=True)
+HYBRID_KEYWORD_CANDIDATES = env.int("HYBRID_KEYWORD_CANDIDATES", default=20)
+HYBRID_VECTOR_CANDIDATES = env.int("HYBRID_VECTOR_CANDIDATES", default=20)
+HYBRID_RRF_K = env.int("HYBRID_RRF_K", default=60)
+HYBRID_KEYWORD_WEIGHT = env.float("HYBRID_KEYWORD_WEIGHT", default=1.0)
+HYBRID_VECTOR_WEIGHT = env.float("HYBRID_VECTOR_WEIGHT", default=1.0)
+
 INIT_API_KEYS = [
     {
         "name": "OpenAI",
         "llm_type": "openai",
-        "key": env.str("OPENAI_API_KEY", default=""),
+        "key": OPENAI_API_KEY,
     },
     {
         "name": "Anthropic",
