@@ -92,6 +92,10 @@ class _KnowledgeCandidate:
             score += vector_weight / (rrf_k + self.vector_rank)
         return score
 
+    def global_score(self) -> float:
+        score = (self.keyword_score or 0.0) + max(self.vector_similarity or 0.0, 0.0)
+        return score or self.rerank_score()
+
 
 def map_retrieval_sources(retrieval_requirement: str | None) -> set[str]:
     raw = (retrieval_requirement or "").strip().casefold().replace("-", "_").replace(" ", "_")
@@ -251,14 +255,30 @@ def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_
     ]
 
 
-def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> list[_KnowledgeCandidate]:
+def _expected_embedding_model() -> str:
+    provider = str(getattr(settings, "EMBEDDING_PROVIDER", "openai")).strip().casefold()
+    if provider == "fake":
+        return "fake"
+    return str(getattr(settings, "EMBEDDING_MODEL", ""))
+
+
+def _expected_embedding_dimensions() -> int:
+    return int(getattr(settings, "EMBEDDING_DIMENSIONS", 1536))
+
+
+def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> tuple[list[_KnowledgeCandidate], str]:
     if not getattr(settings, "VECTOR_RECALL_ENABLED", True) or candidate_count <= 0:
-        return []
+        return [], SOURCE_NO_RESULTS
 
     try:
-        snippets = KnowledgeSnippet.objects.filter(is_active=True, embedding__isnull=False)
+        snippets = KnowledgeSnippet.objects.filter(
+            is_active=True,
+            embedding__isnull=False,
+            embedding_model=_expected_embedding_model(),
+            embedding_dimensions=_expected_embedding_dimensions(),
+        )
         if not snippets.exists():
-            return []
+            return [], SOURCE_NO_RESULTS
         result = generate_embedding(query)
         ranked = snippets.annotate(
             distance=CosineDistance("embedding", result.vector),
@@ -276,10 +296,10 @@ def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> list[_K
                     embedding_model=snippet.embedding_model or result.model,
                 ),
             )
-        return candidates
+        return candidates, SOURCE_SUCCESS
     except Exception as exc:  # noqa: BLE001
         logger.warning("Vector knowledge recall failed; falling back to keyword-only: %s", exc)
-        return []
+        return [], SOURCE_FAILED
 
 
 def _merge_knowledge_candidates(
@@ -357,13 +377,15 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
         query,
         candidate_count=keyword_candidate_count,
     )
-    vector_candidates = _vector_knowledge_candidates(
+    vector_candidates, vector_status = _vector_knowledge_candidates(
         query,
         candidate_count=vector_candidate_count,
     )
     candidates = _merge_knowledge_candidates(keyword_candidates, vector_candidates)
 
     if not candidates:
+        if vector_status == SOURCE_FAILED:
+            return [], SOURCE_FAILED
         return [], SOURCE_NO_RESULTS
 
     ranked_candidates = sorted(
@@ -374,6 +396,7 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
     for candidate in ranked_candidates[:top_k]:
         snippet = candidate.snippet
         rerank_score = candidate.rerank_score()
+        global_score = candidate.global_score()
         items.append(
             RetrievedItem(
                 source="knowledge",
@@ -381,7 +404,7 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
                 excerpt=_excerpt(snippet.content),
                 source_uri=snippet.source_uri,
                 source_label=snippet.source_label,
-                score=rerank_score,
+                score=global_score,
                 metadata={
                     "knowledge_snippet_id": snippet.id,
                     "metadata": snippet.metadata,
@@ -391,6 +414,7 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
                     "vector_similarity": candidate.vector_similarity,
                     "vector_rank": candidate.vector_rank,
                     "rerank_score": rerank_score,
+                    "global_score": global_score,
                     "embedding_model": candidate.embedding_model,
                 },
             ),

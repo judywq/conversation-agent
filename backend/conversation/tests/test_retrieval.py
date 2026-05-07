@@ -9,6 +9,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.services.embeddings import fake_embedding
 from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import RetrievedItem
 from backend.conversation.services.retrieval import map_retrieval_sources
@@ -292,6 +293,55 @@ def test_mixed_sources_are_ranked_globally_before_top_k(user) -> None:
 
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake")
+def test_mixed_sources_keep_strong_knowledge_result_with_global_top_k(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="planning")
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="policy",
+    )
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="recent one",
+    )
+    append_turn(
+        session,
+        speaker="agent_2",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="recent two",
+    )
+    append_turn(
+        session,
+        speaker="agent_3",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="recent three",
+    )
+    KnowledgeSnippet.objects.create(
+        title="Policy policy policy",
+        content="policy policy policy policy policy",
+        source_uri="course://policy",
+        source_label="Policy Handbook",
+    )
+
+    context = retrieve(
+        "policy",
+        session=session,
+        user=user,
+        sources={"knowledge", "session"},
+        top_k=1,
+    )
+
+    assert len(context.items) == 1
+    assert context.items[0].source == "knowledge"
+    assert context.items[0].score > 1.0
+    assert context.items[0].metadata["rerank_score"] < context.items[0].score
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake")
 def test_knowledge_source_returns_citation(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     KnowledgeSnippet.objects.create(
@@ -366,14 +416,17 @@ def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
     )
 
     def vector_candidates(query, *, candidate_count):
-        return [
-            retrieval_service._KnowledgeCandidate(
-                snippet=matching,
-                vector_similarity=0.75,
-                vector_rank=1,
-                embedding_model="fake",
-            ),
-        ]
+        return (
+            [
+                retrieval_service._KnowledgeCandidate(
+                    snippet=matching,
+                    vector_similarity=0.75,
+                    vector_rank=1,
+                    embedding_model="fake",
+                ),
+            ],
+            "success",
+        )
 
     monkeypatch.setattr(
         retrieval_service,
@@ -400,6 +453,88 @@ def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
     assert item.metadata["vector_rank"] == 1
     assert item.metadata["embedding_model"] == "fake"
     assert item.metadata["rerank_score"] == pytest.approx((1 / 11) + (1 / 11))
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_vector_recall_ignores_stale_embedding_model_or_dimensions(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "semantic-only-query"
+    KnowledgeSnippet.objects.create(
+        title="Wrong model",
+        content="unrelated content",
+        source_uri="course://wrong-model",
+        source_label="Archive",
+        embedding=fake_embedding(query),
+        embedding_model="old-model",
+        embedding_dimensions=1536,
+    )
+    KnowledgeSnippet.objects.create(
+        title="Wrong dimensions",
+        content="unrelated content",
+        source_uri="course://wrong-dimensions",
+        source_label="Archive",
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=512,
+    )
+    matching = KnowledgeSnippet.objects.create(
+        title="Current embedding",
+        content="unrelated content",
+        source_uri="course://current",
+        source_label="Archive",
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"knowledge"},
+        top_k=5,
+    )
+
+    assert context.source_statuses["knowledge"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["retrieval_channels"] == ["vector"]
+    assert context.items[0].metadata["embedding_model"] == "fake"
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake")
+def test_knowledge_source_reports_failed_when_vector_fails_without_keyword_hits(
+    user,
+    monkeypatch,
+) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="Semantic only",
+        content="unrelated content",
+        source_uri="course://semantic",
+        source_label="Archive",
+        embedding=[0.1] * 1536,
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    def fail_embedding(query):
+        raise RuntimeError("embedding unavailable")
+
+    monkeypatch.setattr(retrieval_service, "generate_embedding", fail_embedding)
+
+    context = retrieve(
+        "attendance handbook",
+        session=session,
+        user=user,
+        sources={"knowledge"},
+        top_k=5,
+    )
+
+    assert context.items == []
+    assert context.source_statuses["knowledge"] == "failed"
 
 
 @pytest.mark.django_db
