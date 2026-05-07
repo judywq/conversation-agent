@@ -290,3 +290,10 @@ backend/media/
 vue_frontend/.env.production
 vue_frontend/dist/
 backend/static/vue/
+/AGENTS.md
+/docker-compose.local.no-mailpit.yml
+/PROJECT_FILE_GUIDE.md
+/.codex/
+/openspec/
+/.idea/
+/docs/superpowers/
