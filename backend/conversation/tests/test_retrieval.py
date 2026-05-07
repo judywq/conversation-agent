@@ -3,6 +3,7 @@ from django.test import RequestFactory
 from django.test import override_settings
 import pytest
 
+from backend.conversation.services import retrieval as retrieval_service
 from backend.conversation.admin import TurnRetrievalAdmin
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
@@ -290,6 +291,7 @@ def test_mixed_sources_are_ranked_globally_before_top_k(user) -> None:
 
 
 @pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake")
 def test_knowledge_source_returns_citation(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     KnowledgeSnippet.objects.create(
@@ -299,13 +301,105 @@ def test_knowledge_source_returns_citation(user) -> None:
         source_label="Course Handbook",
     )
 
-    context = retrieve("attendance handbook", session=session, user=user, sources={"knowledge"}, top_k=5)
+    context = retrieve(
+        "attendance handbook",
+        session=session,
+        user=user,
+        sources={"knowledge"},
+        top_k=5,
+    )
 
     assert context.source_statuses["knowledge"] == "success"
     assert context.items[0].source == "knowledge"
     assert context.items[0].title == "Seminar participation policy"
     assert context.items[0].source_uri == "course://handbook#participation"
+    assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
+    assert context.items[0].metadata["rerank_score"] > 0
     assert "Seminar participation policy" in context.rendered_context
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake")
+def test_hybrid_knowledge_metadata_keeps_source_status_string(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="Attendance handbook",
+        content="Students should cite the course handbook when discussing attendance.",
+        source_uri="course://handbook#attendance",
+        source_label="Course Handbook",
+        metadata={"section": "attendance"},
+    )
+
+    context = retrieve("attendance handbook", session=session, user=user, sources={"knowledge"}, top_k=5)
+
+    assert context.source_statuses["knowledge"] == "success"
+    assert isinstance(context.source_statuses["knowledge"], str)
+    assert context.items[0].metadata["knowledge_snippet_id"] is not None
+    assert context.items[0].metadata["metadata"] == {"section": "attendance"}
+    assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
+    assert context.items[0].metadata["keyword_score"] > 0
+    assert context.items[0].metadata["keyword_rank"] == 1
+    assert context.items[0].metadata["vector_similarity"] is None
+    assert context.items[0].metadata["vector_rank"] is None
+    assert context.items[0].metadata["rerank_score"] > 0
+    assert context.items[0].metadata["embedding_model"] == ""
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMBEDDING_PROVIDER="fake",
+    HYBRID_RRF_K=10,
+    HYBRID_KEYWORD_WEIGHT=1.0,
+    HYBRID_VECTOR_WEIGHT=1.0,
+)
+def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    matching = KnowledgeSnippet.objects.create(
+        title="Attendance handbook",
+        content="Students should cite the course handbook when discussing attendance.",
+        source_uri="course://handbook#attendance",
+        source_label="Course Handbook",
+        metadata={"section": "attendance"},
+        embedding=[0.1] * 1536,
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    def vector_candidates(query, *, candidate_count):
+        return [
+            retrieval_service._KnowledgeCandidate(
+                snippet=matching,
+                vector_similarity=0.75,
+                vector_rank=1,
+                embedding_model="fake",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        retrieval_service,
+        "_vector_knowledge_candidates",
+        vector_candidates,
+    )
+
+    context = retrieve(
+        "attendance handbook",
+        session=session,
+        user=user,
+        sources={"knowledge"},
+        top_k=5,
+    )
+
+    assert context.source_statuses["knowledge"] == "success"
+    assert len(context.items) == 1
+    item = context.items[0]
+    assert item.metadata["knowledge_snippet_id"] == matching.id
+    assert item.metadata["retrieval_channels"] == ["keyword", "vector"]
+    assert item.metadata["keyword_score"] > 0
+    assert item.metadata["keyword_rank"] == 1
+    assert item.metadata["vector_similarity"] == 0.75
+    assert item.metadata["vector_rank"] == 1
+    assert item.metadata["embedding_model"] == "fake"
+    assert item.metadata["rerank_score"] == pytest.approx((1 / 11) + (1 / 11))
 
 
 @pytest.mark.django_db

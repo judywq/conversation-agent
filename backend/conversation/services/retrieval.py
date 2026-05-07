@@ -6,12 +6,15 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from pgvector.django import CosineDistance
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.services.embeddings import generate_embedding
 from backend.conversation.services.web_search import fetch_web_search_context
 
 User = get_user_model()
@@ -58,6 +61,36 @@ class RetrievedContext:
     rendered_context: str
     source_messages: dict[str, str] = field(default_factory=dict)
     error_message: str = ""
+
+
+@dataclass
+class _KnowledgeCandidate:
+    snippet: KnowledgeSnippet
+    keyword_score: float | None = None
+    keyword_rank: int | None = None
+    vector_similarity: float | None = None
+    vector_rank: int | None = None
+    embedding_model: str = ""
+
+    @property
+    def retrieval_channels(self) -> list[str]:
+        channels = []
+        if self.keyword_rank is not None:
+            channels.append("keyword")
+        if self.vector_rank is not None:
+            channels.append("vector")
+        return channels
+
+    def rerank_score(self) -> float:
+        rrf_k = float(getattr(settings, "HYBRID_RRF_K", 60))
+        keyword_weight = float(getattr(settings, "HYBRID_KEYWORD_WEIGHT", 1.0))
+        vector_weight = float(getattr(settings, "HYBRID_VECTOR_WEIGHT", 1.0))
+        score = 0.0
+        if self.keyword_rank is not None:
+            score += keyword_weight / (rrf_k + self.keyword_rank)
+        if self.vector_rank is not None:
+            score += vector_weight / (rrf_k + self.vector_rank)
+        return score
 
 
 def map_retrieval_sources(retrieval_requirement: str | None) -> set[str]:
@@ -197,6 +230,79 @@ def _retrieve_web(query: str) -> tuple[list[RetrievedItem], str, str]:
     ], SOURCE_SUCCESS, ""
 
 
+def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_KnowledgeCandidate]:
+    terms = _tokenize(query)
+    if not terms or candidate_count <= 0:
+        return []
+
+    scored_candidates = []
+    for snippet in KnowledgeSnippet.objects.filter(is_active=True):
+        score = _score_text(terms, snippet.content, snippet.source_label)
+        title_score = _score_text(terms, snippet.title) * 2.0
+        total = score + title_score
+        if total <= 0:
+            continue
+        scored_candidates.append((total, snippet.id, snippet))
+
+    ranked = sorted(scored_candidates, key=lambda x: (-x[0], x[1]))[:candidate_count]
+    return [
+        _KnowledgeCandidate(snippet=snippet, keyword_score=score, keyword_rank=rank)
+        for rank, (score, _snippet_id, snippet) in enumerate(ranked, start=1)
+    ]
+
+
+def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> list[_KnowledgeCandidate]:
+    if not getattr(settings, "VECTOR_RECALL_ENABLED", True) or candidate_count <= 0:
+        return []
+
+    try:
+        snippets = KnowledgeSnippet.objects.filter(is_active=True, embedding__isnull=False)
+        if not snippets.exists():
+            return []
+        result = generate_embedding(query)
+        ranked = snippets.annotate(
+            distance=CosineDistance("embedding", result.vector),
+        ).order_by("distance", "id")[:candidate_count]
+        candidates = []
+        for rank, snippet in enumerate(ranked, start=1):
+            distance = getattr(snippet, "distance", None)
+            if distance is None:
+                continue
+            candidates.append(
+                _KnowledgeCandidate(
+                    snippet=snippet,
+                    vector_similarity=1.0 - float(distance),
+                    vector_rank=rank,
+                    embedding_model=snippet.embedding_model or result.model,
+                ),
+            )
+        return candidates
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Vector knowledge recall failed; falling back to keyword-only: %s", exc)
+        return []
+
+
+def _merge_knowledge_candidates(
+    keyword_candidates: list[_KnowledgeCandidate],
+    vector_candidates: list[_KnowledgeCandidate],
+) -> list[_KnowledgeCandidate]:
+    merged: dict[int, _KnowledgeCandidate] = {}
+    for candidate in [*keyword_candidates, *vector_candidates]:
+        snippet_id = candidate.snippet.id
+        existing = merged.get(snippet_id)
+        if existing is None:
+            merged[snippet_id] = candidate
+            continue
+        if candidate.keyword_score is not None:
+            existing.keyword_score = candidate.keyword_score
+            existing.keyword_rank = candidate.keyword_rank
+        if candidate.vector_similarity is not None:
+            existing.vector_similarity = candidate.vector_similarity
+            existing.vector_rank = candidate.vector_rank
+            existing.embedding_model = candidate.embedding_model
+    return list(merged.values())
+
+
 def _retrieve_session(
     session: ConversationSession,
     query: str,
@@ -242,34 +348,53 @@ def _retrieve_session(
 
 
 def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem], str]:
-    terms = _tokenize(query)
-    if not terms:
+    if not _tokenize(query):
         return [], SOURCE_NO_RESULTS
 
-    candidates = []
-    for snippet in KnowledgeSnippet.objects.filter(is_active=True):
-        score = _score_text(terms, snippet.content, snippet.source_label)
-        title_score = _score_text(terms, snippet.title) * 2.0
-        total = score + title_score
-        if total <= 0:
-            continue
-        candidates.append((total, snippet))
+    keyword_candidate_count = int(getattr(settings, "HYBRID_KEYWORD_CANDIDATES", 20))
+    vector_candidate_count = int(getattr(settings, "HYBRID_VECTOR_CANDIDATES", 20))
+    keyword_candidates = _keyword_knowledge_candidates(
+        query,
+        candidate_count=keyword_candidate_count,
+    )
+    vector_candidates = _vector_knowledge_candidates(
+        query,
+        candidate_count=vector_candidate_count,
+    )
+    candidates = _merge_knowledge_candidates(keyword_candidates, vector_candidates)
 
     if not candidates:
         return [], SOURCE_NO_RESULTS
 
-    items = [
-        RetrievedItem(
-            source="knowledge",
-            title=snippet.title,
-            excerpt=_excerpt(snippet.content),
-            source_uri=snippet.source_uri,
-            source_label=snippet.source_label,
-            score=score,
-            metadata={"knowledge_snippet_id": snippet.id, "metadata": snippet.metadata},
+    ranked_candidates = sorted(
+        candidates,
+        key=lambda candidate: (-candidate.rerank_score(), candidate.snippet.id),
+    )
+    items = []
+    for candidate in ranked_candidates[:top_k]:
+        snippet = candidate.snippet
+        rerank_score = candidate.rerank_score()
+        items.append(
+            RetrievedItem(
+                source="knowledge",
+                title=snippet.title,
+                excerpt=_excerpt(snippet.content),
+                source_uri=snippet.source_uri,
+                source_label=snippet.source_label,
+                score=rerank_score,
+                metadata={
+                    "knowledge_snippet_id": snippet.id,
+                    "metadata": snippet.metadata,
+                    "retrieval_channels": candidate.retrieval_channels,
+                    "keyword_score": candidate.keyword_score,
+                    "keyword_rank": candidate.keyword_rank,
+                    "vector_similarity": candidate.vector_similarity,
+                    "vector_rank": candidate.vector_rank,
+                    "rerank_score": rerank_score,
+                    "embedding_model": candidate.embedding_model,
+                },
+            ),
         )
-        for score, snippet in sorted(candidates, key=lambda x: x[0], reverse=True)[:top_k]
-    ]
     return items, SOURCE_SUCCESS
 
 
