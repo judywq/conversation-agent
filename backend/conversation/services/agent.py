@@ -200,6 +200,8 @@ def _build_agent_retrieval_context(
         user=session.user,
         sources=sources,
         top_k=_AGENT_RETRIEVAL_TOP_K,
+        speech_act_type=str(facilitator_plan.get("type") or ""),
+        speech_act_subtype=str(facilitator_plan.get("subtype") or ""),
     )
 
 

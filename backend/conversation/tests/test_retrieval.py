@@ -78,6 +78,8 @@ def test_map_retrieval_sources() -> None:
     assert map_retrieval_sources("none") == set()
     assert map_retrieval_sources("") == set()
     assert map_retrieval_sources("exemplar") == {"exemplar"}
+    assert map_retrieval_sources("speech_act_exemplar") == {"exemplar"}
+    assert map_retrieval_sources("speech act exemplar") == {"exemplar"}
     assert map_retrieval_sources("surprise") == {"surprise"}
 
 
@@ -314,6 +316,194 @@ def test_knowledge_source_reports_no_results(user) -> None:
 
     assert context.items == []
     assert context.source_statuses["knowledge"] == "no-results"
+
+
+@pytest.mark.django_db
+def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    matching = KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "previous_sentence": "We were comparing two policies.",
+            "next_sentence": "That would help me understand your stance.",
+            "import_key": "import-key-1",
+        },
+    )
+    KnowledgeSnippet.objects.create(
+        title="Inactive exemplar",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-2",
+        source_label="CDIS01A.txt",
+        is_active=False,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-2",
+        },
+    )
+    KnowledgeSnippet.objects.create(
+        title="Course policy",
+        content="Could you clarify what you mean by that point?",
+        source_uri="course://policy",
+        source_label="Course Handbook",
+        is_active=True,
+        metadata={
+            "kind": "course_policy",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "Course Handbook",
+            "import_key": "policy",
+        },
+    )
+
+    context = retrieve(
+        "clarify point",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="directives",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert len(context.items) == 1
+    item = context.items[0]
+    assert item.source == "exemplar"
+    assert item.title == matching.title
+    assert item.excerpt == "Could you clarify what you mean by that point?"
+    assert item.source_uri == "elfa-sa://CDIS01A.txt#import-key-1"
+    assert item.source_label == "CDIS01A.txt"
+    assert item.metadata["knowledge_snippet_id"] == matching.id
+    assert item.metadata["kind"] == "speech_act_exemplar"
+    assert item.metadata["SA_type"] == "DIRECTIVES"
+    assert item.metadata["subtype"] == "request_info"
+    assert item.metadata["file_name"] == "CDIS01A.txt"
+    assert item.metadata["previous_sentence"] == "We were comparing two policies."
+    assert (
+        item.metadata["next_sentence"] == "That would help me understand your stance."
+    )
+    assert item.metadata["import_key"] == "import-key-1"
+    assert item.metadata["metadata"]["kind"] == "speech_act_exemplar"
+    assert "CDIS01A DIRECTIVES/request_info #12" in context.rendered_context
+    assert "Speech Act: DIRECTIVES/request_info" in context.rendered_context
+    assert "Source file: CDIS01A.txt" in context.rendered_context
+    assert "Previous: We were comparing two policies." in context.rendered_context
+    assert (
+        "Next: That would help me understand your stance."
+        in context.rendered_context
+    )
+    assert f"Snippet ID: {matching.id}" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    matching = KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "previous_sentence": "We were comparing two policies.",
+            "next_sentence": "That would help me understand your stance.",
+            "import_key": "import-key-1",
+        },
+    )
+
+    context = retrieve(
+        "latest classroom turn",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="directives",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].title == matching.title
+    assert context.items[0].metadata["SA_type"] == "DIRECTIVES"
+    assert context.items[0].metadata["subtype"] == "request_info"
+    assert context.items[0].score == 0.1
+
+
+@pytest.mark.django_db
+def test_exemplar_source_reports_no_results_when_labels_do_not_match(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="Invite exemplar",
+        content="Would anyone like to add something?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-3",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "invite",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-3",
+        },
+    )
+
+    context = retrieve(
+        "show me an example",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="ASSERTIVES",
+        speech_act_subtype="inform",
+    )
+
+    assert context.items == []
+    assert context.source_statuses["exemplar"] == "no-results"
+
+
+@pytest.mark.django_db
+def test_exemplar_source_requires_query_match_without_label_filter(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-1",
+        },
+    )
+
+    context = retrieve(
+        "latest classroom turn",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+    )
+
+    assert context.items == []
+    assert context.source_statuses["exemplar"] == "no-results"
 
 
 @pytest.mark.django_db

@@ -22,8 +22,9 @@ SOURCE_NO_RESULTS = "no-results"
 SOURCE_SKIPPED = "skipped"
 SOURCE_NOT_CONFIGURED = "not-configured"
 SOURCE_FAILED = "failed"
-SUPPORTED_SOURCES = {"web", "session", "memory", "knowledge"}
+SUPPORTED_SOURCES = {"web", "session", "memory", "knowledge", "exemplar"}
 _WEB_STATUS_PREFIX = "(Web search"
+_EXEMPLAR_LABEL_MATCH_FALLBACK_SCORE = 0.1
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,8 @@ def map_retrieval_sources(retrieval_requirement: str | None) -> set[str]:
         return {"web", "knowledge"}
     if raw == "memory":
         return {"memory", "session", "knowledge"}
+    if raw in {"exemplar", "speech_act_exemplar"}:
+        return {"exemplar"}
     if raw and raw != "none":
         return {raw}
     return set()
@@ -110,6 +113,29 @@ def _render_context(
         lines.append(f"   Title: {label}")
         if item.source_uri:
             lines.append(f"   URI: {item.source_uri}")
+        if item.source == "exemplar":
+            metadata = item.metadata if isinstance(item.metadata, dict) else {}
+            speech_act_type = str(metadata.get("SA_type") or "").strip()
+            speech_act_subtype = str(metadata.get("subtype") or "").strip()
+            speech_act = "/".join(
+                part for part in (speech_act_type, speech_act_subtype) if part
+            )
+            source_file = str(
+                metadata.get("file_name") or item.source_label or "",
+            ).strip()
+            previous_sentence = str(metadata.get("previous_sentence") or "").strip()
+            next_sentence = str(metadata.get("next_sentence") or "").strip()
+            snippet_id = metadata.get("knowledge_snippet_id")
+            if speech_act:
+                lines.append(f"   Speech Act: {speech_act}")
+            if source_file:
+                lines.append(f"   Source file: {source_file}")
+            if previous_sentence:
+                lines.append(f"   Previous: {previous_sentence}")
+            if next_sentence:
+                lines.append(f"   Next: {next_sentence}")
+            if snippet_id not in (None, ""):
+                lines.append(f"   Snippet ID: {snippet_id}")
         lines.append(f"   Excerpt: {item.excerpt}")
     return "\n".join(lines)
 
@@ -232,13 +258,96 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
     return items, SOURCE_SUCCESS
 
 
-def retrieve(
+def _retrieve_exemplar(
+    query: str,
+    *,
+    top_k: int,
+    speech_act_type: str = "",
+    speech_act_subtype: str = "",
+) -> tuple[list[RetrievedItem], str]:
+    requested_type = str(speech_act_type or "").strip().upper()
+    requested_subtype = str(speech_act_subtype or "").strip().lower()
+    has_label_filter = bool(requested_type or requested_subtype)
+
+    snippets = KnowledgeSnippet.objects.filter(
+        is_active=True,
+        metadata__kind="speech_act_exemplar",
+    ).order_by("id")
+    if requested_type:
+        snippets = snippets.filter(metadata__SA_type=requested_type)
+    if requested_subtype:
+        snippets = snippets.filter(metadata__subtype=requested_subtype)
+
+    snippets = list(snippets)
+    if not snippets:
+        return [], SOURCE_NO_RESULTS
+
+    terms = _tokenize(query)
+    if not terms and not has_label_filter:
+        return [], SOURCE_NO_RESULTS
+
+    candidates: list[tuple[float, int, KnowledgeSnippet]] = []
+    for snippet in snippets:
+        raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
+        previous_sentence = str(raw_metadata.get("previous_sentence") or "")
+        next_sentence = str(raw_metadata.get("next_sentence") or "")
+        score = _score_text(
+            terms,
+            snippet.content,
+            snippet.title,
+            snippet.source_label,
+            previous_sentence,
+            next_sentence,
+        )
+        if score <= 0:
+            if not has_label_filter:
+                continue
+            score = _EXEMPLAR_LABEL_MATCH_FALLBACK_SCORE
+        candidates.append((score, snippet.id, snippet))
+
+    if not candidates:
+        return [], SOURCE_NO_RESULTS
+
+    items: list[RetrievedItem] = []
+    ranked_candidates = sorted(candidates, key=lambda x: (-x[0], x[1]))[:top_k]
+    for score, _snippet_id, snippet in ranked_candidates:
+        raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
+        items.append(
+            RetrievedItem(
+                source="exemplar",
+                title=snippet.title,
+                excerpt=_excerpt(snippet.content),
+                source_uri=snippet.source_uri,
+                source_label=snippet.source_label,
+                score=score,
+                metadata={
+                    "knowledge_snippet_id": snippet.id,
+                    "kind": raw_metadata.get("kind", ""),
+                    "SA_type": raw_metadata.get("SA_type", ""),
+                    "subtype": raw_metadata.get("subtype", ""),
+                    "file_name": raw_metadata.get("file_name", ""),
+                    "previous_sentence": raw_metadata.get("previous_sentence", ""),
+                    "next_sentence": raw_metadata.get("next_sentence", ""),
+                    "annotation_source": raw_metadata.get("annotation_source", ""),
+                    "import_batch": raw_metadata.get("import_batch", ""),
+                    "import_key": raw_metadata.get("import_key", ""),
+                    "row_number": raw_metadata.get("row_number"),
+                    "metadata": raw_metadata,
+                },
+            ),
+        )
+    return items, SOURCE_SUCCESS
+
+
+def retrieve(  # noqa: C901, PLR0913
     query: str,
     *,
     session: ConversationSession,
     user: User,
     sources: set[str],
     top_k: int = 5,
+    speech_act_type: str = "",
+    speech_act_subtype: str = "",
 ) -> RetrievedContext:
     requested_sources = sorted(sources)
     source_statuses: dict[str, str] = {}
@@ -272,6 +381,13 @@ def retrieve(
                 found, status = _retrieve_session(session, query, top_k=top_k)
         elif source == "knowledge":
             found, status = _retrieve_knowledge(query, top_k=top_k)
+        elif source == "exemplar":
+            found, status = _retrieve_exemplar(
+                query,
+                top_k=top_k,
+                speech_act_type=speech_act_type,
+                speech_act_subtype=speech_act_subtype,
+            )
         else:
             found, status = [], SOURCE_SKIPPED
         source_statuses[source] = status

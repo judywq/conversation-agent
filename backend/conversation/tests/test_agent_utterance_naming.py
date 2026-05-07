@@ -95,12 +95,23 @@ def test_build_agent_retrieval_context_routes_web_search_to_unified_sources(user
     )
     captured = {}
 
-    def fake_retrieve(query, *, session, user, sources, top_k):
+    def fake_retrieve(  # noqa: PLR0913
+        query,
+        *,
+        session,
+        user,
+        sources,
+        top_k,
+        speech_act_type,
+        speech_act_subtype,
+    ):
         captured["query"] = query
         captured["session"] = session
         captured["user"] = user
         captured["sources"] = sources
         captured["top_k"] = top_k
+        captured["speech_act_type"] = speech_act_type
+        captured["speech_act_subtype"] = speech_act_subtype
         return RetrievedContext(
             query=query,
             requested_sources=sorted(sources),
@@ -123,6 +134,8 @@ def test_build_agent_retrieval_context_routes_web_search_to_unified_sources(user
     assert captured["session"] == session
     assert captured["user"] == user
     assert captured["top_k"] == 5
+    assert captured["speech_act_type"] == ""
+    assert captured["speech_act_subtype"] == ""
     assert "Topic: Climate policy" in captured["query"]
     assert "Facilitator instruction: Use a recent policy example." in captured["query"]
     assert "Latest turn: We should ground this in recent evidence." in captured["query"]
@@ -134,8 +147,19 @@ def test_build_agent_retrieval_context_routes_memory_to_unified_sources(user, mo
     session, _agent = _make_session_with_agent(user)
     captured = {}
 
-    def fake_retrieve(query, *, session, user, sources, top_k):
+    def fake_retrieve(  # noqa: PLR0913
+        query,
+        *,
+        session,
+        user,
+        sources,
+        top_k,
+        speech_act_type,
+        speech_act_subtype,
+    ):
         captured["sources"] = sources
+        captured["speech_act_type"] = speech_act_type
+        captured["speech_act_subtype"] = speech_act_subtype
         return RetrievedContext(
             query=query,
             requested_sources=sorted(sources),
@@ -158,6 +182,8 @@ def test_build_agent_retrieval_context_routes_memory_to_unified_sources(user, mo
     )
 
     assert captured["sources"] == {"memory", "session", "knowledge"}
+    assert captured["speech_act_type"] == ""
+    assert captured["speech_act_subtype"] == ""
 
 
 @pytest.mark.django_db
@@ -183,20 +209,50 @@ def test_build_agent_retrieval_context_skips_retrieve_when_not_requested(user, m
 
 
 @pytest.mark.django_db
-def test_build_agent_retrieval_context_traces_unsupported_requirement(user):
+def test_build_agent_retrieval_context_routes_exemplar_labels(user, monkeypatch):
     session, _agent = _make_session_with_agent(user)
+    captured = {}
+
+    def fake_retrieve(  # noqa: PLR0913
+        query,
+        *,
+        session,
+        user,
+        sources,
+        top_k,
+        speech_act_type,
+        speech_act_subtype,
+    ):
+        captured["query"] = query
+        captured["sources"] = sources
+        captured["top_k"] = top_k
+        captured["speech_act_type"] = speech_act_type
+        captured["speech_act_subtype"] = speech_act_subtype
+        return RetrievedContext(
+            query=query,
+            requested_sources=sorted(sources),
+            source_statuses={"exemplar": "success"},
+            items=[],
+            rendered_context="Retrieved information:\n1. Source: exemplar",
+        )
+
+    monkeypatch.setattr(agent_service, "retrieve", fake_retrieve)
 
     context = _build_agent_retrieval_context(
         session,
         {
             "retrieval_requirement": "exemplar",
+            "type": "DIRECTIVES",
+            "subtype": "request_info",
             "content_requirement": "Use a speech act example.",
         },
     )
 
-    assert context.requested_sources == ["exemplar"]
-    assert context.source_statuses == {"exemplar": "skipped"}
-    assert "conversation context only" in context.rendered_context
+    assert captured["sources"] == {"exemplar"}
+    assert captured["top_k"] == 5
+    assert captured["speech_act_type"] == "DIRECTIVES"
+    assert captured["speech_act_subtype"] == "request_info"
+    assert context.rendered_context == "Retrieved information:\n1. Source: exemplar"
 
 
 @pytest.mark.django_db
