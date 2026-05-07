@@ -4,8 +4,15 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from django.contrib import admin
 from django.core.management import call_command
+from django.test import RequestFactory
 
+from backend.conversation.admin import ExemplarKindListFilter
+from backend.conversation.admin import KnowledgeSnippetAdmin
+from backend.conversation.admin import SourceFileListFilter
+from backend.conversation.admin import SpeechActSubtypeListFilter
+from backend.conversation.admin import SpeechActTypeListFilter
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.services import speech_act_exemplars
 
@@ -352,3 +359,363 @@ def test_import_command_dry_run_reports_existing_exemplar_duplicates() -> None:
 
     assert stdout.getvalue().strip() == "created=2 skipped=2 invalid=1 dry_run=True"
     assert KnowledgeSnippet.objects.filter(metadata__kind=EXEMPLAR_KIND).count() == 1
+
+
+@pytest.mark.django_db
+def test_knowledge_snippet_admin_config_exposes_exemplar_metadata() -> None:
+    model_admin = KnowledgeSnippetAdmin(KnowledgeSnippet, admin.site)
+    snippet = KnowledgeSnippet.objects.create(
+        title="Invite exemplar",
+        content="Would anyone like to add something?",
+        source_uri="elfa-sa://CDIS01A.txt#1",
+        source_label="CDIS01A.txt",
+        metadata={
+            "kind": EXEMPLAR_KIND,
+            "SA_type": "DIRECTIVES",
+            "subtype": "invite",
+            "file_name": "CDIS01A.txt",
+        },
+    )
+
+    required_list_display = {
+        "id",
+        "title",
+        "content_excerpt",
+        "metadata_kind",
+        "metadata_sa_type",
+        "metadata_subtype",
+        "metadata_file_name",
+        "source_label",
+        "source_uri",
+        "is_active",
+        "updated_at",
+    }
+    assert required_list_display.issubset(set(model_admin.list_display))
+    long_content = (
+        "This exemplar content is intentionally long so the admin "
+        "list view shows a concise preview instead of the full body."
+    )
+    excerpt = model_admin.content_excerpt(
+        KnowledgeSnippet(
+            content=long_content,
+        ),
+    )
+    assert excerpt.startswith(
+        "This exemplar content is intentionally long so the admin list view",
+    )
+    assert excerpt.endswith("...")
+    assert len(excerpt) < len(long_content)
+    assert model_admin.metadata_kind(snippet) == EXEMPLAR_KIND
+    assert model_admin.metadata_sa_type(snippet) == "DIRECTIVES"
+    assert model_admin.metadata_subtype(snippet) == "invite"
+    assert model_admin.metadata_file_name(snippet) == "CDIS01A.txt"
+    required_search_fields = {
+        "title",
+        "content",
+        "source_label",
+        "source_uri",
+        "metadata__kind",
+        "metadata__SA_type",
+        "metadata__subtype",
+        "metadata__file_name",
+    }
+    assert required_search_fields.issubset(set(model_admin.search_fields))
+
+    required_actions = {
+        "enable_selected_snippets",
+        "disable_selected_snippets",
+    }
+    assert required_actions.issubset(set(model_admin.actions))
+
+    filter_classes = [
+        item for item in model_admin.list_filter if isinstance(item, type)
+    ]
+    assert "is_active" in model_admin.list_filter
+    assert "source_label" in model_admin.list_filter
+    assert ExemplarKindListFilter in filter_classes
+    assert SpeechActTypeListFilter in filter_classes
+    assert SpeechActSubtypeListFilter in filter_classes
+    assert SourceFileListFilter in filter_classes
+
+
+@pytest.mark.django_db
+def test_knowledge_snippet_admin_metadata_filters_match_expected_snippets() -> None:
+    KnowledgeSnippet.objects.create(
+        title="Invite exemplar",
+        content="Would anyone like to add something?",
+        source_uri="elfa-sa://CDIS01A.txt#1",
+        source_label="CDIS01A.txt",
+        metadata={
+            "kind": EXEMPLAR_KIND,
+            "SA_type": "DIRECTIVES",
+            "subtype": "invite",
+            "file_name": "CDIS01A.txt",
+        },
+    )
+    KnowledgeSnippet.objects.create(
+        title="Acknowledge exemplar",
+        content="Yeah.",
+        source_uri="elfa-sa://CDIS02A.txt#2",
+        source_label="CDIS02A.txt",
+        metadata={
+            "kind": EXEMPLAR_KIND,
+            "SA_type": "EXPRESSIVES",
+            "subtype": "acknowledge",
+            "file_name": "CDIS02A.txt",
+        },
+    )
+    KnowledgeSnippet.objects.create(
+        title="Course policy",
+        content="Policy content",
+        source_uri="course://policy",
+        source_label="Course Handbook",
+        metadata={"kind": "course_policy"},
+    )
+    KnowledgeSnippet.objects.create(
+        title="None metadata values",
+        content="Ignored lookup values",
+        source_uri="course://none",
+        source_label="Misc",
+        metadata={
+            "kind": None,
+            "SA_type": "",
+            "subtype": None,
+            "file_name": "",
+        },
+    )
+    KnowledgeSnippet.objects.create(
+        title="Empty metadata",
+        content="Ignored by lookups",
+        source_uri="course://empty",
+        source_label="Misc",
+        metadata={},
+    )
+    KnowledgeSnippet.objects.create(
+        title="Non-dict metadata",
+        content="Ignored by lookups",
+        source_uri="course://invalid",
+        source_label="Misc",
+        metadata=["unexpected"],
+    )
+
+    model_admin = KnowledgeSnippetAdmin(KnowledgeSnippet, admin.site)
+    request_factory = RequestFactory()
+
+    kind_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_kind": EXEMPLAR_KIND},
+    )
+    kind_filter = ExemplarKindListFilter(
+        kind_request,
+        kind_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    kind_results = kind_filter.queryset(
+        kind_request,
+        KnowledgeSnippet.objects.order_by("title"),
+    )
+    assert list(kind_results.values_list("title", flat=True)) == [
+        "Acknowledge exemplar",
+        "Invite exemplar",
+    ]
+
+    sa_type_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_sa_type": "DIRECTIVES"},
+    )
+    sa_type_filter = SpeechActTypeListFilter(
+        sa_type_request,
+        sa_type_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    sa_type_results = sa_type_filter.queryset(
+        sa_type_request,
+        KnowledgeSnippet.objects.all(),
+    )
+    assert list(sa_type_results.values_list("title", flat=True)) == ["Invite exemplar"]
+
+    subtype_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_subtype": "acknowledge"},
+    )
+    subtype_filter = SpeechActSubtypeListFilter(
+        subtype_request,
+        subtype_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    subtype_results = subtype_filter.queryset(
+        subtype_request,
+        KnowledgeSnippet.objects.all(),
+    )
+    assert list(subtype_results.values_list("title", flat=True)) == [
+        "Acknowledge exemplar",
+    ]
+
+    source_file_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_file_name": "CDIS02A.txt"},
+    )
+    source_file_filter = SourceFileListFilter(
+        source_file_request,
+        source_file_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    source_file_results = source_file_filter.queryset(
+        source_file_request,
+        KnowledgeSnippet.objects.all(),
+    )
+    assert list(source_file_results.values_list("title", flat=True)) == [
+        "Acknowledge exemplar",
+    ]
+
+    kind_lookups = dict(
+        ExemplarKindListFilter(
+            kind_request,
+            kind_request.GET.copy(),
+            KnowledgeSnippet,
+            model_admin,
+        ).lookups(kind_request, model_admin),
+    )
+    sa_type_lookups = dict(
+        SpeechActTypeListFilter(
+            sa_type_request,
+            sa_type_request.GET.copy(),
+            KnowledgeSnippet,
+            model_admin,
+        ).lookups(
+            sa_type_request,
+            model_admin,
+        ),
+    )
+    subtype_lookups = dict(
+        SpeechActSubtypeListFilter(
+            subtype_request,
+            subtype_request.GET.copy(),
+            KnowledgeSnippet,
+            model_admin,
+        ).lookups(
+            subtype_request,
+            model_admin,
+        ),
+    )
+    source_file_lookups = dict(
+        SourceFileListFilter(
+            source_file_request,
+            source_file_request.GET.copy(),
+            KnowledgeSnippet,
+            model_admin,
+        ).lookups(
+            source_file_request,
+            model_admin,
+        ),
+    )
+
+    assert set(kind_lookups) == {EXEMPLAR_KIND}
+    assert set(sa_type_lookups) == {"DIRECTIVES", "EXPRESSIVES"}
+    assert set(subtype_lookups) == {"acknowledge", "invite"}
+    assert set(source_file_lookups) == {"CDIS01A.txt", "CDIS02A.txt"}
+
+    invalid_kind_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_kind": "course_policy"},
+    )
+    invalid_kind_filter = ExemplarKindListFilter(
+        invalid_kind_request,
+        invalid_kind_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    assert not invalid_kind_filter.queryset(
+        invalid_kind_request,
+        KnowledgeSnippet.objects.all(),
+    ).exists()
+
+    missing_sa_type_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_sa_type": "COMMISSIVES"},
+    )
+    missing_sa_type_filter = SpeechActTypeListFilter(
+        missing_sa_type_request,
+        missing_sa_type_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    assert not missing_sa_type_filter.queryset(
+        missing_sa_type_request,
+        KnowledgeSnippet.objects.all(),
+    ).exists()
+
+    missing_subtype_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_subtype": "nonexistent"},
+    )
+    missing_subtype_filter = SpeechActSubtypeListFilter(
+        missing_subtype_request,
+        missing_subtype_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    assert not missing_subtype_filter.queryset(
+        missing_subtype_request,
+        KnowledgeSnippet.objects.all(),
+    ).exists()
+
+    missing_source_file_request = request_factory.get(
+        "/admin/conversation/knowledgesnippet/",
+        {"metadata_file_name": "UNKNOWN.txt"},
+    )
+    missing_source_file_filter = SourceFileListFilter(
+        missing_source_file_request,
+        missing_source_file_request.GET.copy(),
+        KnowledgeSnippet,
+        model_admin,
+    )
+    assert not missing_source_file_filter.queryset(
+        missing_source_file_request,
+        KnowledgeSnippet.objects.all(),
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_knowledge_snippet_admin_bulk_actions_toggle_is_active() -> None:
+    disabled_snippet = KnowledgeSnippet.objects.create(
+        title="Disabled exemplar",
+        content="Please continue.",
+        source_uri="elfa-sa://CDIS01A.txt#3",
+        source_label="CDIS01A.txt",
+        is_active=False,
+        metadata={"kind": EXEMPLAR_KIND},
+    )
+    enabled_snippet = KnowledgeSnippet.objects.create(
+        title="Enabled exemplar",
+        content="Yeah.",
+        source_uri="elfa-sa://CDIS02A.txt#4",
+        source_label="CDIS02A.txt",
+        is_active=True,
+        metadata={"kind": EXEMPLAR_KIND},
+    )
+    model_admin = KnowledgeSnippetAdmin(KnowledgeSnippet, admin.site)
+
+    def ignore_message_user(request, message):
+        return None
+
+    model_admin.message_user = ignore_message_user
+
+    request = RequestFactory().post("/admin/conversation/knowledgesnippet/")
+    model_admin.enable_selected_snippets(
+        request,
+        KnowledgeSnippet.objects.filter(pk=disabled_snippet.pk),
+    )
+    disabled_snippet.refresh_from_db()
+    assert disabled_snippet.is_active is True
+
+    model_admin.disable_selected_snippets(
+        request,
+        KnowledgeSnippet.objects.filter(pk=enabled_snippet.pk),
+    )
+    enabled_snippet.refresh_from_db()
+    assert enabled_snippet.is_active is False
