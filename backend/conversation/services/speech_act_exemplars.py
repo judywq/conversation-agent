@@ -42,7 +42,7 @@ def _normalize_text(value: Any) -> str | None:
     return normalized or None
 
 
-def build_import_key(
+def build_import_key(  # noqa: PLR0913
     *,
     file_name: str,
     sentence: str,
@@ -63,7 +63,11 @@ def build_import_key(
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def normalize_annotation_row(raw: Any, *, row_number: int) -> SpeechActAnnotation | None:
+def normalize_annotation_row(
+    raw: Any,
+    *,
+    row_number: int,
+) -> SpeechActAnnotation | None:
     if not isinstance(raw, dict):
         return None
 
@@ -109,7 +113,6 @@ def import_speech_act_annotations(
         import_key
         for import_key in KnowledgeSnippet.objects.filter(
             metadata__kind=EXEMPLAR_KIND,
-            metadata__annotation_source=ANNOTATION_SOURCE,
         ).values_list("metadata__import_key", flat=True)
         if isinstance(import_key, str) and import_key
     }
@@ -142,8 +145,13 @@ def import_speech_act_annotations(
         if dry_run:
             continue
 
+        title = (
+            f"{Path(annotation.file_name).stem} "
+            f"{annotation.sa_type}/{annotation.subtype} "
+            f"#{annotation.row_number}"
+        )
         KnowledgeSnippet.objects.create(
-            title=f"{Path(annotation.file_name).stem} {annotation.sa_type}/{annotation.subtype} #{annotation.row_number}",
+            title=title,
             content=annotation.sentence,
             source_uri=f"elfa-sa://{annotation.file_name}#{import_key[:12]}",
             source_label=annotation.file_name,

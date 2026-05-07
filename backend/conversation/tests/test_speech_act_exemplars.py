@@ -1,12 +1,18 @@
+# ruff: noqa: PLR2004
+
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from django.core.management import call_command
 
 from backend.conversation.models import KnowledgeSnippet
-from backend.conversation.services.speech_act_exemplars import EXEMPLAR_KIND
-from backend.conversation.services.speech_act_exemplars import build_import_key
-from backend.conversation.services.speech_act_exemplars import import_speech_act_annotations
-from backend.conversation.services.speech_act_exemplars import normalize_annotation_row
+from backend.conversation.services import speech_act_exemplars
+
+EXEMPLAR_KIND = speech_act_exemplars.EXEMPLAR_KIND
+build_import_key = speech_act_exemplars.build_import_key
+import_speech_act_annotations = speech_act_exemplars.import_speech_act_annotations
+normalize_annotation_row = speech_act_exemplars.normalize_annotation_row
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sa_annotations_sample.json"
@@ -213,10 +219,10 @@ def test_import_speech_act_annotations_ignores_other_annotation_sources() -> Non
 
     summary = import_speech_act_annotations(FIXTURE_PATH)
 
-    assert summary.created == 3
-    assert summary.skipped == 1
+    assert summary.created == 2
+    assert summary.skipped == 2
     assert summary.invalid == 1
-    assert KnowledgeSnippet.objects.filter(metadata__kind=EXEMPLAR_KIND).count() == 4
+    assert KnowledgeSnippet.objects.filter(metadata__kind=EXEMPLAR_KIND).count() == 3
 
 
 @pytest.mark.django_db
@@ -258,3 +264,91 @@ def test_import_speech_act_annotations_dry_run_does_not_write() -> None:
     assert summary.invalid == 1
     assert summary.dry_run is True
     assert KnowledgeSnippet.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_import_speech_act_exemplars_command_writes_summary() -> None:
+    stdout = StringIO()
+
+    call_command("import_speech_act_exemplars", str(FIXTURE_PATH), stdout=stdout)
+
+    assert stdout.getvalue().strip() == "created=3 skipped=1 invalid=1 dry_run=False"
+    assert KnowledgeSnippet.objects.count() == 3
+
+
+@pytest.mark.django_db
+def test_import_speech_act_exemplars_command_dry_run_writes_nothing() -> None:
+    stdout = StringIO()
+
+    call_command(
+        "import_speech_act_exemplars",
+        str(FIXTURE_PATH),
+        "--dry-run",
+        stdout=stdout,
+    )
+
+    assert stdout.getvalue().strip() == "created=3 skipped=1 invalid=1 dry_run=True"
+    assert KnowledgeSnippet.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_import_command_reports_existing_exemplar_duplicates() -> None:
+    import_key = build_import_key(
+        file_name="CDIS01A.txt",
+        sentence="I wonder whether there are any questions you'd like to ask.",
+        sa_type="DIRECTIVES",
+        subtype="invite",
+        previous_sentence=None,
+        next_sentence="Nobody.",
+    )
+    KnowledgeSnippet.objects.create(
+        title="Existing exemplar",
+        content="Existing exemplar content",
+        source_uri="elfa-sa://CDIS01A.txt#other",
+        source_label="CDIS01A.txt",
+        metadata={
+            "kind": EXEMPLAR_KIND,
+            "annotation_source": "other_annotations.json",
+            "import_key": import_key,
+        },
+    )
+    stdout = StringIO()
+
+    call_command("import_speech_act_exemplars", str(FIXTURE_PATH), stdout=stdout)
+
+    assert stdout.getvalue().strip() == "created=2 skipped=2 invalid=1 dry_run=False"
+    assert KnowledgeSnippet.objects.filter(metadata__kind=EXEMPLAR_KIND).count() == 3
+
+
+@pytest.mark.django_db
+def test_import_command_dry_run_reports_existing_exemplar_duplicates() -> None:
+    import_key = build_import_key(
+        file_name="CDIS01A.txt",
+        sentence="I wonder whether there are any questions you'd like to ask.",
+        sa_type="DIRECTIVES",
+        subtype="invite",
+        previous_sentence=None,
+        next_sentence="Nobody.",
+    )
+    KnowledgeSnippet.objects.create(
+        title="Existing exemplar",
+        content="Existing exemplar content",
+        source_uri="elfa-sa://CDIS01A.txt#other",
+        source_label="CDIS01A.txt",
+        metadata={
+            "kind": EXEMPLAR_KIND,
+            "annotation_source": "other_annotations.json",
+            "import_key": import_key,
+        },
+    )
+    stdout = StringIO()
+
+    call_command(
+        "import_speech_act_exemplars",
+        str(FIXTURE_PATH),
+        "--dry-run",
+        stdout=stdout,
+    )
+
+    assert stdout.getvalue().strip() == "created=2 skipped=2 invalid=1 dry_run=True"
+    assert KnowledgeSnippet.objects.filter(metadata__kind=EXEMPLAR_KIND).count() == 1
