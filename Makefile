@@ -85,6 +85,10 @@ migrate-%:
 init-llm-%:
 	docker compose -f docker-compose.$*.yml run --rm django python manage.py init_llm_seed
 
+# Migrate local DB and import local Speech Act knowledge exemplars
+init-knowledge-local:
+	./scripts/init_knowledge.sh
+
 pytest:
 	docker compose -f docker-compose.local.yml run --rm django pytest
 

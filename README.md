@@ -27,6 +27,26 @@ docker-compose -f docker-compose.local.yml up
 docker-compose -f docker-compose.local.yml run --rm django python manage.py init_llm_seed
 ```
 
+### Initializing Speech Act Knowledge Data
+
+Raw corpus files are kept local and are not committed to Git. To seed the Speech Act exemplar knowledge data, place the annotation export at:
+
+```text
+Docs & Files/Sample SA annotation/SA_annotations.json
+```
+
+Then run:
+
+```sh
+make init-knowledge-local
+```
+
+This runs Django migrations and imports the annotations into `KnowledgeSnippet` records. To validate the file without writing database rows, run:
+
+```sh
+DRY_RUN=1 make init-knowledge-local
+```
+
 ##### From the console
 Alternatively you, may run the Vite dev server directly from the project directory:
 ```sh
