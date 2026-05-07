@@ -241,14 +241,46 @@ def _normal_knowledge_snippets() -> Any:
     )
 
 
-def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_KnowledgeCandidate]:
+def _speech_act_exemplar_snippets(
+    *,
+    speech_act_type: str = "",
+    speech_act_subtype: str = "",
+) -> Any:
+    snippets = KnowledgeSnippet.objects.filter(
+        is_active=True,
+        metadata__kind="speech_act_exemplar",
+    )
+    if speech_act_type:
+        snippets = snippets.filter(metadata__SA_type=speech_act_type)
+    if speech_act_subtype:
+        snippets = snippets.filter(metadata__subtype=speech_act_subtype)
+    return snippets
+
+
+def _keyword_candidates(
+    query: str,
+    snippets: Any,
+    *,
+    candidate_count: int,
+    include_exemplar_context: bool = False,
+) -> list[_KnowledgeCandidate]:
     terms = _tokenize(query)
     if not terms or candidate_count <= 0:
         return []
 
     scored_candidates = []
-    for snippet in _normal_knowledge_snippets():
-        score = _score_text(terms, snippet.content, snippet.source_label)
+    for snippet in snippets:
+        parts = [snippet.content, snippet.source_label]
+        if include_exemplar_context:
+            raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
+            parts.extend(
+                [
+                    snippet.title,
+                    str(raw_metadata.get("previous_sentence") or ""),
+                    str(raw_metadata.get("next_sentence") or ""),
+                ],
+            )
+        score = _score_text(terms, *parts)
         title_score = _score_text(terms, snippet.title) * 2.0
         total = score + title_score
         if total <= 0:
@@ -262,6 +294,14 @@ def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_
     ]
 
 
+def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_KnowledgeCandidate]:
+    return _keyword_candidates(
+        query,
+        _normal_knowledge_snippets(),
+        candidate_count=candidate_count,
+    )
+
+
 def _expected_embedding_model() -> str:
     provider = str(getattr(settings, "EMBEDDING_PROVIDER", "openai")).strip().casefold()
     if provider == "fake":
@@ -273,12 +313,18 @@ def _expected_embedding_dimensions() -> int:
     return int(getattr(settings, "EMBEDDING_DIMENSIONS", 1536))
 
 
-def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> tuple[list[_KnowledgeCandidate], str]:
+def _vector_candidates(
+    query: str,
+    snippets: Any,
+    *,
+    candidate_count: int,
+    log_label: str,
+) -> tuple[list[_KnowledgeCandidate], str]:
     if not getattr(settings, "VECTOR_RECALL_ENABLED", True) or candidate_count <= 0:
         return [], SOURCE_NO_RESULTS
 
     try:
-        snippets = _normal_knowledge_snippets().filter(
+        snippets = snippets.filter(
             embedding__isnull=False,
             embedding_model=_expected_embedding_model(),
             embedding_dimensions=_expected_embedding_dimensions(),
@@ -304,11 +350,20 @@ def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> tuple[l
             )
         return candidates, SOURCE_SUCCESS
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Vector knowledge recall failed; falling back to keyword-only: %s", exc)
+        logger.warning("Vector %s recall failed; falling back to keyword-only: %s", log_label, exc)
         return [], SOURCE_FAILED
 
 
-def _merge_knowledge_candidates(
+def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> tuple[list[_KnowledgeCandidate], str]:
+    return _vector_candidates(
+        query,
+        _normal_knowledge_snippets(),
+        candidate_count=candidate_count,
+        log_label="knowledge",
+    )
+
+
+def _merge_candidates(
     keyword_candidates: list[_KnowledgeCandidate],
     vector_candidates: list[_KnowledgeCandidate],
 ) -> list[_KnowledgeCandidate]:
@@ -327,6 +382,13 @@ def _merge_knowledge_candidates(
             existing.vector_rank = candidate.vector_rank
             existing.embedding_model = candidate.embedding_model
     return list(merged.values())
+
+
+def _merge_knowledge_candidates(
+    keyword_candidates: list[_KnowledgeCandidate],
+    vector_candidates: list[_KnowledgeCandidate],
+) -> list[_KnowledgeCandidate]:
+    return _merge_candidates(keyword_candidates, vector_candidates)
 
 
 def _retrieve_session(
@@ -439,49 +501,72 @@ def _retrieve_exemplar(
     requested_subtype = str(speech_act_subtype or "").strip().lower()
     has_label_filter = bool(requested_type or requested_subtype)
 
-    snippets = KnowledgeSnippet.objects.filter(
-        is_active=True,
-        metadata__kind="speech_act_exemplar",
-    ).order_by("id")
-    if requested_type:
-        snippets = snippets.filter(metadata__SA_type=requested_type)
-    if requested_subtype:
-        snippets = snippets.filter(metadata__subtype=requested_subtype)
-
-    snippets = list(snippets)
-    if not snippets:
+    snippets = _speech_act_exemplar_snippets(
+        speech_act_type=requested_type,
+        speech_act_subtype=requested_subtype,
+    )
+    if not snippets.exists():
         return [], SOURCE_NO_RESULTS
 
     terms = _tokenize(query)
     if not terms and not has_label_filter:
         return [], SOURCE_NO_RESULTS
 
-    candidates: list[tuple[float, int, KnowledgeSnippet]] = []
-    for snippet in snippets:
-        raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
-        previous_sentence = str(raw_metadata.get("previous_sentence") or "")
-        next_sentence = str(raw_metadata.get("next_sentence") or "")
-        score = _score_text(
-            terms,
-            snippet.content,
-            snippet.title,
-            snippet.source_label,
-            previous_sentence,
-            next_sentence,
+    keyword_candidate_count = max(
+        int(getattr(settings, "HYBRID_KEYWORD_CANDIDATES", 20)),
+        top_k,
+    )
+    vector_candidate_count = max(
+        int(getattr(settings, "HYBRID_VECTOR_CANDIDATES", 20)),
+        top_k,
+    )
+    keyword_candidates = _keyword_candidates(
+        query,
+        snippets.order_by("id"),
+        candidate_count=keyword_candidate_count,
+        include_exemplar_context=True,
+    )
+    if terms:
+        vector_candidates, vector_status = _vector_candidates(
+            query,
+            snippets,
+            candidate_count=vector_candidate_count,
+            log_label="speech act exemplar",
         )
-        if score <= 0:
-            if not has_label_filter:
+    else:
+        vector_candidates, vector_status = [], SOURCE_NO_RESULTS
+    candidates = _merge_candidates(keyword_candidates, vector_candidates)
+    if has_label_filter:
+        candidate_ids = {candidate.snippet.id for candidate in candidates}
+        for snippet in snippets.order_by("id"):
+            if snippet.id in candidate_ids:
                 continue
-            score = _EXEMPLAR_LABEL_MATCH_FALLBACK_SCORE
-        candidates.append((score, snippet.id, snippet))
-
+            candidates.append(
+                _KnowledgeCandidate(
+                    snippet=snippet,
+                    keyword_score=_EXEMPLAR_LABEL_MATCH_FALLBACK_SCORE,
+                    keyword_rank=None,
+                ),
+            )
     if not candidates:
+        if vector_status == SOURCE_FAILED:
+            return [], SOURCE_FAILED
         return [], SOURCE_NO_RESULTS
 
     items: list[RetrievedItem] = []
-    ranked_candidates = sorted(candidates, key=lambda x: (-x[0], x[1]))[:top_k]
-    for score, _snippet_id, snippet in ranked_candidates:
+    ranked_candidates = sorted(
+        candidates,
+        key=lambda candidate: (
+            -candidate.rerank_score(),
+            -candidate.global_score(),
+            candidate.snippet.id,
+        ),
+    )[:top_k]
+    for candidate in ranked_candidates:
+        snippet = candidate.snippet
         raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
+        rerank_score = candidate.rerank_score()
+        global_score = candidate.global_score()
         items.append(
             RetrievedItem(
                 source="exemplar",
@@ -489,7 +574,7 @@ def _retrieve_exemplar(
                 excerpt=_excerpt(snippet.content),
                 source_uri=snippet.source_uri,
                 source_label=snippet.source_label,
-                score=score,
+                score=global_score,
                 metadata={
                     "knowledge_snippet_id": snippet.id,
                     "kind": raw_metadata.get("kind", ""),
@@ -503,6 +588,14 @@ def _retrieve_exemplar(
                     "import_key": raw_metadata.get("import_key", ""),
                     "row_number": raw_metadata.get("row_number"),
                     "metadata": raw_metadata,
+                    "retrieval_channels": candidate.retrieval_channels or ["label_filter"],
+                    "keyword_score": candidate.keyword_score,
+                    "keyword_rank": candidate.keyword_rank,
+                    "vector_similarity": candidate.vector_similarity,
+                    "vector_rank": candidate.vector_rank,
+                    "rerank_score": rerank_score,
+                    "global_score": global_score,
+                    "embedding_model": candidate.embedding_model,
                 },
             ),
         )

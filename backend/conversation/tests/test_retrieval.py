@@ -773,6 +773,151 @@ def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
 
 
 @pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_exemplar_hybrid_retrieval_keeps_label_filter(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "semantic zqxclarification"
+    matching = KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Unrelated wording that only has an embedding match.",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-1",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+    KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/invite #13",
+        content="semantic zqxclarification",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-2",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "invite",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-2",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["subtype"] == "request_info"
+    assert context.items[0].metadata["retrieval_channels"] == ["vector"]
+    assert context.items[0].metadata["vector_similarity"] is not None
+    assert context.items[0].metadata["vector_rank"] == 1
+    assert context.items[0].metadata["embedding_model"] == "fake"
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_vector_semantic_exemplar_can_be_returned_with_label_filter(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "semantic-only exemplar target"
+    matching = KnowledgeSnippet.objects.create(
+        title="ULECD040 DIRECTIVES/request_info #2",
+        content="Text with no overlapping query terms.",
+        source_uri="elfa-sa://ULECD040.txt#import-key-1",
+        source_label="ULECD040.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "ULECD040.txt",
+            "previous_sentence": "have you made any user studies",
+            "next_sentence": "what do you mean the catalogues",
+            "import_key": "import-key-1",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert len(context.items) == 1
+    item = context.items[0]
+    assert item.metadata["knowledge_snippet_id"] == matching.id
+    assert item.metadata["retrieval_channels"] == ["vector"]
+    assert item.metadata["keyword_score"] is None
+    assert item.metadata["vector_similarity"] is not None
+    assert item.metadata["rerank_score"] > 0
+    assert item.metadata["global_score"] == item.score
+    assert item.metadata["previous_sentence"] == "have you made any user studies"
+    assert item.metadata["next_sentence"] == "what do you mean the catalogues"
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_exemplar_source_excludes_non_exemplar_knowledge(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "clarify point"
+    KnowledgeSnippet.objects.create(
+        title="Course policy",
+        content="Could you clarify what you mean by that point?",
+        source_uri="course://policy",
+        source_label="Course Handbook",
+        is_active=True,
+        metadata={
+            "kind": "course_policy",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "Course Handbook",
+            "import_key": "policy",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.items == []
+    assert context.source_statuses["exemplar"] == "no-results"
+
+
+@pytest.mark.django_db
 def test_exemplar_source_reports_no_results_when_labels_do_not_match(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     KnowledgeSnippet.objects.create(
