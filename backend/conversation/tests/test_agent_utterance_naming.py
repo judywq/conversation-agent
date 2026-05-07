@@ -208,8 +208,16 @@ def test_build_agent_retrieval_context_skips_retrieve_when_not_requested(user, m
     assert "No retrieval requested" in context.rendered_context
 
 
+@pytest.mark.parametrize(
+    "retrieval_requirement",
+    ["exemplar", "speech_act_exemplar", "speech act exemplar"],
+)
 @pytest.mark.django_db
-def test_build_agent_retrieval_context_routes_exemplar_labels(user, monkeypatch):
+def test_build_agent_retrieval_context_routes_exemplar_labels(
+    user,
+    monkeypatch,
+    retrieval_requirement,
+):
     session, _agent = _make_session_with_agent(user)
     captured = {}
 
@@ -241,7 +249,7 @@ def test_build_agent_retrieval_context_routes_exemplar_labels(user, monkeypatch)
     context = _build_agent_retrieval_context(
         session,
         {
-            "retrieval_requirement": "exemplar",
+            "retrieval_requirement": retrieval_requirement,
             "type": "DIRECTIVES",
             "subtype": "request_info",
             "content_requirement": "Use a speech act example.",
@@ -252,6 +260,7 @@ def test_build_agent_retrieval_context_routes_exemplar_labels(user, monkeypatch)
     assert captured["top_k"] == 5
     assert captured["speech_act_type"] == "DIRECTIVES"
     assert captured["speech_act_subtype"] == "request_info"
+    assert "Topic: Climate policy" in captured["query"]
     assert context.rendered_context == "Retrieved information:\n1. Source: exemplar"
 
 
