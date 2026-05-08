@@ -512,14 +512,12 @@ def _retrieve_exemplar(
     if not terms and not has_label_filter:
         return [], SOURCE_NO_RESULTS
 
-    keyword_candidate_count = max(
-        int(getattr(settings, "HYBRID_KEYWORD_CANDIDATES", 20)),
-        top_k,
-    )
-    vector_candidate_count = max(
-        int(getattr(settings, "HYBRID_VECTOR_CANDIDATES", 20)),
-        top_k,
-    )
+    keyword_candidate_count = int(getattr(settings, "HYBRID_KEYWORD_CANDIDATES", 20))
+    if keyword_candidate_count > 0:
+        keyword_candidate_count = max(keyword_candidate_count, top_k)
+    vector_candidate_count = int(getattr(settings, "HYBRID_VECTOR_CANDIDATES", 20))
+    if vector_candidate_count > 0:
+        vector_candidate_count = max(vector_candidate_count, top_k)
     keyword_candidates = _keyword_candidates(
         query,
         snippets.order_by("id"),

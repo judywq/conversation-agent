@@ -773,6 +773,41 @@ def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
 
 
 @pytest.mark.django_db
+def test_exemplar_source_returns_same_label_with_empty_query(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    matching = KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-1",
+        },
+    )
+
+    context = retrieve(
+        "",
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="directives",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].title == matching.title
+    assert context.items[0].metadata["retrieval_channels"] == ["label_filter"]
+    assert context.items[0].score == 0.1
+
+
+@pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_exemplar_hybrid_retrieval_keeps_label_filter(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
@@ -830,6 +865,103 @@ def test_exemplar_hybrid_retrieval_keeps_label_filter(user) -> None:
     assert context.items[0].metadata["vector_similarity"] is not None
     assert context.items[0].metadata["vector_rank"] == 1
     assert context.items[0].metadata["embedding_model"] == "fake"
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMBEDDING_PROVIDER="fake",
+    EMBEDDING_DIMENSIONS=1536,
+    HYBRID_VECTOR_CANDIDATES=0,
+)
+def test_exemplar_vector_channel_can_be_disabled(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "clarify point"
+    calls = []
+
+    def record_embedding(text):
+        calls.append(text)
+        return fake_embedding(text)
+
+    monkeypatch.setattr(retrieval_service, "generate_embedding", record_embedding)
+    matching = KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-1",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+    )
+
+    assert calls == []
+    assert context.source_statuses["exemplar"] == "success"
+    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
+    assert context.items[0].metadata["vector_similarity"] is None
+    assert context.items[0].metadata["vector_rank"] is None
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMBEDDING_PROVIDER="fake",
+    EMBEDDING_DIMENSIONS=1536,
+    HYBRID_KEYWORD_CANDIDATES=0,
+)
+def test_exemplar_keyword_channel_can_be_disabled(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    query = "clarify point"
+    matching = KnowledgeSnippet.objects.create(
+        title="CDIS01A DIRECTIVES/request_info #12",
+        content="Could you clarify what you mean by that point?",
+        source_uri="elfa-sa://CDIS01A.txt#import-key-1",
+        source_label="CDIS01A.txt",
+        is_active=True,
+        metadata={
+            "kind": "speech_act_exemplar",
+            "SA_type": "DIRECTIVES",
+            "subtype": "request_info",
+            "file_name": "CDIS01A.txt",
+            "import_key": "import-key-1",
+        },
+        embedding=fake_embedding(query),
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"exemplar"},
+        top_k=5,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+    )
+
+    assert context.source_statuses["exemplar"] == "success"
+    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["retrieval_channels"] == ["vector"]
+    assert context.items[0].metadata["keyword_score"] is None
+    assert context.items[0].metadata["keyword_rank"] is None
+    assert context.items[0].metadata["vector_similarity"] is not None
 
 
 @pytest.mark.django_db
