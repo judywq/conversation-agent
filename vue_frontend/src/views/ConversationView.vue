@@ -66,7 +66,8 @@ watch(topic, () => {
 })
 
 function nextLocalTurnIndex(): number {
-  const last = turns.value.at(-1)?.turn_index
+  const lastTurn = turns.value.length > 0 ? turns.value[turns.value.length - 1] : undefined
+  const last = lastTurn?.turn_index
   return typeof last === 'number' ? last + 1 : turns.value.length
 }
 
