@@ -570,8 +570,36 @@ def test_vector_failure_falls_back_to_keyword(user, monkeypatch) -> None:
     assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
     assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
     assert context.items[0].metadata["keyword_rank"] == 1
+    assert context.items[0].metadata["vector_status"] == "failed"
     assert context.items[0].metadata["vector_similarity"] is None
     assert context.items[0].metadata["vector_rank"] is None
+
+
+@pytest.mark.django_db
+@override_settings(VECTOR_RECALL_ENABLED=False)
+def test_knowledge_keyword_recall_matches_source_uri(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    matching = KnowledgeSnippet.objects.create(
+        title="Archived note",
+        content="Students should check the syllabus.",
+        source_uri="course://handbook#attendance",
+        source_label="Archive",
+        metadata={"section": "attendance"},
+    )
+
+    context = retrieve(
+        "course handbook attendance",
+        session=session,
+        user=user,
+        sources={"knowledge"},
+        top_k=5,
+    )
+
+    assert context.source_statuses["knowledge"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
+    assert context.items[0].metadata["vector_status"] == "skipped"
 
 
 @pytest.mark.django_db

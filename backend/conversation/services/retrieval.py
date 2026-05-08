@@ -270,7 +270,7 @@ def _keyword_candidates(
 
     scored_candidates = []
     for snippet in snippets:
-        parts = [snippet.content, snippet.source_label]
+        parts = [snippet.content, snippet.source_label, snippet.source_uri]
         if include_exemplar_context:
             raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
             parts.extend(
@@ -321,7 +321,7 @@ def _vector_candidates(
     log_label: str,
 ) -> tuple[list[_KnowledgeCandidate], str]:
     if not getattr(settings, "VECTOR_RECALL_ENABLED", True) or candidate_count <= 0:
-        return [], SOURCE_NO_RESULTS
+        return [], SOURCE_SKIPPED
 
     try:
         snippets = snippets.filter(
@@ -477,6 +477,7 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
                     "knowledge_snippet_id": snippet.id,
                     "metadata": snippet.metadata,
                     "retrieval_channels": candidate.retrieval_channels,
+                    "vector_status": vector_status,
                     "keyword_score": candidate.keyword_score,
                     "keyword_rank": candidate.keyword_rank,
                     "vector_similarity": candidate.vector_similarity,
@@ -587,6 +588,7 @@ def _retrieve_exemplar(
                     "row_number": raw_metadata.get("row_number"),
                     "metadata": raw_metadata,
                     "retrieval_channels": candidate.retrieval_channels or ["label_filter"],
+                    "vector_status": vector_status,
                     "keyword_score": candidate.keyword_score,
                     "keyword_rank": candidate.keyword_rank,
                     "vector_similarity": candidate.vector_similarity,
