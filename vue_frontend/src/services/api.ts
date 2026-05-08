@@ -44,6 +44,7 @@ interface ApiFieldError {
 
 export interface ApiErrorResponse {
   non_field_errors?: string[];
+  code?: string;
   [key: string]: any;
 }
 
@@ -91,7 +92,7 @@ function handleApiError(error: AxiosError<ApiErrorResponse>): ApiError {
 
     return {
       message: nonFieldError || 'An error occurred',
-      code: error.response.status.toString(),
+      code: (typeof data?.code === 'string' && data.code) ? data.code : error.response.status.toString(),
       fieldErrors: Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined,
       nonFieldError
     };

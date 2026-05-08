@@ -6,6 +6,7 @@ from django.core.files.storage import default_storage
 from openai import OpenAI
 
 from backend.llm_caller.models import APIKey
+from backend.conversation.exceptions import ServiceConfigurationError
 
 
 def _get_openai_key() -> str:
@@ -15,7 +16,10 @@ def _get_openai_key() -> str:
     key_obj = APIKey.objects.filter(is_active=True, llm_model__llm_type="openai").order_by("order").first()
     if key_obj and key_obj.key:
         return key_obj.key
-    raise RuntimeError("No active OpenAI API key configured")
+    raise ServiceConfigurationError(
+        "TTS requires an OpenAI API key, but none is configured. Please set it in admin panel.",
+        code="TTS_API_KEY_MISSING",
+    )
 
 
 def synthesize_speech(

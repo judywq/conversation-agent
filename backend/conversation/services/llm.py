@@ -3,6 +3,7 @@ from django.conf import settings
 from backend.llm_caller.models import APIKey
 from backend.llm_caller.models import LLMModel
 from backend.llm_caller.utils import get_llm_model
+from backend.conversation.exceptions import ServiceConfigurationError
 
 
 def get_default_chat_llm():
@@ -15,11 +16,17 @@ def get_default_chat_llm():
     if model is None:
         model = LLMModel.objects.filter(is_active=True).order_by("order").first()
     if model is None:
-        raise RuntimeError("No active LLM models configured")
+        raise ServiceConfigurationError(
+            "No active LLM models are configured.",
+            code="LLM_MODEL_NOT_CONFIGURED",
+        )
 
     key = APIKey.get_available_key(model.name)
     if key is None or not key.key:
-        raise RuntimeError("No API key configured for the default LLM model")
+        raise ServiceConfigurationError(
+            "LLM API key is not configured. Please set it in admin panel.",
+            code="LLM_API_KEY_MISSING",
+        )
 
     config = {
         "llm_type": model.llm_type,
