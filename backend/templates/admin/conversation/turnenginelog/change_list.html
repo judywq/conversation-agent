@@ -1,0 +1,64 @@
+{% extends "admin/change_list.html" %}
+
+{% load i18n %}
+{% load admin_query %}
+
+{% block content_title %}
+  {{ block.super }}
+
+  {% firstof request.GET.component__exact "" as current_component %}
+
+  <div class="turn-engine-tabs">
+    <a
+      class="turn-engine-tab {% if not current_component %}is-active{% endif %}"
+      href="{% admin_query component__exact=None %}"
+    >
+      {% translate "All" %}
+    </a>
+    <a
+      class="turn-engine-tab {% if current_component == 'turn_manager' %}is-active{% endif %}"
+      href="{% admin_query component__exact='turn_manager' %}"
+    >
+      {% translate "Turn manager" %}
+    </a>
+    <a
+      class="turn-engine-tab {% if current_component == 'turn_processor' %}is-active{% endif %}"
+      href="{% admin_query component__exact='turn_processor' %}"
+    >
+      {% translate "Turn processor" %}
+    </a>
+  </div>
+
+  <style>
+    .turn-engine-tabs {
+      margin: 8px 0 14px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .turn-engine-tab {
+      display: inline-block;
+      padding: 6px 10px;
+      border: 1px solid var(--border-color, #dcdcdc);
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--body-fg, #333);
+      background: var(--body-bg, #fff);
+      font-weight: 500;
+      line-height: 1.2;
+    }
+
+    .turn-engine-tab:hover {
+      border-color: var(--hairline-color, #c8c8c8);
+      background: var(--darkened-bg, #f7f7f7);
+    }
+
+    .turn-engine-tab.is-active {
+      border-color: var(--primary, #417690);
+      background: color-mix(in srgb, var(--primary, #417690) 12%, var(--body-bg, #fff));
+      color: var(--body-fg, #111);
+    }
+  </style>
+{% endblock %}
+
