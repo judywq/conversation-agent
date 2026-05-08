@@ -17,6 +17,8 @@ Environment:
   COMPOSE_FILE          Docker compose file to use. Defaults to docker-compose.local.yml.
   DJANGO_SERVICE        Django service name. Defaults to django.
   DRY_RUN=1             Parse the data without writing KnowledgeSnippet rows.
+  REFRESH_EMBEDDINGS=1  Generate missing embeddings after import. Requires
+                        OPENAI_API_KEY unless EMBEDDING_PROVIDER=fake.
 
 Examples:
   scripts/init_knowledge.sh
@@ -67,3 +69,13 @@ fi
 
 echo "Importing Speech Act exemplars from $CONTAINER_ANNOTATIONS_PATH..."
 docker compose -f "$COMPOSE_FILE" run --rm "$DJANGO_SERVICE" "${IMPORT_ARGS[@]}"
+
+if [[ "${DRY_RUN:-}" == "1" || "${DRY_RUN:-}" == "true" ]]; then
+  exit 0
+fi
+
+if [[ "${REFRESH_EMBEDDINGS:-}" == "1" || "${REFRESH_EMBEDDINGS:-}" == "true" ]]; then
+  echo "Generating missing KnowledgeSnippet embeddings..."
+  docker compose -f "$COMPOSE_FILE" run --rm "$DJANGO_SERVICE" \
+    python manage.py refresh_knowledge_embeddings
+fi

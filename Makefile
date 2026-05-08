@@ -89,6 +89,18 @@ init-llm-%:
 init-knowledge-local:
 	./scripts/init_knowledge.sh
 
+# Generate missing KnowledgeSnippet embeddings
+init-embeddings-%:
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_knowledge_embeddings
+
+# Refresh stale KnowledgeSnippet embeddings after text/model changes
+refresh-embeddings-%:
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_knowledge_embeddings --stale
+
+# Migrate, import local Speech Act knowledge, and generate embeddings
+init-rag-local:
+	REFRESH_EMBEDDINGS=1 ./scripts/init_knowledge.sh
+
 pytest:
 	docker compose -f docker-compose.local.yml run --rm django pytest
 

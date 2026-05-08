@@ -27,6 +27,20 @@ docker-compose -f docker-compose.local.yml up
 docker-compose -f docker-compose.local.yml run --rm django python manage.py init_llm_seed
 ```
 
+For a fresh local RAG setup after the containers are built, run:
+
+```sh
+make migrate-local
+make init-knowledge-local
+make init-embeddings-local
+```
+
+If you want to import Speech Act knowledge and generate embeddings in one step:
+
+```sh
+make init-rag-local
+```
+
 ### Initializing Speech Act Knowledge Data
 
 Raw corpus files are kept local and are not committed to Git. To seed the Speech Act exemplar knowledge data, place the annotation export at:
@@ -47,6 +61,12 @@ This runs Django migrations and imports the annotations into `KnowledgeSnippet` 
 DRY_RUN=1 make init-knowledge-local
 ```
 
+To import the annotations and generate missing embeddings in one command, run:
+
+```sh
+REFRESH_EMBEDDINGS=1 make init-knowledge-local
+```
+
 ### Knowledge Embeddings
 
 Knowledge retrieval combines keyword matching with pgvector recall, then applies a deterministic reciprocal-rank rerank. Keyword and vector candidates are merged by `KnowledgeSnippet`, ranked by stable scores, and written to retrieval traces with `retrieval_channels` metadata such as `["keyword"]`, `["vector"]`, or `["keyword", "vector"]`.
@@ -55,9 +75,10 @@ The local and production Postgres images are built from `pgvector/pgvector:pg16`
 
 Embedding settings:
 
-- Local/default: `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`, and `OPENAI_API_KEY` must be configured before generating embeddings.
-- Production: keep `EMBEDDING_PROVIDER=openai`, set `OPENAI_API_KEY` through deployment secrets, and keep `EMBEDDING_MODEL`/`EMBEDDING_DIMENSIONS` aligned with stored snippet embeddings.
+- Local/default: `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-small`, and `OPENAI_API_KEY` must be configured before generating embeddings.
+- Production: keep `EMBEDDING_PROVIDER=openai`, set `OPENAI_API_KEY` through deployment secrets, and keep `EMBEDDING_MODEL` aligned with stored snippet embeddings.
 - Tests: use `EMBEDDING_PROVIDER=fake` for deterministic local vectors without network calls.
+- Vector dimension is fixed at 1536 by the Django model and migration. Changing it requires a new migration and embedding backfill.
 - Recall tuning: `VECTOR_RECALL_ENABLED`, `HYBRID_KEYWORD_CANDIDATES`, `HYBRID_VECTOR_CANDIDATES`, `HYBRID_RRF_K`, `HYBRID_KEYWORD_WEIGHT`, and `HYBRID_VECTOR_WEIGHT` control hybrid retrieval behavior.
 
 Generate missing embeddings after importing knowledge data:
@@ -66,10 +87,22 @@ Generate missing embeddings after importing knowledge data:
 docker compose -f docker-compose.local.yml run --rm django python manage.py refresh_knowledge_embeddings
 ```
 
+Equivalent Make target:
+
+```sh
+make init-embeddings-local
+```
+
 Refresh stale embeddings when the canonical text, provider model, or dimensions changed:
 
 ```sh
 docker compose -f docker-compose.local.yml run --rm django python manage.py refresh_knowledge_embeddings --stale
+```
+
+Equivalent Make target:
+
+```sh
+make refresh-embeddings-local
 ```
 
 Use `--dry-run` to count matching snippets without writing vectors, and `--limit N` to process a bounded batch.
