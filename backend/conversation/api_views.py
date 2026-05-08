@@ -4,6 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.conversation.models import ConversationSession
+from backend.conversation.models import UserAudio
 from backend.conversation.services.profile_audio import generate_cefr_topic_samples
 from backend.conversation.services.stt import transcribe_audio_file
 
@@ -37,4 +39,43 @@ class CefrTopicSamplesView(APIView):
             request.user.userprofile.cefr_sample_choices = samples
             request.user.userprofile.save(update_fields=["cefr_sample_choices"])
         return Response({"topic": topic, "samples": samples})
+
+
+class UserAudioUploadView(APIView):
+    """
+    Upload a user-recorded audio clip and return its URL.
+
+    The client should upload the raw recording (e.g. webm) as multipart form field "audio".
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        audio = request.FILES.get("audio")
+        if audio is None:
+            return Response({"error": "Missing audio file field 'audio'."}, status=400)
+
+        session_id = request.data.get("session_id")
+        if not session_id:
+            return Response({"error": "Missing required field 'session_id'."}, status=400)
+
+        session = ConversationSession.objects.filter(id=session_id, user=request.user).first()
+        if session is None:
+            return Response({"error": "Session not found."}, status=404)
+
+        clip = UserAudio.objects.create(
+            session=session,
+            user=request.user,
+            audio_file=audio,
+            content_type=str(getattr(audio, "content_type", "") or ""),
+            original_filename=str(getattr(audio, "name", "") or ""),
+        )
+
+        return Response(
+            {
+                "id": clip.id,
+                "audio_url": clip.audio_file.url,
+            },
+        )
 

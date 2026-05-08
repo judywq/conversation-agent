@@ -283,9 +283,18 @@ async function sendRecording() {
   if (!recordedBlob.value) return
   micState.value = 'transcribing'
   try {
-    const text = await ConversationService.speechToText(recordedBlob.value)
+    const currentSessionId = sessionId.value ? String(sessionId.value) : null
+    const [text, upload] = await Promise.all([
+      ConversationService.speechToText(recordedBlob.value),
+      currentSessionId ? ConversationService.uploadUserAudio(currentSessionId, recordedBlob.value) : Promise.resolve(null),
+    ])
     pushLocalUserTurn(text)
-    ws.send({ type: 'user_turn', utterance: text, source: 'mic' })
+    ws.send({
+      type: 'user_turn',
+      utterance: text,
+      source: 'mic',
+      audio_url: upload?.audio_url ?? null,
+    })
     needUserTurn.value = false
     clearRecordingPreview()
     micState.value = 'idle'

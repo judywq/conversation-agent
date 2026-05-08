@@ -1,5 +1,7 @@
 import asyncio
 import random
+from uuid import uuid4
+import time
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -8,6 +10,7 @@ from django.contrib.auth import get_user_model
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
+from backend.conversation.models import TurnEngineLog
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
 from backend.conversation.services.agent_selection import select_complementary_agent_personas
@@ -75,6 +78,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         self.user_volunteered: bool = False
         self.first_turn_choice: bool | None = None
         self._loop_task: asyncio.Task | None = None
+        self._correlation_id: str = ""
         await self.send_json(
             {
                 "type": "connected",
@@ -232,10 +236,32 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 return
 
             last_user_turn_index = await self._last_user_turn_index(session.id)
+            self._correlation_id = uuid4().hex
             decision = await database_sync_to_async(decide_next_speaker)(
                 session,
                 user_volunteered=self.user_volunteered,
                 last_user_turn_index=last_user_turn_index,
+            )
+            await self._log_turn_engine(
+                session_id=session.id,
+                component=TurnEngineLog.COMPONENT_TURN_MANAGER,
+                level=TurnEngineLog.LEVEL_INFO,
+                event="decide_next_speaker",
+                message=decision.reason,
+                context={
+                    "turn_count": int(session.turn_count),
+                    "pending_forced_user_turn": bool(session.pending_forced_user_turn),
+                    "user_override_requested": bool(session.user_override_requested),
+                    "user_volunteered": bool(self.user_volunteered),
+                    "last_user_turn_index": last_user_turn_index,
+                    "decision": {
+                        "terminate": bool(decision.terminate),
+                        "next_speaker_type": decision.next_speaker_type,
+                        "next_speaker_id": decision.next_speaker_id,
+                        "reason": decision.reason,
+                    },
+                },
+                correlation_id=self._correlation_id,
             )
 
             if decision.terminate:
@@ -254,7 +280,19 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
 
             if decision.next_speaker_type == "agent":
                 await self.send_json({"type": "agent_status", "status": "thinking"})
-                turn = await self._append_agent_llm_turn(session.id, agent_id=decision.next_speaker_id)
+                try:
+                    turn = await self._append_agent_llm_turn(session.id, agent_id=decision.next_speaker_id)
+                except Exception as e:
+                    await self._log_turn_engine(
+                        session_id=session.id,
+                        component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+                        level=TurnEngineLog.LEVEL_ERROR,
+                        event="append_agent_llm_turn_exception",
+                        message=str(e),
+                        context={},
+                        correlation_id=self._correlation_id,
+                    )
+                    raise
                 session_after = await self._get_session(self.session_id)
                 if session_after is None or session_after.paused or session_after.terminate:
                     return
@@ -378,6 +416,28 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             source=source,
             audio_url=audio_url,
         )
+        TurnEngineLog.objects.create(
+            session=session,
+            component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+            level=TurnEngineLog.LEVEL_INFO,
+            event="process_user_turn",
+            message="user_turn_appended",
+            context={
+                "turn_count_after": int(processed.session.turn_count),
+                "speaker": processed.turn.speaker,
+                "speaker_type": processed.turn.speaker_type,
+                "turn_index": int(processed.turn.turn_index),
+                "subturn_index": int(getattr(processed.turn, "subturn_index", 0)),
+                "speech_act": processed.turn.speech_act,
+                "subtype": processed.turn.subtype,
+                "target": processed.turn.target,
+                "source": source,
+                "has_audio_url": bool(processed.turn.audio_url),
+            },
+            correlation_id=self._correlation_id,
+            turn_index=processed.turn.turn_index,
+            subturn_index=getattr(processed.turn, "subturn_index", 0),
+        )
         # Once the user has spoken, clear any "forced user" + override flags.
         if processed.session.pending_forced_user_turn:
             set_pending_forced_user_turn(processed.session, pending=False)
@@ -399,13 +459,35 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
         agent_id = agent.agent_id
 
+        t0 = time.perf_counter()
         plan = build_facilitator_plan(session, agent=agent)
+        TurnEngineLog.objects.create(
+            session=session,
+            component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+            level=TurnEngineLog.LEVEL_INFO,
+            event="agent_turn_start",
+            message="start_agent_turn_pipeline",
+            context={
+                "speaker": agent_id,
+                "turn_count_before": int(session.turn_count),
+            },
+            correlation_id=self._correlation_id,
+            turn_index=int(session.turn_count),
+            subturn_index=0,
+        )
+
+        t_utter0 = time.perf_counter()
         generated = generate_agent_utterance_with_retrieval(session, agent=agent, facilitator_plan=plan)
+        t_utter_ms = int((time.perf_counter() - t_utter0) * 1000)
         utterance = generated.utterance
+
         audio_url = None
+        t_tts_ms: int | None = None
         try:
             voice = agent.voice or "alloy"
+            t_tts0 = time.perf_counter()
             audio_url = synthesize_speech(text=utterance, voice=voice)
+            t_tts_ms = int((time.perf_counter() - t_tts0) * 1000)
         except Exception:
             # If TTS fails (missing key, etc.), continue without audio.
             audio_url = None
@@ -419,7 +501,62 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             audio_url=audio_url,
         )
         persist_turn_retrieval_safely(processed.turn, generated.retrieval_context)
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        TurnEngineLog.objects.create(
+            session=session,
+            component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+            level=TurnEngineLog.LEVEL_INFO,
+            event="process_agent_turn",
+            message="agent_turn_appended",
+            context={
+                "turn_count_after": int(processed.session.turn_count),
+                "speaker": processed.turn.speaker,
+                "speaker_type": processed.turn.speaker_type,
+                "turn_index": int(processed.turn.turn_index),
+                "subturn_index": int(getattr(processed.turn, "subturn_index", 0)),
+                "speech_act": processed.turn.speech_act,
+                "subtype": processed.turn.subtype,
+                "target": processed.turn.target,
+                "source": "llm",
+                "has_audio_url": bool(processed.turn.audio_url),
+                "timing_ms": {
+                    "utterance_with_retrieval": t_utter_ms,
+                    "tts": t_tts_ms,
+                    "total": total_ms,
+                },
+            },
+            correlation_id=self._correlation_id,
+            turn_index=processed.turn.turn_index,
+            subturn_index=getattr(processed.turn, "subturn_index", 0),
+        )
         return processed.turn
+
+    @database_sync_to_async
+    def _log_turn_engine(
+        self,
+        *,
+        session_id: int,
+        component: str,
+        level: str,
+        event: str,
+        message: str,
+        context: dict,
+        correlation_id: str = "",
+        turn_index: int | None = None,
+        subturn_index: int | None = None,
+    ) -> None:
+        session = ConversationSession.objects.get(id=session_id)
+        TurnEngineLog.objects.create(
+            session=session,
+            component=component,
+            level=level,
+            event=event,
+            message=message,
+            context=context or {},
+            correlation_id=correlation_id or "",
+            turn_index=turn_index,
+            subturn_index=subturn_index,
+        )
 
     @database_sync_to_async
     def _set_pending_forced_user_turn(self, session_id: int, *, pending: bool) -> None:

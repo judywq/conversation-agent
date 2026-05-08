@@ -1,0 +1,267 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block result_list %}
+  <div class="session-tiered">
+    <table id="result_list">
+      <thead>
+        <tr>
+          <th class="column-expander"></th>
+          <th>{% translate "Session" %}</th>
+          <th>{% translate "User" %}</th>
+          <th>{% translate "Topic" %}</th>
+          <th>{% translate "Turns" %}</th>
+          <th>{% translate "Paused" %}</th>
+          <th>{% translate "Terminated" %}</th>
+          <th>{% translate "Created" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for session in cl.result_list %}
+          <tr class="session-row" data-session-id="{{ session.pk }}">
+            <td class="column-expander">
+              <button
+                type="button"
+                class="session-toggle"
+                aria-expanded="false"
+                aria-controls="turns-for-{{ session.pk }}"
+                title="{% translate 'Show turns' %}"
+              >
+                ▸
+              </button>
+            </td>
+            <th class="field-session">
+              <a href="{% url 'admin:conversation_conversationsession_change' session.pk %}">
+                #{{ session.pk }}
+              </a>
+            </th>
+            <td class="field-user">
+              <a href="{% url 'admin:users_user_change' session.user_id %}">{{ session.user }}</a>
+            </td>
+            <td class="field-topic">{{ session.topic|default:"" }}</td>
+            <td class="field-turns">{{ session.turn_count }}</td>
+            <td class="field-paused">{% if session.paused %}✓{% endif %}</td>
+            <td class="field-terminate">{% if session.terminate %}✓{% endif %}</td>
+            <td class="field-created">{{ session.created_at }}</td>
+          </tr>
+
+          <tr id="turns-for-{{ session.pk }}" class="turns-row" hidden>
+            <td colspan="8" class="turns-cell">
+              <div class="turns-panel">
+                <div class="turns-header">
+                  <strong>{% translate "Turns & user audios" %}</strong>
+                  <span class="turns-meta">
+                    ·
+                    <a href="{% url 'admin:conversation_turnrecord_changelist' %}?session__id__exact={{ session.pk }}">
+                      {% translate "Open in TurnRecord list" %}
+                    </a>
+                    ·
+                    <a href="{% url 'admin:conversation_turnenginelog_changelist' %}?session__id__exact={{ session.pk }}">
+                      {% translate "Open in TurnEngineLog list" %}
+                    </a>
+                    ·
+                    <a href="{% url 'admin:conversation_useraudio_changelist' %}?session__id__exact={{ session.pk }}">
+                      {% translate "Open in UserAudio list" %}
+                    </a>
+                  </span>
+                </div>
+
+                {% if session.turns.all %}
+                  <table class="turns-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{% translate "Speaker" %}</th>
+                        <th>{% translate "SA" %}</th>
+                        <th>{% translate "Target" %}</th>
+                        <th>{% translate "Utterance" %}</th>
+                        <th>{% translate "Created" %}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for t in session.turns.all %}
+                        <tr>
+                          <td class="mono">
+                            {{ t.turn_index }}{% if t.subturn_index %}.{{ t.subturn_index }}{% endif %}
+                          </td>
+                          <td>
+                            <a href="{% url 'admin:conversation_turnrecord_change' t.pk %}">
+                              {{ t.speaker_type }}: {{ t.speaker }}
+                            </a>
+                          </td>
+                          <td>{{ t.speech_act|default:"" }}{% if t.subtype %} / {{ t.subtype }}{% endif %}</td>
+                          <td>{{ t.target|default:"" }}</td>
+                          <td class="utterance">{{ t.utterance|truncatechars:140 }}</td>
+                          <td>{{ t.created_at }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                {% else %}
+                  <div class="quiet">{% translate "No turns yet." %}</div>
+                {% endif %}
+
+                <div class="audios-section">
+                  <div class="audios-header">
+                    <strong>{% translate "User audios" %}</strong>
+                    <span class="turns-meta">{% translate "(uploaded recordings of the user's real voice)" %}</span>
+                  </div>
+                  {% if session.user_audios.all %}
+                    <table class="turns-table">
+                      <thead>
+                        <tr>
+                          <th>{% translate "Created" %}</th>
+                          <th>{% translate "Filename" %}</th>
+                          <th>{% translate "Type" %}</th>
+                          <th>{% translate "Play / download" %}</th>
+                          <th>{% translate "Linked turn" %}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for a in session.user_audios.all %}
+                          <tr>
+                            <td>{{ a.created_at }}</td>
+                            <td>
+                              <a href="{% url 'admin:conversation_useraudio_change' a.pk %}">
+                                {{ a.original_filename|default:a.audio_file.name }}
+                              </a>
+                            </td>
+                            <td class="mono">{{ a.content_type|default:"" }}</td>
+                            <td>
+                              <a href="{{ a.audio_file.url }}" target="_blank" rel="noopener">
+                                {% translate "Open" %}
+                              </a>
+                            </td>
+                            <td>
+                              {% if a.turn_id %}
+                                <a href="{% url 'admin:conversation_turnrecord_change' a.turn_id %}">#{{ a.turn_id }}</a>
+                              {% else %}
+                                <span class="quiet">—</span>
+                              {% endif %}
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <div class="quiet">{% translate "No user audios uploaded yet." %}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    (function () {
+      const toggles = document.querySelectorAll(".session-toggle");
+      for (const btn of toggles) {
+        btn.addEventListener("click", () => {
+          const row = btn.closest("tr.session-row");
+          const sessionId = row?.getAttribute("data-session-id");
+          const panelRow = sessionId ? document.getElementById(`turns-for-${sessionId}`) : null;
+          if (!panelRow) return;
+
+          const isOpen = !panelRow.hasAttribute("hidden");
+          if (isOpen) {
+            panelRow.setAttribute("hidden", "");
+            btn.setAttribute("aria-expanded", "false");
+            btn.textContent = "▸";
+          } else {
+            panelRow.removeAttribute("hidden");
+            btn.setAttribute("aria-expanded", "true");
+            btn.textContent = "▾";
+          }
+        });
+      }
+    })();
+  </script>
+
+  <style>
+    .session-tiered #result_list .column-expander {
+      width: 34px;
+    }
+
+    .session-toggle {
+      border: 1px solid var(--border-color, #dcdcdc);
+      background: var(--body-bg, #fff);
+      border-radius: 6px;
+      padding: 2px 8px;
+      cursor: pointer;
+      line-height: 1.2;
+    }
+
+    .turns-cell {
+      padding: 0 !important;
+      background: var(--darkened-bg, #f7f7f7);
+    }
+
+    .turns-panel {
+      padding: 10px 12px;
+      border-left: 3px solid var(--primary, #417690);
+    }
+
+    .turns-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .turns-meta {
+      color: var(--body-quiet-color, #666);
+      font-size: 12px;
+    }
+
+    .turns-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--body-bg, #fff);
+      border: 1px solid var(--border-color, #dcdcdc);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .turns-table th,
+    .turns-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--hairline-color, #e6e6e6);
+      vertical-align: top;
+    }
+
+    .turns-table th {
+      background: var(--header-bg, #f0f0f0);
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      white-space: nowrap;
+    }
+
+    .utterance {
+      max-width: 720px;
+    }
+
+    .quiet {
+      color: var(--body-quiet-color, #666);
+      padding: 6px 0;
+    }
+
+    .audios-section {
+      margin-top: 14px;
+    }
+
+    .audios-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin: 8px 0;
+    }
+  </style>
+{% endblock %}
+

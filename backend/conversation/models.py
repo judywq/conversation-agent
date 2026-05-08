@@ -6,6 +6,13 @@ from pgvector.django import VectorField
 from backend.core.models import TimestampedBase
 
 
+def user_audio_upload_to(instance: "UserAudio", filename: str) -> str:
+    # Keep media paths deterministic and grouped by session/user.
+    session_id = instance.session_id or "unknown_session"
+    user_id = instance.user_id or "unknown_user"
+    return f"conversation/user_audio/session_{session_id}/user_{user_id}/{filename}"
+
+
 class ConversationSession(TimestampedBase):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -98,6 +105,93 @@ class TurnRecord(TimestampedBase):
 
     def __str__(self) -> str:
         return f"TurnRecord({self.session_id}#{self.turn_index}.{self.subturn_index}, {self.speaker_type}:{self.speaker})"
+
+
+class UserAudio(TimestampedBase):
+    """
+    Stored user-recorded audio (the user's real voice).
+    Uploaded by the web client and linked to a session and (optionally) a specific turn.
+    """
+
+    session = models.ForeignKey(
+        ConversationSession,
+        on_delete=models.CASCADE,
+        related_name="user_audios",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="conversation_user_audios",
+    )
+    turn = models.ForeignKey(
+        TurnRecord,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="user_audios",
+    )
+    audio_file = models.FileField(upload_to=user_audio_upload_to)
+    content_type = models.CharField(max_length=100, blank=True, default="")
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["session", "-created_at"], name="conv_ua_session_ts"),
+            models.Index(fields=["user", "-created_at"], name="conv_ua_user_ts"),
+        ]
+
+    def __str__(self) -> str:
+        return f"UserAudio(session={self.session_id}, user={self.user_id}, file={self.original_filename or self.audio_file.name})"
+
+
+class TurnEngineLog(TimestampedBase):
+    COMPONENT_TURN_MANAGER = "turn_manager"
+    COMPONENT_TURN_PROCESSOR = "turn_processor"
+    COMPONENT_CHOICES = [
+        (COMPONENT_TURN_MANAGER, "Turn manager"),
+        (COMPONENT_TURN_PROCESSOR, "Turn processor"),
+    ]
+
+    LEVEL_DEBUG = "DEBUG"
+    LEVEL_INFO = "INFO"
+    LEVEL_WARNING = "WARNING"
+    LEVEL_ERROR = "ERROR"
+    LEVEL_CHOICES = [
+        (LEVEL_DEBUG, "DEBUG"),
+        (LEVEL_INFO, "INFO"),
+        (LEVEL_WARNING, "WARNING"),
+        (LEVEL_ERROR, "ERROR"),
+    ]
+
+    session = models.ForeignKey(
+        ConversationSession,
+        on_delete=models.CASCADE,
+        related_name="turn_engine_logs",
+    )
+
+    component = models.CharField(max_length=40, choices=COMPONENT_CHOICES)
+    level = models.CharField(max_length=10, choices=LEVEL_CHOICES, default=LEVEL_INFO)
+
+    event = models.CharField(max_length=120, blank=True, default="")
+    message = models.TextField(blank=True, default="")
+    context = models.JSONField(default=dict, blank=True)
+
+    correlation_id = models.CharField(max_length=64, blank=True, default="")
+
+    turn_index = models.IntegerField(null=True, blank=True)
+    subturn_index = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["session", "-created_at"], name="conv_telog_session_ts"),
+            models.Index(fields=["session", "component", "-created_at"], name="conv_telog_comp_ts"),
+            models.Index(fields=["session", "level", "-created_at"], name="conv_telog_level_ts"),
+        ]
+
+    def __str__(self) -> str:
+        return f"TurnEngineLog(session={self.session_id}, {self.component}/{self.level}, event={self.event})"
 
 
 class KnowledgeSnippet(TimestampedBase):

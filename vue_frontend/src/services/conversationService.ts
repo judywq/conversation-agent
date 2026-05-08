@@ -20,6 +20,19 @@ export class ConversationService {
     return res.data.text
   }
 
+  static async uploadUserAudio(sessionId: string, audio: Blob): Promise<{ id: number; audio_url: string }> {
+    const form = new FormData()
+    form.append('session_id', sessionId)
+    form.append('audio', audio, 'user_recording.webm')
+
+    const res = await api.post<{ id: number; audio_url: string }>('/conversation/user-audio/', form, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return res.data
+  }
+
   static async generateCefrSamples(topic: string): Promise<{ topic: string; samples: CefrSample[] }> {
     const res = await api.post<{ topic: string; samples: CefrSample[] }>('/conversation/cefr-samples/', {
       topic,
