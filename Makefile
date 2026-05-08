@@ -87,7 +87,11 @@ init-llm-%:
 
 # Migrate local DB and import local Speech Act knowledge exemplars
 init-knowledge-local:
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/init_knowledge.ps1
+else
 	./scripts/init_knowledge.sh
+endif
 
 # Generate missing KnowledgeSnippet embeddings
 init-embeddings-%:
@@ -99,7 +103,11 @@ refresh-embeddings-%:
 
 # Migrate, import local Speech Act knowledge, and generate embeddings
 init-rag-local:
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$env:REFRESH_EMBEDDINGS='1'; ./scripts/init_knowledge.ps1"
+else
 	REFRESH_EMBEDDINGS=1 ./scripts/init_knowledge.sh
+endif
 
 pytest:
 	docker compose -f docker-compose.local.yml run --rm django pytest
