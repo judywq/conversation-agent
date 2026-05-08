@@ -47,6 +47,35 @@ This runs Django migrations and imports the annotations into `KnowledgeSnippet` 
 DRY_RUN=1 make init-knowledge-local
 ```
 
+### Knowledge Embeddings
+
+Knowledge retrieval combines keyword matching with pgvector recall, then applies a deterministic reciprocal-rank rerank. Keyword and vector candidates are merged by `KnowledgeSnippet`, ranked by stable scores, and written to retrieval traces with `retrieval_channels` metadata such as `["keyword"]`, `["vector"]`, or `["keyword", "vector"]`.
+
+The local and production Postgres images are built from `pgvector/pgvector:pg16`, and migrations enable the pgvector extension plus the `KnowledgeSnippet.embedding` vector index.
+
+Embedding settings:
+
+- Local/default: `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`, and `OPENAI_API_KEY` must be configured before generating embeddings.
+- Production: keep `EMBEDDING_PROVIDER=openai`, set `OPENAI_API_KEY` through deployment secrets, and keep `EMBEDDING_MODEL`/`EMBEDDING_DIMENSIONS` aligned with stored snippet embeddings.
+- Tests: use `EMBEDDING_PROVIDER=fake` for deterministic local vectors without network calls.
+- Recall tuning: `VECTOR_RECALL_ENABLED`, `HYBRID_KEYWORD_CANDIDATES`, `HYBRID_VECTOR_CANDIDATES`, `HYBRID_RRF_K`, `HYBRID_KEYWORD_WEIGHT`, and `HYBRID_VECTOR_WEIGHT` control hybrid retrieval behavior.
+
+Generate missing embeddings after importing knowledge data:
+
+```sh
+docker compose -f docker-compose.local.yml run --rm django python manage.py refresh_knowledge_embeddings
+```
+
+Refresh stale embeddings when the canonical text, provider model, or dimensions changed:
+
+```sh
+docker compose -f docker-compose.local.yml run --rm django python manage.py refresh_knowledge_embeddings --stale
+```
+
+Use `--dry-run` to count matching snippets without writing vectors, and `--limit N` to process a bounded batch.
+
+If the embedding provider, query embedding generation, or pgvector recall is unavailable, retrieval falls back to keyword matches. A keyword hit still returns the knowledge source as `success`; only vector-only searches with no keyword candidates report vector recall failure.
+
 ##### From the console
 Alternatively you, may run the Vite dev server directly from the project directory:
 ```sh

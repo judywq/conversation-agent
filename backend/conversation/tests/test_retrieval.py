@@ -538,6 +538,43 @@ def test_knowledge_source_reports_failed_when_vector_fails_without_keyword_hits(
 
 
 @pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake")
+def test_vector_failure_falls_back_to_keyword(user, monkeypatch) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    matching = KnowledgeSnippet.objects.create(
+        title="Attendance handbook",
+        content="Students should cite the course handbook when discussing attendance.",
+        source_uri="course://handbook#attendance",
+        source_label="Course Handbook",
+        metadata={"section": "attendance"},
+        embedding=[0.1] * 1536,
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+
+    def fail_embedding(query):
+        raise RuntimeError("embedding unavailable")
+
+    monkeypatch.setattr(retrieval_service, "generate_embedding", fail_embedding)
+
+    context = retrieve(
+        "attendance handbook",
+        session=session,
+        user=user,
+        sources={"knowledge"},
+        top_k=5,
+    )
+
+    assert context.source_statuses["knowledge"] == "success"
+    assert len(context.items) == 1
+    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
+    assert context.items[0].metadata["keyword_rank"] == 1
+    assert context.items[0].metadata["vector_similarity"] is None
+    assert context.items[0].metadata["vector_rank"] is None
+
+
+@pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_knowledge_source_excludes_speech_act_exemplars(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
@@ -1214,6 +1251,54 @@ def test_persist_turn_retrieval_stores_exemplar_trace_for_agent_turn(user) -> No
     assert trace.items[0]["metadata"]["subtype"] == "request_info"
     assert trace.items[0]["source_label"] == "ULECD040.txt"
     assert trace.rendered_context == rendered_context
+
+
+@pytest.mark.django_db
+def test_persist_turn_retrieval_stores_hybrid_metadata(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="school")
+    processed = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="The handbook covers participation.",
+        source="llm",
+    )
+    hybrid_metadata = {
+        "knowledge_snippet_id": 123,
+        "metadata": {"section": "attendance"},
+        "retrieval_channels": ["keyword", "vector"],
+        "keyword_score": 4.0,
+        "keyword_rank": 1,
+        "vector_similarity": 0.75,
+        "vector_rank": 2,
+        "rerank_score": 0.031746031746031744,
+        "global_score": 4.75,
+        "embedding_model": "fake",
+    }
+    context = RetrievedContext(
+        query="attendance handbook",
+        requested_sources=["knowledge"],
+        source_statuses={"knowledge": "success"},
+        items=[
+            RetrievedItem(
+                source="knowledge",
+                title="Attendance handbook",
+                excerpt="Students should cite the course handbook.",
+                source_uri="course://handbook#attendance",
+                source_label="Course Handbook",
+                score=4.75,
+                metadata=hybrid_metadata,
+            ),
+        ],
+        rendered_context="Retrieved information:\n1. Source: knowledge",
+    )
+
+    trace = persist_turn_retrieval(processed.turn, context)
+
+    assert trace.source_statuses == {"knowledge": "success"}
+    assert all(isinstance(status, str) for status in trace.source_statuses.values())
+    assert trace.items[0]["metadata"] == hybrid_metadata
+    assert trace.items[0]["score"] == 4.75
 
 
 @pytest.mark.django_db
