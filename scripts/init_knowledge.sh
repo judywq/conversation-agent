@@ -34,19 +34,8 @@ fi
 
 if [[ "$ANNOTATIONS_PATH" = /* ]]; then
   HOST_ANNOTATIONS_PATH="$ANNOTATIONS_PATH"
-  case "$HOST_ANNOTATIONS_PATH" in
-    "$ROOT_DIR"/*)
-      CONTAINER_ANNOTATIONS_PATH="${HOST_ANNOTATIONS_PATH#"$ROOT_DIR"/}"
-      ;;
-    *)
-      echo "ERROR: absolute annotation paths must be inside the repository so Docker can read them:" >&2
-      echo "  $ROOT_DIR" >&2
-      exit 1
-      ;;
-  esac
 else
   HOST_ANNOTATIONS_PATH="$ROOT_DIR/$ANNOTATIONS_PATH"
-  CONTAINER_ANNOTATIONS_PATH="$ANNOTATIONS_PATH"
 fi
 
 if [[ ! -f "$HOST_ANNOTATIONS_PATH" ]]; then
@@ -59,6 +48,9 @@ fi
 
 cd "$ROOT_DIR"
 
+CONTAINER_ANNOTATIONS_PATH="/tmp/sa_annotations.json"
+VOLUME_SPEC="$HOST_ANNOTATIONS_PATH:$CONTAINER_ANNOTATIONS_PATH:ro"
+
 echo "Running migrations with $COMPOSE_FILE..."
 docker compose -f "$COMPOSE_FILE" run --rm "$DJANGO_SERVICE" python manage.py migrate
 
@@ -68,7 +60,7 @@ if [[ "${DRY_RUN:-}" == "1" || "${DRY_RUN:-}" == "true" ]]; then
 fi
 
 echo "Importing Speech Act exemplars from $CONTAINER_ANNOTATIONS_PATH..."
-docker compose -f "$COMPOSE_FILE" run --rm "$DJANGO_SERVICE" "${IMPORT_ARGS[@]}"
+docker compose -f "$COMPOSE_FILE" run --rm -v "$VOLUME_SPEC" "$DJANGO_SERVICE" "${IMPORT_ARGS[@]}"
 
 if [[ "${DRY_RUN:-}" == "1" || "${DRY_RUN:-}" == "true" ]]; then
   exit 0

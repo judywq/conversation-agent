@@ -102,11 +102,11 @@ refresh-embeddings-%:
 	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_knowledge_embeddings --stale
 
 # Migrate, import local Speech Act knowledge, and generate embeddings
-init-rag-local:
+init-rag-%:
 ifeq ($(OS),Windows_NT)
-	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$env:REFRESH_EMBEDDINGS='1'; ./scripts/init_knowledge.ps1"
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$env:REFRESH_EMBEDDINGS='1'; $$env:COMPOSE_FILE='docker-compose.$*.yml'; ./scripts/init_knowledge.ps1"
 else
-	REFRESH_EMBEDDINGS=1 ./scripts/init_knowledge.sh
+	REFRESH_EMBEDDINGS=1 COMPOSE_FILE=docker-compose.$*.yml ./scripts/init_knowledge.sh
 endif
 
 pytest:

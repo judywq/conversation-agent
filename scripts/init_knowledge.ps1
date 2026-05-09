@@ -40,14 +40,8 @@ if ($args.Count -ge 1 -and ($args[0] -eq '-h' -or $args[0] -eq '--help')) {
 $IsRooted = [System.IO.Path]::IsPathRooted($AnnotationsPath)
 if ($IsRooted) {
   $HostAnnotationsPath = (Resolve-Path $AnnotationsPath).Path
-  $RootDirWithSep = $RootDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-  if (-not $HostAnnotationsPath.StartsWith($RootDirWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
-    Write-Error "ERROR: absolute annotation paths must be inside the repository so Docker can read them:`n  $RootDir"
-  }
-  $ContainerAnnotationsPath = $HostAnnotationsPath.Substring($RootDirWithSep.Length) -replace '\\', '/'
 } else {
   $HostAnnotationsPath = Join-Path $RootDir $AnnotationsPath
-  $ContainerAnnotationsPath = $AnnotationsPath -replace '\\', '/'
 }
 
 if (-not (Test-Path -LiteralPath $HostAnnotationsPath -PathType Leaf)) {
@@ -60,6 +54,9 @@ if (-not (Test-Path -LiteralPath $HostAnnotationsPath -PathType Leaf)) {
 
 Push-Location $RootDir
 try {
+  $ContainerAnnotationsPath = '/tmp/sa_annotations.json'
+  $VolumeSpec = "${HostAnnotationsPath}:${ContainerAnnotationsPath}:ro"
+
   Write-Host "Running migrations with $ComposeFile..."
   docker compose -f $ComposeFile run --rm $DjangoService python manage.py migrate
 
@@ -68,7 +65,7 @@ try {
   if ($DryRun) { $ImportArgs += '--dry-run' }
 
   Write-Host "Importing Speech Act exemplars from $ContainerAnnotationsPath..."
-  docker compose -f $ComposeFile run --rm $DjangoService @ImportArgs
+  docker compose -f $ComposeFile run --rm -v $VolumeSpec $DjangoService @ImportArgs
 
   if ($DryRun) { exit 0 }
 
