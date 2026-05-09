@@ -91,6 +91,12 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         allow_blank=True,
         allow_null=True,
     )
+    major = UserProfileTextField(
+        profile_attr="major",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
 
     class Meta:
         extra_fields = []
@@ -117,6 +123,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "cefr_sample_topic",
             "cefr_sample_choices",
             "preferred_name",
+            "major",
         )
         read_only_fields = ("email",)
 
@@ -132,6 +139,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         cefr_sample_topic = validated_data.pop("cefr_sample_topic", serializers.empty)
         cefr_sample_choices = validated_data.pop("cefr_sample_choices", serializers.empty)
         preferred_name = validated_data.pop("preferred_name", serializers.empty)
+        major = validated_data.pop("major", serializers.empty)
         user = super().update(instance, validated_data)
         if hasattr(user, "userprofile"):
             update_fields = []
@@ -150,6 +158,9 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             if preferred_name is not serializers.empty:
                 user.userprofile.preferred_name = (preferred_name or "").strip()
                 update_fields.append("preferred_name")
+            if major is not serializers.empty:
+                user.userprofile.major = (major or "").strip()
+                update_fields.append("major")
             if ocean is not serializers.empty:
                 required_traits = {
                     "openness",

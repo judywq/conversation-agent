@@ -310,6 +310,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         session = ConversationSession.objects.create(user=user, topic=topic, agent_count=desired_count)
         ocean = user.userprofile.ocean if hasattr(user, "userprofile") else {}
         user_cefr_level = user.userprofile.cefr_level if hasattr(user, "userprofile") else ""
+        user_major = user.userprofile.major if hasattr(user, "userprofile") else ""
         # Agents should match the user's selected level (no longer forced higher).
         agent_cefr_level = str(user_cefr_level or "").upper().strip() or "B2"
         selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
@@ -331,6 +332,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         "persona_name": selected.prompt.persona_name,
                         "source_trait": selected.source_trait,
                         "user_level": selected.user_level,
+                        "major": user_major,
                     },
                     traits={
                         "style": selected.prompt.persona_name.lower().replace(" ", "_"),

@@ -16,6 +16,7 @@ export interface User {
     audio_url?: string | null;
   }>;
   preferred_name?: string | null;
+  major?: string | null;
 }
 
 export interface AuthState {
