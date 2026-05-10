@@ -63,6 +63,13 @@ class UserProfile(models.Model):
         help_text="How the user would like to be addressed in the conversation.",
     )
 
+    major = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="User's academic major / field of study. Used as the default major for agents in their conversation sessions.",
+    )
+
     def __str__(self) -> str:
         return f"{self.user.name} ({self.user.email})"
 

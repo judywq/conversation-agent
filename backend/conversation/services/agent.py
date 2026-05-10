@@ -240,6 +240,7 @@ def generate_agent_utterance_with_retrieval(
         agent_name=agent.agent_id,
         agent_display_name=(agent.display_name or agent.agent_id),
         proficiency_level=str((agent.traits or {}).get("proficiency_level") or "B2"),
+        major=str((agent.personality or {}).get("major") or ""),
         topic=session.topic,
         history=history,
         target=str(facilitator_plan.get("target") or "everyone"),

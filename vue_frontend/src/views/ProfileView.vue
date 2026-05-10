@@ -20,6 +20,18 @@
           </div>
         </div>
 
+        <div class="space-y-2">
+          <div class="text-sm font-medium">What is your study major?</div>
+          <Input
+            v-model="major"
+            placeholder="E.g., Computer Science"
+            class="w-full"
+          />
+          <div class="text-xs text-muted-foreground">
+            Agents will be your classmates from the same major by default.
+          </div>
+        </div>
+
         <div class="rounded-md border p-4 space-y-2">
           <div class="text-sm font-medium">Current proficiency selection</div>
           <div class="text-sm text-muted-foreground">
@@ -150,6 +162,7 @@ const oceanModel = reactive<Record<OceanTraitKey, string>>({
 })
 
 const preferredName = ref(authStore.user?.preferred_name ?? '')
+const major = ref(authStore.user?.major ?? '')
 
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
@@ -177,6 +190,7 @@ async function handleSave() {
     const payload = {
       ocean: oceanPayload,
       preferred_name: preferredName.value,
+      major: major.value,
     }
     const user = await AuthService.updateUser(payload)
     authStore.user = user

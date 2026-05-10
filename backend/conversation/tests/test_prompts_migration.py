@@ -29,3 +29,28 @@ def test_select_agent_personas_for_session_returns_three_unique():
 def test_select_agent_personas_for_session_raises_if_count_too_large():
     with pytest.raises(ValueError):
         select_agent_personas_for_session({}, count=10)
+
+
+def test_agent_persona_template_substitutes_major():
+    catalog = load_prompts_catalog()
+    template = catalog.agent_prompts[0].template
+    assert "{major}" in template
+
+    rendered = render_prompt_template(
+        template,
+        agent_name="agent_1",
+        agent_display_name="Alex",
+        proficiency_level="B2",
+        major="Computer Science",
+        topic="climate",
+        history="[]",
+        target="everyone",
+        target_type="everyone",
+        target_display_name="",
+        speech_act_type="ASSERTIVES",
+        speech_act_subtype="inform",
+        content_requirement="",
+        retrieved_context="",
+    )
+    assert "Computer Science" in rendered
+    assert "{major}" not in rendered
