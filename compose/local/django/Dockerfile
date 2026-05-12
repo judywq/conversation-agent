@@ -60,8 +60,12 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # copy python dependency wheels from python-build-stage
 COPY --from=python-build-stage /usr/src/app/wheels  /wheels/
 
+# Requirement files so pip installs the full resolved set (not a shell glob on /wheels/*).
+COPY ./requirements /requirements/
+
 # use wheels to install python dependencies
-RUN pip install --no-cache-dir --no-index --find-links=/wheels/ /wheels/* \
+RUN pip install --no-cache-dir --no-index --find-links=/wheels/ \
+  -r /requirements/${BUILD_ENVIRONMENT}.txt \
   && rm -rf /wheels/
 
 COPY ./compose/local/django/entrypoint /entrypoint
