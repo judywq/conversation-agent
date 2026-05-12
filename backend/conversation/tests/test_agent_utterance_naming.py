@@ -85,7 +85,7 @@ def _make_session_with_agent(user):
 
 
 @pytest.mark.django_db
-def test_build_agent_retrieval_context_routes_web_search_to_unified_sources(user, monkeypatch):
+def test_build_agent_retrieval_context_routes_web_search_to_web_only(user, monkeypatch):
     session, _agent = _make_session_with_agent(user)
     append_turn(
         session,
@@ -116,7 +116,7 @@ def test_build_agent_retrieval_context_routes_web_search_to_unified_sources(user
         return RetrievedContext(
             query=query,
             requested_sources=sorted(sources),
-            source_statuses={"web": "success", "knowledge": "success"},
+            source_statuses={"web": "success"},
             items=[],
             rendered_context="Retrieved information:\n1. Source: web",
         )
@@ -131,7 +131,7 @@ def test_build_agent_retrieval_context_routes_web_search_to_unified_sources(user
         },
     )
 
-    assert captured["sources"] == {"web", "knowledge"}
+    assert captured["sources"] == {"web"}
     assert captured["session"] == session
     assert captured["user"] == user
     assert captured["top_k"] == 5

@@ -50,8 +50,9 @@ DOMAIN_NAME = env.str("DJANGO_DOMAIN_NAME", default="localhost:8000")
 # For quick testing, you can override via env var CONVERSATION_AGENT_COUNT.
 CONVERSATION_AGENT_COUNT = env.int("CONVERSATION_AGENT_COUNT", default=3)
 
-# Facilitator web_search retrieval: POST JSON body {"query": "..."} to this URL (optional Bearer token).
+# Facilitator web_search retrieval through OpenAI Responses API.
 WEB_SEARCH_ENABLED = env.bool("WEB_SEARCH_ENABLED", default=False)
+WEB_SEARCH_MODEL = env.str("WEB_SEARCH_MODEL", default="gpt-5")
 WEB_SEARCH_API_URL = env.str("WEB_SEARCH_API_URL", default="")
 WEB_SEARCH_API_KEY = env.str("WEB_SEARCH_API_KEY", default="")
 WEB_SEARCH_TIMEOUT_SEC = env.float("WEB_SEARCH_TIMEOUT_SEC", default=15.0)
@@ -512,6 +513,7 @@ EMBEDDING_PROVIDER = env.str("EMBEDDING_PROVIDER", default="openai")
 EMBEDDING_MODEL = env.str("EMBEDDING_MODEL", default="text-embedding-3-small")
 EMBEDDING_DIMENSIONS = 1536
 EMBEDDING_BATCH_SIZE = env.int("EMBEDDING_BATCH_SIZE", default=50)
+EMBEDDING_OPENAI_TIMEOUT_SEC = env.float("EMBEDDING_OPENAI_TIMEOUT_SEC", default=30.0)
 VECTOR_RECALL_ENABLED = env.bool("VECTOR_RECALL_ENABLED", default=True)
 HYBRID_KEYWORD_CANDIDATES = env.int("HYBRID_KEYWORD_CANDIDATES", default=20)
 HYBRID_VECTOR_CANDIDATES = env.int("HYBRID_VECTOR_CANDIDATES", default=20)

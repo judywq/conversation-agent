@@ -37,9 +37,8 @@ export class ConversationService {
     const res = await api.post<{ topic: string; samples: CefrSample[] }>('/conversation/cefr-samples/', {
       topic,
     }, {
-      timeout: 60000,
+      timeout: 180000,
     })
     return res.data
   }
 }
-

@@ -74,8 +74,8 @@ def test_turn_retrieval_admin_disables_add_delete_permissions(user) -> None:
 
 
 def test_map_retrieval_sources() -> None:
-    assert map_retrieval_sources("web_search") == {"web", "knowledge"}
-    assert map_retrieval_sources("web search") == {"web", "knowledge"}
+    assert map_retrieval_sources("web_search") == {"web"}
+    assert map_retrieval_sources("web search") == {"web"}
     assert map_retrieval_sources("memory") == {"memory", "session", "knowledge"}
     assert map_retrieval_sources("none") == set()
     assert map_retrieval_sources("") == set()
