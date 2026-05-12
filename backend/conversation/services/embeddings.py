@@ -64,17 +64,26 @@ def _embedding_dimensions() -> int:
 
 
 def generate_embedding(text: str) -> EmbeddingResult:
+    return generate_embeddings([text])[0]
+
+
+def generate_embeddings(texts: list[str]) -> list[EmbeddingResult]:
+    if not texts:
+        return []
+
     provider = _embedding_provider()
     dimensions = _embedding_dimensions()
-    text_hash = embedding_text_hash(text)
 
     if provider == "fake":
-        return EmbeddingResult(
-            vector=fake_embedding(text, dimensions=dimensions),
-            model="fake",
-            dimensions=dimensions,
-            text_hash=text_hash,
-        )
+        return [
+            EmbeddingResult(
+                vector=fake_embedding(text, dimensions=dimensions),
+                model="fake",
+                dimensions=dimensions,
+                text_hash=embedding_text_hash(text),
+            )
+            for text in texts
+        ]
 
     api_key = getattr(settings, "OPENAI_API_KEY", "")
     if not api_key:
@@ -83,18 +92,22 @@ def generate_embedding(text: str) -> EmbeddingResult:
         )
 
     model = getattr(settings, "EMBEDDING_MODEL", "")
-    client = OpenAI(api_key=api_key)
+    timeout = float(getattr(settings, "EMBEDDING_OPENAI_TIMEOUT_SEC", 30.0))
+    client = OpenAI(api_key=api_key, timeout=timeout)
     response = client.embeddings.create(
-        input=text,
+        input=texts,
         model=model,
         dimensions=dimensions,
     )
-    return EmbeddingResult(
-        vector=list(response.data[0].embedding),
-        model=model,
-        dimensions=dimensions,
-        text_hash=text_hash,
-    )
+    return [
+        EmbeddingResult(
+            vector=list(item.embedding),
+            model=model,
+            dimensions=dimensions,
+            text_hash=embedding_text_hash(text),
+        )
+        for text, item in zip(texts, response.data, strict=True)
+    ]
 
 
 def snippet_embedding_is_stale(snippet: Any) -> bool:

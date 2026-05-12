@@ -1,5 +1,7 @@
 import pytest
 from django.test import override_settings
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from backend.conversation.services.web_search import _format_search_payload
 from backend.conversation.services.web_search import build_web_search_query
@@ -57,13 +59,59 @@ def test_build_web_search_query_includes_all_parts() -> None:
     assert q.index("Facilitator") < q.index("Latest turn:")
 
 
-@override_settings(WEB_SEARCH_ENABLED=False, WEB_SEARCH_API_URL="https://example.com/search")
+@override_settings(WEB_SEARCH_ENABLED=False)
 def test_fetch_respects_disabled() -> None:
     out = fetch_web_search_context("Topic: t\nFacilitator instruction: i\nLatest turn: l")
-    assert "disabled" in out.lower() or "not configured" in out.lower()
+    assert "disabled" in out.lower()
 
 
-@override_settings(WEB_SEARCH_ENABLED=True, WEB_SEARCH_API_URL="")
-def test_fetch_respects_missing_url() -> None:
+@override_settings(WEB_SEARCH_ENABLED=True, OPENAI_API_KEY="")
+def test_fetch_respects_missing_openai_key() -> None:
     out = fetch_web_search_context("any")
-    assert "not configured" in out.lower() or "disabled" in out.lower()
+    assert "openai api key" in out.lower()
+
+
+@override_settings(
+    WEB_SEARCH_ENABLED=True,
+    OPENAI_API_KEY="sk-test",
+    WEB_SEARCH_MODEL="gpt-5",
+    WEB_SEARCH_TIMEOUT_SEC=12.0,
+)
+def test_fetch_uses_openai_web_search_tool() -> None:
+    response = SimpleNamespace(
+        output_text="OpenAI supports web search through the Responses API.",
+        output=[
+            SimpleNamespace(
+                type="message",
+                content=[
+                    SimpleNamespace(
+                        text="OpenAI supports web search through the Responses API.",
+                        annotations=[
+                            SimpleNamespace(
+                                type="url_citation",
+                                title="Web search",
+                                url="https://platform.openai.com/docs/guides/tools-web-search",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    with patch("backend.conversation.services.web_search.OpenAI") as openai:
+        openai.return_value.responses.create.return_value = response
+
+        out = fetch_web_search_context("latest OpenAI web search API docs")
+
+    openai.assert_called_once_with(api_key="sk-test", timeout=12.0)
+    openai.return_value.responses.create.assert_called_once_with(
+        model="gpt-5",
+        tools=[{"type": "web_search"}],
+        tool_choice="auto",
+        include=["web_search_call.action.sources"],
+        input="latest OpenAI web search API docs",
+    )
+    assert "OpenAI supports web search" in out
+    assert "Title: Web search" in out
+    assert "URL: https://platform.openai.com/docs/guides/tools-web-search" in out

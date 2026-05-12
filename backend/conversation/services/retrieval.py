@@ -101,7 +101,7 @@ class _KnowledgeCandidate:
 def map_retrieval_sources(retrieval_requirement: str | None) -> set[str]:
     raw = (retrieval_requirement or "").strip().casefold().replace("-", "_").replace(" ", "_")
     if raw == "web_search":
-        return {"web", "knowledge"}
+        return {"web"}
     if raw == "memory":
         return {"memory", "session", "knowledge"}
     if raw in {"exemplar", "speech_act_exemplar"}:
