@@ -33,3 +33,9 @@ POSTGRES_DB=conversation_agent
 
 # Vue
 VITE_API_BASE_URL=http://conv.judywang.jp/api
+
+# OpenAI web search
+# ------------------------------------------------------------------------------
+WEB_SEARCH_ENABLED=True
+WEB_SEARCH_MODEL=gpt-5
+WEB_SEARCH_TIMEOUT_SEC=30
