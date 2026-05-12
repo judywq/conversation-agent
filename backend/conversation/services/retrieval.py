@@ -686,7 +686,24 @@ def persist_turn_retrieval(turn: TurnRecord, context: RetrievedContext) -> TurnR
 
 def persist_turn_retrieval_safely(turn: TurnRecord, context: RetrievedContext) -> TurnRetrieval | None:
     try:
-        return persist_turn_retrieval(turn, context)
+        trace = persist_turn_retrieval(turn, context)
+        logger.info(
+            "turn_retrieval_persisted turn_id=%s turn_retrieval_id=%s session_id=%s "
+            "requested_sources=%s items_count=%s source_statuses=%s query_len=%s",
+            turn.id,
+            trace.id,
+            turn.session_id,
+            context.requested_sources,
+            len(context.items),
+            context.source_statuses,
+            len(context.query or ""),
+        )
+        return trace
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Retrieval trace persistence failed for turn %s: %s", turn.id, exc)
+        logger.warning(
+            "Retrieval trace persistence failed for turn %s: %s",
+            turn.id,
+            exc,
+            exc_info=True,
+        )
         return None

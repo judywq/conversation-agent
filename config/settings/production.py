@@ -155,6 +155,12 @@ LOGGING = {
             "handlers": ["console"],
             "propagate": False,
         },
+        # TurnRetrieval persistence (docker logs: grep turn_retrieval_persisted)
+        "backend.conversation.services.retrieval": {
+            "level": "INFO",
+            "handlers": ["console"],
+            "propagate": False,
+        },
     },
 }
 
