@@ -8,8 +8,11 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.models import UserMemory
 from backend.conversation.services import retrieval as retrieval_service
+from backend.conversation.services.embeddings import build_user_memory_embedding_text
 from backend.conversation.services.embeddings import fake_embedding
+from backend.conversation.services.embeddings import generate_embedding
 from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import RetrievedItem
 from backend.conversation.services.retrieval import map_retrieval_sources
@@ -18,6 +21,39 @@ from backend.conversation.services.retrieval import persist_turn_retrieval_safel
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.turn_processor import append_turn
 from backend.users.tests.factories import UserFactory
+
+MEMORY_CONFIDENCE = 0.8
+TEST_EMBEDDING_DIMENSIONS = 1536
+TOP_K = 5
+DISABLED_CANDIDATES = 0
+FIRST_ITEM_INDEX = 0
+SINGLE_RETRIEVED_ITEM_COUNT = 1
+FIRST_RETRIEVAL_RANK = 1
+HYBRID_WEIGHT = 1.0
+MEMORY_VECTOR_SIMILARITY = 0.75
+MEMORY_GLOBAL_SCORE = 4.75
+MEMORY_RRF_K = 10
+MEMORY_KEYWORD_SCORE = 4.0
+MEMORY_RERANK_SCORE = 0.031746031746031744
+LABEL_FILTER_SCORE = 0.1
+TRACE_KNOWLEDGE_SNIPPET_ID = 123
+
+
+def _embed_memory(memory: UserMemory) -> UserMemory:
+    result = generate_embedding(build_user_memory_embedding_text(memory))
+    memory.embedding = result.vector
+    memory.embedding_model = result.model
+    memory.embedding_dimensions = result.dimensions
+    memory.embedding_text_hash = result.text_hash
+    memory.save(
+        update_fields=[
+            "embedding",
+            "embedding_model",
+            "embedding_dimensions",
+            "embedding_text_hash",
+        ],
+    )
+    return memory
 
 
 @pytest.mark.django_db
@@ -120,13 +156,188 @@ def test_retrieve_unsupported_source_is_skipped(user) -> None:
 
 
 @pytest.mark.django_db
-def test_memory_source_returns_not_configured(user) -> None:
+def test_memory_source_returns_matching_user_memory(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="memory")
+    matching = UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+        source_uri="admin://memory/preferences",
+        source_label="manual note",
+        confidence=MEMORY_CONFIDENCE,
+        metadata={"topic": "IELTS"},
+    )
 
-    context = retrieve("my goals", session=session, user=user, sources={"memory"}, top_k=5)
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
+
+    assert context.source_statuses["memory"] == "success"
+    assert len(context.items) == 1
+    item = context.items[0]
+    assert item.source == "memory"
+    assert item.title == "learning_preference"
+    assert (
+        item.excerpt
+        == "The user prefers concise corrections during IELTS speaking practice."
+    )
+    assert item.source_uri == "admin://memory/preferences"
+    assert item.source_label == "manual note"
+    assert item.metadata["user_memory_id"] == matching.id
+    assert item.metadata["memory_type"] == "learning_preference"
+    assert item.metadata["confidence"] == MEMORY_CONFIDENCE
+    assert item.metadata["metadata"] == {"topic": "IELTS"}
+    assert item.metadata["retrieval_channels"] == ["keyword"]
+    assert item.metadata["keyword_rank"] == 1
+    assert item.metadata["vector_status"] == "no-results"
+    assert item.metadata["global_score"] == item.score
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMBEDDING_PROVIDER="fake",
+    EMBEDDING_DIMENSIONS=TEST_EMBEDDING_DIMENSIONS,
+    HYBRID_KEYWORD_CANDIDATES=DISABLED_CANDIDATES,
+    VECTOR_RECALL_ENABLED=True,
+)
+def test_memory_vector_match_is_returned(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    matching = _embed_memory(
+        UserMemory.objects.create(
+            user=user,
+            content="The user prefers semantic-only listening practice prompts.",
+            memory_type="learning_preference",
+            source_label="manual note",
+        ),
+    )
+    query = build_user_memory_embedding_text(matching)
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=TOP_K,
+    )
+
+    assert context.source_statuses["memory"] == "success"
+    assert len(context.items) == SINGLE_RETRIEVED_ITEM_COUNT
+    item = context.items[FIRST_ITEM_INDEX]
+    assert item.metadata["user_memory_id"] == matching.id
+    assert item.metadata["retrieval_channels"] == ["vector"]
+    assert item.metadata["vector_rank"] == FIRST_RETRIEVAL_RANK
+    assert item.metadata["embedding_model"] == "fake"
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMBEDDING_PROVIDER="fake",
+    EMBEDDING_DIMENSIONS=TEST_EMBEDDING_DIMENSIONS,
+    HYBRID_RRF_K=MEMORY_RRF_K,
+    HYBRID_KEYWORD_WEIGHT=HYBRID_WEIGHT,
+    HYBRID_VECTOR_WEIGHT=HYBRID_WEIGHT,
+    VECTOR_RECALL_ENABLED=True,
+)
+def test_memory_duplicate_keyword_and_vector_candidates_are_merged(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    matching = _embed_memory(
+        UserMemory.objects.create(
+            user=user,
+            content="The user prefers concise IELTS corrections.",
+            memory_type="learning_preference",
+            source_label="manual note",
+        ),
+    )
+    query = build_user_memory_embedding_text(matching)
+
+    context = retrieve(
+        query,
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=TOP_K,
+    )
+
+    assert context.source_statuses["memory"] == "success"
+    assert len(context.items) == SINGLE_RETRIEVED_ITEM_COUNT
+    item = context.items[FIRST_ITEM_INDEX]
+    assert item.metadata["user_memory_id"] == matching.id
+    assert set(item.metadata["retrieval_channels"]) == {"keyword", "vector"}
+    assert item.metadata["keyword_rank"] == FIRST_RETRIEVAL_RANK
+    assert item.metadata["vector_rank"] == FIRST_RETRIEVAL_RANK
+    assert item.metadata["vector_similarity"] is not None
+    assert item.metadata["embedding_model"] == "fake"
+
+
+@pytest.mark.django_db
+def test_memory_source_excludes_other_users_memory(user) -> None:
+    other_user = UserFactory()
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    UserMemory.objects.create(
+        user=other_user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+    )
+
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
 
     assert context.items == []
-    assert context.source_statuses["memory"] == "not-configured"
+    assert context.source_statuses["memory"] == "no-results"
+    assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_memory_source_skips_when_session_user_mismatches(user) -> None:
+    other_user = UserFactory()
+    session = ConversationSession.objects.create(user=other_user, topic="memory")
+    UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+    )
+
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
+
+    assert context.items == []
+    assert context.source_statuses["memory"] == "skipped"
+
+
+@pytest.mark.django_db
+def test_memory_source_excludes_inactive_memory(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+        is_active=False,
+    )
+
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
+
+    assert context.items == []
+    assert context.source_statuses["memory"] == "no-results"
     assert "conversation context only" in context.rendered_context
 
 
@@ -449,7 +660,7 @@ def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
     assert item.metadata["retrieval_channels"] == ["keyword", "vector"]
     assert item.metadata["keyword_score"] > 0
     assert item.metadata["keyword_rank"] == 1
-    assert item.metadata["vector_similarity"] == 0.75
+    assert item.metadata["vector_similarity"] == MEMORY_VECTOR_SIMILARITY
     assert item.metadata["vector_rank"] == 1
     assert item.metadata["embedding_model"] == "fake"
     assert item.metadata["rerank_score"] == pytest.approx((1 / 11) + (1 / 11))
@@ -834,7 +1045,7 @@ def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
     assert context.items[0].title == matching.title
     assert context.items[0].metadata["SA_type"] == "DIRECTIVES"
     assert context.items[0].metadata["subtype"] == "request_info"
-    assert context.items[0].score == 0.1
+    assert context.items[0].score == LABEL_FILTER_SCORE
 
 
 @pytest.mark.django_db
@@ -869,7 +1080,7 @@ def test_exemplar_source_returns_same_label_with_empty_query(user) -> None:
     assert len(context.items) == 1
     assert context.items[0].title == matching.title
     assert context.items[0].metadata["retrieval_channels"] == ["label_filter"]
-    assert context.items[0].score == 0.1
+    assert context.items[0].score == LABEL_FILTER_SCORE
 
 
 @pytest.mark.django_db
@@ -1252,9 +1463,9 @@ def test_persist_turn_retrieval_stores_exemplar_trace_for_agent_turn(user) -> No
                 excerpt="have you any data on how people use the services",
                 source_uri="elfa-sa://ULECD040.txt#import-key-1",
                 source_label="ULECD040.txt",
-                score=0.1,
+                score=LABEL_FILTER_SCORE,
                 metadata={
-                    "knowledge_snippet_id": 123,
+                    "knowledge_snippet_id": TRACE_KNOWLEDGE_SNIPPET_ID,
                     "kind": "speech_act_exemplar",
                     "SA_type": "DIRECTIVES",
                     "subtype": "request_info",
@@ -1274,7 +1485,10 @@ def test_persist_turn_retrieval_stores_exemplar_trace_for_agent_turn(user) -> No
     assert trace.requested_sources == ["exemplar"]
     assert trace.source_statuses == {"exemplar": "success"}
     assert trace.items[0]["source"] == "exemplar"
-    assert trace.items[0]["metadata"]["knowledge_snippet_id"] == 123
+    assert (
+        trace.items[0]["metadata"]["knowledge_snippet_id"]
+        == TRACE_KNOWLEDGE_SNIPPET_ID
+    )
     assert trace.items[0]["metadata"]["SA_type"] == "DIRECTIVES"
     assert trace.items[0]["metadata"]["subtype"] == "request_info"
     assert trace.items[0]["source_label"] == "ULECD040.txt"
@@ -1292,15 +1506,15 @@ def test_persist_turn_retrieval_stores_hybrid_metadata(user) -> None:
         source="llm",
     )
     hybrid_metadata = {
-        "knowledge_snippet_id": 123,
+        "knowledge_snippet_id": TRACE_KNOWLEDGE_SNIPPET_ID,
         "metadata": {"section": "attendance"},
         "retrieval_channels": ["keyword", "vector"],
-        "keyword_score": 4.0,
+        "keyword_score": MEMORY_KEYWORD_SCORE,
         "keyword_rank": 1,
-        "vector_similarity": 0.75,
+        "vector_similarity": MEMORY_VECTOR_SIMILARITY,
         "vector_rank": 2,
-        "rerank_score": 0.031746031746031744,
-        "global_score": 4.75,
+        "rerank_score": MEMORY_RERANK_SCORE,
+        "global_score": MEMORY_GLOBAL_SCORE,
         "embedding_model": "fake",
     }
     context = RetrievedContext(
@@ -1314,7 +1528,7 @@ def test_persist_turn_retrieval_stores_hybrid_metadata(user) -> None:
                 excerpt="Students should cite the course handbook.",
                 source_uri="course://handbook#attendance",
                 source_label="Course Handbook",
-                score=4.75,
+                score=MEMORY_GLOBAL_SCORE,
                 metadata=hybrid_metadata,
             ),
         ],
@@ -1326,7 +1540,64 @@ def test_persist_turn_retrieval_stores_hybrid_metadata(user) -> None:
     assert trace.source_statuses == {"knowledge": "success"}
     assert all(isinstance(status, str) for status in trace.source_statuses.values())
     assert trace.items[0]["metadata"] == hybrid_metadata
-    assert trace.items[0]["score"] == 4.75
+    assert trace.items[0]["score"] == MEMORY_GLOBAL_SCORE
+
+
+@pytest.mark.django_db
+def test_persist_turn_retrieval_stores_memory_trace(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    processed = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Use the learner memory.",
+        source="llm",
+    )
+    memory = UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise IELTS corrections.",
+        memory_type="learning_preference",
+        confidence=MEMORY_CONFIDENCE,
+    )
+    memory_metadata = {
+        "user_memory_id": memory.id,
+        "memory_type": "learning_preference",
+        "confidence": MEMORY_CONFIDENCE,
+        "metadata": {},
+        "retrieval_channels": ["keyword", "vector"],
+        "keyword_score": MEMORY_KEYWORD_SCORE,
+        "keyword_rank": FIRST_RETRIEVAL_RANK,
+        "vector_similarity": MEMORY_VECTOR_SIMILARITY,
+        "vector_rank": FIRST_RETRIEVAL_RANK,
+        "rerank_score": MEMORY_RERANK_SCORE,
+        "global_score": MEMORY_GLOBAL_SCORE,
+        "embedding_model": "fake",
+    }
+    context = RetrievedContext(
+        query="concise IELTS corrections",
+        requested_sources=["memory"],
+        source_statuses={"memory": "success"},
+        items=[
+            RetrievedItem(
+                source="memory",
+                title="learning_preference",
+                excerpt="The user prefers concise IELTS corrections.",
+                score=MEMORY_GLOBAL_SCORE,
+                metadata=memory_metadata,
+            ),
+        ],
+        rendered_context="Retrieved information:\n1. Source: memory",
+    )
+
+    trace = persist_turn_retrieval(processed.turn, context)
+
+    assert trace.source_statuses == {"memory": "success"}
+    assert trace.items[FIRST_ITEM_INDEX]["metadata"]["user_memory_id"] == memory.id
+    assert set(trace.items[FIRST_ITEM_INDEX]["metadata"]["retrieval_channels"]) == {
+        "keyword",
+        "vector",
+    }
+    assert trace.items[FIRST_ITEM_INDEX]["metadata"] == memory_metadata
 
 
 @pytest.mark.django_db

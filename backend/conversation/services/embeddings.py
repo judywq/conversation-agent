@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
+import json
 import random
+from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
@@ -28,6 +29,27 @@ def build_knowledge_snippet_embedding_text(snippet: Any) -> str:
         ("previous_sentence", metadata.get("previous_sentence")),
         ("next_sentence", metadata.get("next_sentence")),
         ("file_name", metadata.get("file_name")),
+    ]
+    return "\n".join(
+        f"{label}: {value}"
+        for label, value in parts
+        if value is not None and str(value) != ""
+    )
+
+
+def _stable_metadata_text(metadata: Any) -> str:
+    if not isinstance(metadata, dict) or not metadata:
+        return ""
+    return json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+
+
+def build_user_memory_embedding_text(memory: Any) -> str:
+    parts = [
+        ("Content", memory.content),
+        ("Memory type", memory.memory_type),
+        ("Source label", memory.source_label),
+        ("Source URI", memory.source_uri),
+        ("Metadata", _stable_metadata_text(memory.metadata)),
     ]
     return "\n".join(
         f"{label}: {value}"
@@ -119,4 +141,16 @@ def snippet_embedding_is_stale(snippet: Any) -> bool:
         snippet.embedding_text_hash != embedding_text_hash(text)
         or snippet.embedding_model != expected_model
         or snippet.embedding_dimensions != expected_dimensions
+    )
+
+
+def memory_embedding_is_stale(memory: Any) -> bool:
+    provider = _embedding_provider()
+    expected_model = _expected_embedding_model(provider)
+    expected_dimensions = _embedding_dimensions()
+    text = build_user_memory_embedding_text(memory)
+    return (
+        memory.embedding_text_hash != embedding_text_hash(text)
+        or memory.embedding_model != expected_model
+        or memory.embedding_dimensions != expected_dimensions
     )

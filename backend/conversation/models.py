@@ -1,4 +1,6 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator
+from django.core.validators import MinValueValidator
 from django.db import models
 from pgvector.django import HnswIndex
 from pgvector.django import VectorField
@@ -221,6 +223,48 @@ class KnowledgeSnippet(TimestampedBase):
 
     def __str__(self) -> str:
         return self.title
+
+
+class UserMemory(TimestampedBase):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="long_term_memories",
+    )
+    content = models.TextField()
+    memory_type = models.CharField(max_length=100, blank=True, default="profile")
+    source_uri = models.CharField(max_length=1000, blank=True, default="")
+    source_label = models.CharField(max_length=255, blank=True, default="")
+    confidence = models.FloatField(
+        default=1.0,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+    )
+    is_active = models.BooleanField(default=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    embedding = VectorField(dimensions=1536, null=True, blank=True)
+    embedding_model = models.CharField(max_length=100, null=True, blank=True, default="")
+    embedding_dimensions = models.PositiveIntegerField(null=True, blank=True)
+    embedding_text_hash = models.CharField(max_length=64, null=True, blank=True, default="")
+    embedding_updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["user", "is_active", "memory_type"],
+                name="conv_um_user_active_type_idx",
+            ),
+            HnswIndex(
+                name="conv_user_mem_emb_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+        ]
+        ordering = ["user_id", "memory_type", "id"]
+
+    def __str__(self) -> str:
+        return f"UserMemory({self.user_id}, {self.memory_type}, {self.id})"
 
 
 class TurnRetrieval(TimestampedBase):
