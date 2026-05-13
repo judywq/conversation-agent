@@ -8,6 +8,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.models import UserMemory
 from backend.conversation.services import retrieval as retrieval_service
 from backend.conversation.services.embeddings import fake_embedding
 from backend.conversation.services.retrieval import RetrievedContext
@@ -18,6 +19,8 @@ from backend.conversation.services.retrieval import persist_turn_retrieval_safel
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.turn_processor import append_turn
 from backend.users.tests.factories import UserFactory
+
+MEMORY_CONFIDENCE = 0.8
 
 
 @pytest.mark.django_db
@@ -120,13 +123,112 @@ def test_retrieve_unsupported_source_is_skipped(user) -> None:
 
 
 @pytest.mark.django_db
-def test_memory_source_returns_not_configured(user) -> None:
+def test_memory_source_returns_matching_user_memory(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="memory")
+    matching = UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+        source_uri="admin://memory/preferences",
+        source_label="manual note",
+        confidence=MEMORY_CONFIDENCE,
+        metadata={"topic": "IELTS"},
+    )
 
-    context = retrieve("my goals", session=session, user=user, sources={"memory"}, top_k=5)
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
+
+    assert context.source_statuses["memory"] == "success"
+    assert len(context.items) == 1
+    item = context.items[0]
+    assert item.source == "memory"
+    assert item.title == "learning_preference"
+    assert (
+        item.excerpt
+        == "The user prefers concise corrections during IELTS speaking practice."
+    )
+    assert item.source_uri == "admin://memory/preferences"
+    assert item.source_label == "manual note"
+    assert item.metadata["user_memory_id"] == matching.id
+    assert item.metadata["memory_type"] == "learning_preference"
+    assert item.metadata["confidence"] == MEMORY_CONFIDENCE
+    assert item.metadata["metadata"] == {"topic": "IELTS"}
+    assert item.metadata["retrieval_channels"] == ["keyword"]
+    assert item.metadata["keyword_rank"] == 1
+    assert item.metadata["vector_status"] == "no-results"
+    assert item.metadata["global_score"] == item.score
+
+
+@pytest.mark.django_db
+def test_memory_source_excludes_other_users_memory(user) -> None:
+    other_user = UserFactory()
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    UserMemory.objects.create(
+        user=other_user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+    )
+
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
 
     assert context.items == []
-    assert context.source_statuses["memory"] == "not-configured"
+    assert context.source_statuses["memory"] == "no-results"
+    assert "conversation context only" in context.rendered_context
+
+
+@pytest.mark.django_db
+def test_memory_source_skips_when_session_user_mismatches(user) -> None:
+    other_user = UserFactory()
+    session = ConversationSession.objects.create(user=other_user, topic="memory")
+    UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+    )
+
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
+
+    assert context.items == []
+    assert context.source_statuses["memory"] == "skipped"
+
+
+@pytest.mark.django_db
+def test_memory_source_excludes_inactive_memory(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="memory")
+    UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise corrections during IELTS speaking practice.",
+        memory_type="learning_preference",
+        is_active=False,
+    )
+
+    context = retrieve(
+        "concise IELTS corrections",
+        session=session,
+        user=user,
+        sources={"memory"},
+        top_k=5,
+    )
+
+    assert context.items == []
+    assert context.source_statuses["memory"] == "no-results"
     assert "conversation context only" in context.rendered_context
 
 

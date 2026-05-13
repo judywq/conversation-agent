@@ -15,6 +15,8 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
+from backend.conversation.models import UserMemory
+from backend.conversation.services.embeddings import build_user_memory_embedding_text
 from backend.conversation.services.embeddings import generate_embedding
 from backend.conversation.services.web_search import fetch_web_search_context
 
@@ -24,7 +26,6 @@ logger = logging.getLogger(__name__)
 SOURCE_SUCCESS = "success"
 SOURCE_NO_RESULTS = "no-results"
 SOURCE_SKIPPED = "skipped"
-SOURCE_NOT_CONFIGURED = "not-configured"
 SOURCE_FAILED = "failed"
 SUPPORTED_SOURCES = {"web", "session", "memory", "knowledge", "exemplar"}
 _WEB_STATUS_PREFIX = "(Web search"
@@ -67,6 +68,40 @@ class RetrievedContext:
 @dataclass
 class _KnowledgeCandidate:
     snippet: KnowledgeSnippet
+    keyword_score: float | None = None
+    keyword_rank: int | None = None
+    vector_similarity: float | None = None
+    vector_rank: int | None = None
+    embedding_model: str = ""
+
+    @property
+    def retrieval_channels(self) -> list[str]:
+        channels = []
+        if self.keyword_rank is not None:
+            channels.append("keyword")
+        if self.vector_rank is not None:
+            channels.append("vector")
+        return channels
+
+    def rerank_score(self) -> float:
+        rrf_k = float(getattr(settings, "HYBRID_RRF_K", 60))
+        keyword_weight = float(getattr(settings, "HYBRID_KEYWORD_WEIGHT", 1.0))
+        vector_weight = float(getattr(settings, "HYBRID_VECTOR_WEIGHT", 1.0))
+        score = 0.0
+        if self.keyword_rank is not None:
+            score += keyword_weight / (rrf_k + self.keyword_rank)
+        if self.vector_rank is not None:
+            score += vector_weight / (rrf_k + self.vector_rank)
+        return score
+
+    def global_score(self) -> float:
+        score = (self.keyword_score or 0.0) + max(self.vector_similarity or 0.0, 0.0)
+        return score or self.rerank_score()
+
+
+@dataclass
+class _MemoryCandidate:
+    memory: UserMemory
     keyword_score: float | None = None
     keyword_rank: int | None = None
     vector_similarity: float | None = None
@@ -198,10 +233,6 @@ def _score_text(query_terms: list[str], *parts: str) -> float:
     return float(sum(1 for term in query_terms if term in haystack))
 
 
-def _retrieve_memory() -> tuple[list[RetrievedItem], str]:
-    return [], SOURCE_NOT_CONFIGURED
-
-
 def _retrieve_web(query: str) -> tuple[list[RetrievedItem], str, str]:
     q = (query or "").strip()
     if not q:
@@ -239,6 +270,10 @@ def _normal_knowledge_snippets() -> Any:
     return KnowledgeSnippet.objects.filter(is_active=True).filter(
         Q(metadata__kind__isnull=True) | ~Q(metadata__kind="speech_act_exemplar"),
     )
+
+
+def _active_user_memories(user: User) -> Any:
+    return UserMemory.objects.filter(user=user, is_active=True)
 
 
 def _speech_act_exemplar_snippets(
@@ -302,6 +337,37 @@ def _keyword_knowledge_candidates(query: str, *, candidate_count: int) -> list[_
     )
 
 
+def _keyword_memory_candidates(
+    query: str,
+    memories: Any,
+    *,
+    candidate_count: int,
+) -> list[_MemoryCandidate]:
+    terms = _tokenize(query)
+    if not terms or candidate_count <= 0:
+        return []
+
+    scored_candidates = []
+    for memory in memories:
+        score = _score_text(
+            terms,
+            memory.content,
+            memory.memory_type,
+            memory.source_label,
+            memory.source_uri,
+            build_user_memory_embedding_text(memory),
+        )
+        if score <= 0:
+            continue
+        scored_candidates.append((score, memory.id, memory))
+
+    ranked = sorted(scored_candidates, key=lambda x: (-x[0], x[1]))[:candidate_count]
+    return [
+        _MemoryCandidate(memory=memory, keyword_score=score, keyword_rank=rank)
+        for rank, (score, _memory_id, memory) in enumerate(ranked, start=1)
+    ]
+
+
 def _expected_embedding_model() -> str:
     provider = str(getattr(settings, "EMBEDDING_PROVIDER", "openai")).strip().casefold()
     if provider == "fake":
@@ -363,6 +429,50 @@ def _vector_knowledge_candidates(query: str, *, candidate_count: int) -> tuple[l
     )
 
 
+def _vector_memory_candidates(
+    query: str,
+    memories: Any,
+    *,
+    candidate_count: int,
+) -> tuple[list[_MemoryCandidate], str]:
+    if not getattr(settings, "VECTOR_RECALL_ENABLED", True) or candidate_count <= 0:
+        return [], SOURCE_SKIPPED
+
+    try:
+        memories = memories.filter(
+            embedding__isnull=False,
+            embedding_model=_expected_embedding_model(),
+            embedding_dimensions=_expected_embedding_dimensions(),
+        )
+        if not memories.exists():
+            return [], SOURCE_NO_RESULTS
+        result = generate_embedding(query)
+        ranked = memories.annotate(
+            distance=CosineDistance("embedding", result.vector),
+        ).order_by("distance", "id")[:candidate_count]
+        candidates = []
+        for rank, memory in enumerate(ranked, start=1):
+            distance = getattr(memory, "distance", None)
+            if distance is None:
+                continue
+            candidates.append(
+                _MemoryCandidate(
+                    memory=memory,
+                    vector_similarity=1.0 - float(distance),
+                    vector_rank=rank,
+                    embedding_model=memory.embedding_model or result.model,
+                ),
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Vector memory recall failed; falling back to keyword-only: %s",
+            exc,
+        )
+        return [], SOURCE_FAILED
+    else:
+        return candidates, SOURCE_SUCCESS
+
+
 def _merge_candidates(
     keyword_candidates: list[_KnowledgeCandidate],
     vector_candidates: list[_KnowledgeCandidate],
@@ -389,6 +499,27 @@ def _merge_knowledge_candidates(
     vector_candidates: list[_KnowledgeCandidate],
 ) -> list[_KnowledgeCandidate]:
     return _merge_candidates(keyword_candidates, vector_candidates)
+
+
+def _merge_memory_candidates(
+    keyword_candidates: list[_MemoryCandidate],
+    vector_candidates: list[_MemoryCandidate],
+) -> list[_MemoryCandidate]:
+    merged: dict[int, _MemoryCandidate] = {}
+    for candidate in [*keyword_candidates, *vector_candidates]:
+        memory_id = candidate.memory.id
+        existing = merged.get(memory_id)
+        if existing is None:
+            merged[memory_id] = candidate
+            continue
+        if candidate.keyword_score is not None:
+            existing.keyword_score = candidate.keyword_score
+            existing.keyword_rank = candidate.keyword_rank
+        if candidate.vector_similarity is not None:
+            existing.vector_similarity = candidate.vector_similarity
+            existing.vector_rank = candidate.vector_rank
+            existing.embedding_model = candidate.embedding_model
+    return list(merged.values())
 
 
 def _retrieve_session(
@@ -432,6 +563,72 @@ def _retrieve_session(
         )
         for score, turn in sorted(candidates, key=lambda x: x[0], reverse=True)[:top_k]
     ]
+    return items, SOURCE_SUCCESS
+
+
+def _retrieve_memory(
+    query: str,
+    *,
+    user: User,
+    top_k: int,
+) -> tuple[list[RetrievedItem], str]:
+    if not _tokenize(query):
+        return [], SOURCE_NO_RESULTS
+
+    memories = _active_user_memories(user)
+    keyword_candidate_count = int(getattr(settings, "HYBRID_KEYWORD_CANDIDATES", 20))
+    vector_candidate_count = int(getattr(settings, "HYBRID_VECTOR_CANDIDATES", 20))
+    keyword_candidates = _keyword_memory_candidates(
+        query,
+        memories.order_by("id"),
+        candidate_count=keyword_candidate_count,
+    )
+    vector_candidates, vector_status = _vector_memory_candidates(
+        query,
+        memories,
+        candidate_count=vector_candidate_count,
+    )
+    candidates = _merge_memory_candidates(keyword_candidates, vector_candidates)
+
+    if not candidates:
+        if vector_status == SOURCE_FAILED:
+            return [], SOURCE_FAILED
+        return [], SOURCE_NO_RESULTS
+
+    ranked_candidates = sorted(
+        candidates,
+        key=lambda candidate: (-candidate.rerank_score(), candidate.memory.id),
+    )
+    items = []
+    for candidate in ranked_candidates[:top_k]:
+        memory = candidate.memory
+        rerank_score = candidate.rerank_score()
+        global_score = candidate.global_score()
+        items.append(
+            RetrievedItem(
+                source="memory",
+                title=memory.memory_type,
+                excerpt=_excerpt(memory.content),
+                source_uri=memory.source_uri,
+                source_label=memory.source_label,
+                score=global_score,
+                metadata={
+                    "user_memory_id": memory.id,
+                    "memory_type": memory.memory_type,
+                    "confidence": memory.confidence,
+                    "metadata": memory.metadata,
+                    "retrieval_channels": candidate.retrieval_channels,
+                    "vector_status": vector_status,
+                    "keyword_score": candidate.keyword_score,
+                    "keyword_rank": candidate.keyword_rank,
+                    "vector_similarity": candidate.vector_similarity,
+                    "vector_rank": candidate.vector_rank,
+                    "rerank_score": rerank_score,
+                    "global_score": global_score,
+                    "embedding_model": candidate.embedding_model,
+                },
+            ),
+        )
     return items, SOURCE_SUCCESS
 
 
@@ -636,7 +833,10 @@ def retrieve(  # noqa: C901, PLR0913
             if message:
                 source_messages[source] = message
         elif source == "memory":
-            found, status = _retrieve_memory()
+            if session.user_id != getattr(user, "id", None):
+                found, status = [], SOURCE_SKIPPED
+            else:
+                found, status = _retrieve_memory(query, user=user, top_k=top_k)
         elif source == "session":
             if session.user_id != getattr(user, "id", None):
                 found, status = [], SOURCE_SKIPPED
