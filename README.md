@@ -109,6 +109,24 @@ Use `--dry-run` to count matching snippets without writing vectors, and `--limit
 
 If the embedding provider, query embedding generation, or pgvector recall is unavailable, retrieval falls back to keyword matches. A keyword hit still returns the knowledge source as `success`; only vector-only searches with no keyword candidates report vector recall failure.
 
+### User Long-Term Memory
+
+Long-term memory is stored in the local database as `UserMemory` records and is not committed to Git. After pulling changes that include this feature, run migrations:
+
+```sh
+make migrate-local
+```
+
+Developers can create or disable user memories from Django admin. The first version does not automatically extract memories from conversations and does not add a frontend memory management UI.
+
+Memory retrieval combines keyword matching with pgvector recall, then writes returned memory metadata into `TurnRetrieval`. If vector recall is needed for newly created memories, refresh memory embeddings after creating records:
+
+```sh
+docker compose -f docker-compose.local.yml run --rm django python manage.py refresh_user_memory_embeddings --stale --skip-errors
+```
+
+Use `--dry-run` to count matching memory records without writing vectors, and `--limit N` to process a bounded batch.
+
 ##### From the console
 Alternatively you, may run the Vite dev server directly from the project directory:
 ```sh
