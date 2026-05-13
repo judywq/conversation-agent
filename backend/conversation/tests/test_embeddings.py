@@ -3,21 +3,26 @@ from __future__ import annotations
 from io import StringIO
 from unittest.mock import patch
 
+import pytest
 from django.core.management import CommandError
 from django.core.management import call_command
 from django.test import override_settings
-import pytest
 
 from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import UserMemory
+from backend.conversation.services.embeddings import EmbeddingResult
 from backend.conversation.services.embeddings import (
     build_knowledge_snippet_embedding_text,
 )
-from backend.conversation.services.embeddings import EmbeddingResult
+from backend.conversation.services.embeddings import build_user_memory_embedding_text
 from backend.conversation.services.embeddings import embedding_text_hash
 from backend.conversation.services.embeddings import fake_embedding
 from backend.conversation.services.embeddings import generate_embedding
 from backend.conversation.services.embeddings import generate_embeddings
+from backend.conversation.services.embeddings import memory_embedding_is_stale
 from backend.conversation.services.embeddings import snippet_embedding_is_stale
+
+TEST_EMBEDDING_DIMENSIONS = 1536
 
 
 @pytest.mark.django_db
@@ -47,12 +52,48 @@ def test_canonical_text_includes_speech_act_context() -> None:
     assert "file_name: CDIS01A.txt" in text
 
 
+@pytest.mark.django_db
+def test_build_user_memory_embedding_text_is_deterministic(user) -> None:
+    memory = UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise feedback.",
+        memory_type="learning_preference",
+        source_label="manual",
+        source_uri="admin://memory/1",
+        metadata={"b": "second", "a": "first"},
+    )
+
+    expected = (
+        "Content: The user prefers concise feedback.\n"
+        "Memory type: learning_preference\n"
+        "Source label: manual\n"
+        "Source URI: admin://memory/1\n"
+        'Metadata: {"a": "first", "b": "second"}'
+    )
+    assert build_user_memory_embedding_text(memory) == expected
+
+
+@pytest.mark.django_db
+def test_build_user_memory_embedding_text_omits_empty_metadata(user) -> None:
+    memory = UserMemory.objects.create(
+        user=user,
+        content="The user prefers concise feedback.",
+        metadata={},
+    )
+
+    expected = (
+        "Content: The user prefers concise feedback.\n"
+        "Memory type: profile"
+    )
+    assert build_user_memory_embedding_text(memory) == expected
+
+
 def test_fake_embedding_is_deterministic_with_default_dimensions() -> None:
     first = fake_embedding("same text")
     second = fake_embedding("same text")
 
     assert first == second
-    assert len(first) == 1536
+    assert len(first) == TEST_EMBEDDING_DIMENSIONS
     assert all(isinstance(value, float) for value in first)
 
 
@@ -92,6 +133,25 @@ def test_stale_returns_true_when_stored_dimensions_differ() -> None:
     assert snippet_embedding_is_stale(snippet) is True
 
 
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_memory_embedding_is_stale_for_changed_content(user) -> None:
+    memory = UserMemory.objects.create(
+        user=user,
+        content="Original content",
+        embedding_model="fake",
+        embedding_dimensions=1536,
+    )
+    text = build_user_memory_embedding_text(memory)
+    memory.embedding_text_hash = embedding_text_hash(text)
+    memory.save()
+
+    assert memory_embedding_is_stale(memory) is False
+
+    memory.content = "Changed content"
+    assert memory_embedding_is_stale(memory) is True
+
+
 @override_settings(EMBEDDING_PROVIDER=" other ")
 def test_invalid_provider_raises_runtime_error_without_calling_openai() -> None:
     with patch("backend.conversation.services.embeddings.OpenAI") as openai:
@@ -118,7 +178,7 @@ def test_generate_embedding_uses_configured_openai_timeout() -> None:
 
     openai.assert_called_once_with(api_key="sk-test", timeout=30.0)
     assert result.model == "text-embedding-3-small"
-    assert result.dimensions == 1536
+    assert result.dimensions == TEST_EMBEDDING_DIMENSIONS
 
 
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
@@ -169,9 +229,9 @@ def test_refresh_command_generates_missing_embedding() -> None:
     call_command("refresh_knowledge_embeddings", stdout=stdout)
 
     snippet.refresh_from_db()
-    assert len(snippet.embedding) == 1536
+    assert len(snippet.embedding) == TEST_EMBEDDING_DIMENSIONS
     assert snippet.embedding_model == "fake"
-    assert snippet.embedding_dimensions == 1536
+    assert snippet.embedding_dimensions == TEST_EMBEDDING_DIMENSIONS
     assert snippet.embedding_text_hash == embedding_text_hash(
         build_knowledge_snippet_embedding_text(snippet),
     )
@@ -243,6 +303,47 @@ def test_refresh_command_dry_run_does_not_write_embedding() -> None:
     assert snippet.embedding_model == ""
     assert snippet.embedding_text_hash == ""
     assert snippet.embedding_updated_at is None
+    assert "matched=1 dry_run=True" in stdout.getvalue()
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_refresh_user_memory_embeddings_generates_missing_embedding(user) -> None:
+    memory = UserMemory.objects.create(
+        user=user,
+        content="The user likes slower pacing.",
+    )
+    stdout = StringIO()
+
+    call_command("refresh_user_memory_embeddings", "--batch-size", "2", stdout=stdout)
+
+    memory.refresh_from_db()
+    assert memory.embedding is not None
+    assert memory.embedding_model == "fake"
+    assert memory.embedding_dimensions == TEST_EMBEDDING_DIMENSIONS
+    assert memory.embedding_text_hash == embedding_text_hash(
+        build_user_memory_embedding_text(memory),
+    )
+    assert memory.embedding_updated_at is not None
+    assert "updated=1 dry_run=False" in stdout.getvalue()
+
+
+@pytest.mark.django_db
+@override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
+def test_refresh_user_memory_embeddings_dry_run_does_not_write(user) -> None:
+    memory = UserMemory.objects.create(
+        user=user,
+        content="The user likes direct feedback.",
+    )
+    stdout = StringIO()
+
+    call_command("refresh_user_memory_embeddings", "--dry-run", stdout=stdout)
+
+    memory.refresh_from_db()
+    assert memory.embedding is None
+    assert memory.embedding_model == ""
+    assert memory.embedding_text_hash == ""
+    assert memory.embedding_updated_at is None
     assert "matched=1 dry_run=True" in stdout.getvalue()
 
 
