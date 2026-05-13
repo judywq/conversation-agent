@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from .models import ConversationLLMPrompt
 from .models import KnowledgeSnippet
 from .models import TurnRetrieval
+from .models import UserMemory
 
 
 class MetadataValueListFilter(admin.SimpleListFilter):
@@ -151,6 +152,87 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
     def _metadata_value(self, obj, key):
         metadata = obj.metadata if isinstance(obj.metadata, dict) else {}
         return metadata.get(key, "")
+
+
+@admin.register(UserMemory)
+class UserMemoryAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "user",
+        "memory_type",
+        "content_excerpt",
+        "source_label",
+        "source_uri",
+        "confidence",
+        "is_active",
+        "has_embedding",
+        "embedding_model",
+        "embedding_updated_at",
+        "updated_at",
+    ]
+    list_display_links = ["id", "content_excerpt"]
+    list_filter = [
+        "is_active",
+        "memory_type",
+        "confidence",
+        "updated_at",
+        "user",
+    ]
+    search_fields = [
+        "content",
+        "memory_type",
+        "source_label",
+        "source_uri",
+        "user__email",
+        "user__username",
+        "user__name",
+    ]
+    actions = ["enable_selected_memories", "disable_selected_memories"]
+    readonly_fields = [
+        "created_at",
+        "updated_at",
+        "embedding_model",
+        "embedding_dimensions",
+        "embedding_text_hash",
+        "embedding_updated_at",
+    ]
+    fieldsets = (
+        (
+            None,
+            {"fields": ("user", "content", "memory_type", "confidence", "is_active")},
+        ),
+        ("Source", {"fields": ("source_label", "source_uri", "metadata")}),
+        (
+            "Embedding",
+            {
+                "fields": (
+                    "embedding_model",
+                    "embedding_dimensions",
+                    "embedding_text_hash",
+                    "embedding_updated_at",
+                ),
+            },
+        ),
+        ("Timestamps", {"fields": ("created_at", "updated_at")}),
+    )
+
+    @admin.display(description="Content")
+    def content_excerpt(self, obj: UserMemory) -> str:
+        return Truncator(obj.content).chars(80, truncate="...")
+
+    @admin.display(boolean=True, description="Embedding")
+    def has_embedding(self, obj: UserMemory) -> bool:
+        return obj.embedding is not None
+
+    @admin.action(description="Enable selected memories")
+    def enable_selected_memories(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"Enabled {updated} memory record(s).")
+
+    @admin.action(description="Disable selected memories")
+    def disable_selected_memories(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f"Disabled {updated} memory record(s).")
 
 
 @admin.register(TurnRetrieval)
