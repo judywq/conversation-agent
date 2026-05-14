@@ -8,7 +8,7 @@ export type ConversationWsEvent =
   | { type: 'session_ended' }
   | { type: 'need_user_turn'; reason: string }
   | { type: 'turn'; turn: any }
-  | { type: 'agent_status'; status: 'thinking' | 'finished' }
+  | { type: 'agent_status'; status: 'thinking' | 'finished' | 'searching_online'; agent_display_name?: string }
   | { type: 'terminated'; reason: string }
   | { type: 'error'; message: string }
   | { type: string; [k: string]: any }

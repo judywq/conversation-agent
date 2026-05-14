@@ -32,7 +32,7 @@ class ConversationSession(TimestampedBase):
     terminate = models.BooleanField(default=False)
     paused = models.BooleanField(default=False)
 
-    max_turns = models.IntegerField(default=20)
+    max_turns = models.IntegerField(default=10)
     agent_count = models.IntegerField(default=3)
 
     # Running counts of speech acts for facilitator target-mix guidance (major + ASSERTIVES/DIRECTIVES subtypes).
