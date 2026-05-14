@@ -46,7 +46,7 @@
           </tr>
 
           <tr id="turns-for-{{ session.pk }}" class="turns-row" hidden>
-            <td colspan="8" class="turns-cell">
+            <td colspan="9" class="turns-cell">
               <div class="turns-panel">
                 <div class="turns-header">
                   <strong>{% translate "Turns & user audios" %}</strong>
@@ -74,6 +74,7 @@
                         <th>{% translate "Speaker" %}</th>
                         <th>{% translate "SA" %}</th>
                         <th>{% translate "Target" %}</th>
+                        <th>{% translate "Retrieval" %}</th>
                         <th>{% translate "Utterance" %}</th>
                         <th>{% translate "Created" %}</th>
                       </tr>
@@ -91,6 +92,26 @@
                           </td>
                           <td>{{ t.speech_act|default:"" }}{% if t.subtype %} / {{ t.subtype }}{% endif %}</td>
                           <td>{{ t.target|default:"" }}</td>
+                          <td class="retrieval-kinds mono">
+                            {% with traces=t.retrieval_traces.all %}
+                              {% if traces %}
+                                {% for tr in traces %}
+                                  {% if tr.requested_sources %}
+                                    {{ tr.requested_sources|join:", " }}
+                                  {% elif tr.source_statuses %}
+                                    {% for key in tr.source_statuses %}
+                                      {% if not forloop.first %}, {% endif %}{{ key }}
+                                    {% endfor %}
+                                  {% else %}
+                                    <span class="quiet">—</span>
+                                  {% endif %}
+                                  {% if not forloop.last %} · {% endif %}
+                                {% endfor %}
+                              {% else %}
+                                <span class="quiet">—</span>
+                              {% endif %}
+                            {% endwith %}
+                          </td>
                           <td class="utterance">{{ t.utterance|truncatechars:140 }}</td>
                           <td>{{ t.created_at }}</td>
                         </tr>

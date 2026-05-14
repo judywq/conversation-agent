@@ -29,5 +29,8 @@ DJANGO_SECURE_SSL_REDIRECT=False
 # ------------------------------------------------------------------------------
 # REDIS_URL=redis://redis:6379/0
 
+# OpenAI web search (retrieval)
+WEB_SEARCH_TIMEOUT_SEC=30
+
 # Vue
 VITE_API_BASE_URL=http://conv.judywang.jp/api

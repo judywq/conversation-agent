@@ -258,7 +258,7 @@ def fetch_web_search_context(query: str) -> str:
         return "(OpenAI API key is not configured; proceed without verified external facts.)"
 
     model = (getattr(settings, "WEB_SEARCH_MODEL", "") or "gpt-5").strip()
-    timeout = float(getattr(settings, "WEB_SEARCH_TIMEOUT_SEC", 15.0))
+    timeout = float(getattr(settings, "WEB_SEARCH_TIMEOUT_SEC", 30.0))
     try:
         client = OpenAI(api_key=api_key, timeout=timeout)
         response = client.responses.create(

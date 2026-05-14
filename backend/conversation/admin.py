@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db.models import Prefetch
 from django.utils.text import Truncator
 from django.utils.translation import gettext_lazy as _
 
@@ -174,8 +175,11 @@ class ConversationSessionAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        # Prefetch turns + user audios so the tiered changelist doesn't cause N+1 queries.
-        return qs.prefetch_related("turns", "user_audios")
+        # Prefetch turns + retrieval traces + user audios for the tiered changelist (no N+1).
+        turns_qs = TurnRecord.objects.order_by("turn_index", "subturn_index", "id").prefetch_related(
+            "retrieval_traces",
+        )
+        return qs.prefetch_related(Prefetch("turns", queryset=turns_qs), "user_audios")
 
     @admin.display(description="Topic")
     def topic_excerpt(self, obj: ConversationSession) -> str:
