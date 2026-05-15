@@ -1,5 +1,7 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 
+from django.db import close_old_connections
 from langchain_core.messages import SystemMessage
 
 from backend.conversation.prompts import load_additional_prompt
@@ -18,12 +20,19 @@ def generate_cefr_topic_samples(*, topic: str, voice: str = "alloy") -> list[dic
     raw = result.content if hasattr(result, "content") else str(result)
 
     parsed_samples = _parse_samples(raw)
-    output: list[dict[str, str]] = []
-    for level in CEFR_LEVELS:
-        text = str(parsed_samples.get(level) or _fallback_sample_text(level=level, topic=topic))
+    texts_by_level = {
+        level: str(parsed_samples.get(level) or _fallback_sample_text(level=level, topic=topic))
+        for level in CEFR_LEVELS
+    }
+
+    def synthesize_level(level: str) -> dict[str, str]:
+        close_old_connections()
+        text = texts_by_level[level]
         audio_url = synthesize_speech(text=text, voice=voice)
-        output.append({"level": level, "text": text, "audio_url": audio_url})
-    return output
+        return {"level": level, "text": text, "audio_url": audio_url}
+
+    with ThreadPoolExecutor(max_workers=len(CEFR_LEVELS)) as executor:
+        return list(executor.map(synthesize_level, CEFR_LEVELS))
 
 
 def _parse_samples(raw: str) -> dict[str, str]:
