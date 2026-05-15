@@ -1,3 +1,6 @@
+import logging
+import time
+
 from rest_framework import serializers
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -8,6 +11,8 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
 from backend.conversation.services.profile_audio import generate_cefr_topic_samples
 from backend.conversation.services.stt import transcribe_audio_file
+
+logger = logging.getLogger(__name__)
 
 
 class SpeechToTextView(APIView):
@@ -31,14 +36,46 @@ class CefrTopicSamplesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        t0 = time.perf_counter()
         serializer = CefrTopicSamplesRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         topic = serializer.validated_data["topic"]
-        samples = generate_cefr_topic_samples(topic=topic)
-        if hasattr(request.user, "userprofile"):
-            request.user.userprofile.cefr_sample_choices = samples
-            request.user.userprofile.save(update_fields=["cefr_sample_choices"])
-        return Response({"topic": topic, "samples": samples})
+        user_id = request.user.id
+        topic_log = topic[:200]
+        logger.info("cefr_samples request_start user_id=%s topic=%s", user_id, topic_log)
+        try:
+            samples = generate_cefr_topic_samples(topic=topic)
+            if hasattr(request.user, "userprofile"):
+                logger.info("cefr_samples profile_save_start user_id=%s", user_id)
+                t_save0 = time.perf_counter()
+                request.user.userprofile.cefr_sample_choices = samples
+                request.user.userprofile.save(update_fields=["cefr_sample_choices"])
+                save_ms = int((time.perf_counter() - t_save0) * 1000)
+                logger.info(
+                    "cefr_samples profile_save_complete user_id=%s duration_ms=%d",
+                    user_id,
+                    save_ms,
+                )
+            else:
+                logger.info("cefr_samples profile_save_skipped user_id=%s", user_id)
+            total_ms = int((time.perf_counter() - t0) * 1000)
+            logger.info(
+                "cefr_samples request_complete user_id=%s topic=%s total_ms=%d sample_count=%d",
+                user_id,
+                topic_log,
+                total_ms,
+                len(samples),
+            )
+            return Response({"topic": topic, "samples": samples})
+        except Exception:
+            total_ms = int((time.perf_counter() - t0) * 1000)
+            logger.exception(
+                "cefr_samples request_failed user_id=%s topic=%s total_ms=%d",
+                user_id,
+                topic_log,
+                total_ms,
+            )
+            raise
 
 
 class UserAudioUploadView(APIView):
