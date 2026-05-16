@@ -117,7 +117,17 @@ Long-term memory is stored in the local database as `UserMemory` records and is 
 make migrate-local
 ```
 
-Developers can create or disable user memories from Django admin. The first version does not automatically extract memories from conversations and does not add a frontend memory management UI.
+Developers can create or disable user memories from Django admin. The project also includes a lightweight Mem0-style memory flow built on the existing `UserMemory` table. It does not require Mem0, Zep, Letta, Redis, or a separate memory service.
+
+After a user turn is saved, the backend can asynchronously ask the configured LLM for candidate long-term memories. The LLM only proposes candidates; backend rules decide what is saved. The backend filters invalid memory types, low-confidence candidates, temporary topics, generated CEFR sample text, sensitive information, duplicates, and agent-only claims.
+
+Stable structured profile fields are synchronized without the LLM:
+
+- `preferred_name`
+- `major`
+- `cefr_level`
+
+Set `USER_MEMORY_EXTRACTION_ENABLED=false` to disable LLM-based conversation memory extraction. Profile sync can still run because it does not call the LLM.
 
 Memory retrieval combines keyword matching with pgvector recall, then writes returned memory metadata into `TurnRetrieval`. If vector recall is needed for newly created memories, refresh memory embeddings after creating records:
 
