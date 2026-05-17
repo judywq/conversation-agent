@@ -1,0 +1,51 @@
+{% load i18n %}
+{% if panel_header_title %}
+<div class="turns-header">
+  <strong>{{ panel_header_title }}</strong>
+  <span class="turns-meta">
+    ·
+    <a href="{% url 'admin:conversation_conversationsession_change' session.pk %}">
+      {% translate "Open session" %}
+    </a>
+  </span>
+</div>
+{% endif %}
+
+{% if children %}
+  <table class="turns-table">
+    <thead>
+      <tr>
+        <th>{% translate "Created" %}</th>
+        <th>{% translate "Filename" %}</th>
+        <th>{% translate "Type" %}</th>
+        <th>{% translate "Play / download" %}</th>
+        <th>{% translate "Linked turn" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in children %}
+        <tr>
+          <td>{{ a.created_at }}</td>
+          <td>
+            <a href="{% url 'admin:conversation_useraudio_change' a.pk %}">
+              {{ a.original_filename|default:a.audio_file.name }}
+            </a>
+          </td>
+          <td class="mono">{{ a.content_type|default:"" }}</td>
+          <td>
+            <a href="{{ a.audio_file.url }}" target="_blank" rel="noopener">{% translate "Open" %}</a>
+          </td>
+          <td>
+            {% if a.turn_id %}
+              <a href="{% url 'admin:conversation_turnrecord_change' a.turn_id %}">#{{ a.turn_id }}</a>
+            {% else %}
+              <span class="quiet">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="quiet">{% translate "No user audios for this session." %}</div>
+{% endif %}

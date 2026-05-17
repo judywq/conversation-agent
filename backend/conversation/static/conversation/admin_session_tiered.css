@@ -1,0 +1,80 @@
+/* Session-tiered / session-grouped admin lists — force light readable rows. */
+
+#changelist-form .session-tiered,
+#changelist .results .session-tiered,
+#changelist .session-tiered,
+#changelist .session-tiered #result_list,
+#changelist .session-tiered #result_list thead,
+#changelist .session-tiered #result_list tbody,
+#changelist .session-tiered #result_list tr,
+#changelist .session-tiered #result_list th,
+#changelist .session-tiered #result_list td,
+#changelist .session-tiered .session-group-header,
+#changelist .session-tiered .turns-cell,
+#changelist .session-tiered .turns-panel,
+#changelist .session-tiered .turns-table,
+#changelist .session-tiered .turns-table th,
+#changelist .session-tiered .turns-table td {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  color: #212121 !important;
+}
+
+#changelist .session-tiered #result_list a,
+#changelist .session-tiered .turns-table a {
+  color: #2f6f9f !important;
+}
+
+#changelist .session-tiered .turns-meta,
+#changelist .session-tiered .quiet {
+  color: #555555 !important;
+}
+
+#changelist .session-tiered #result_list thead th {
+  background-color: #f5f5f5 !important;
+  color: #212121 !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+}
+
+#changelist .session-tiered .turns-table thead th {
+  background-color: #f5f5f5 !important;
+  color: #212121 !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+}
+
+#changelist .session-tiered .session-toggle {
+  background-color: #ffffff !important;
+  color: #212121 !important;
+  border: 1px solid #cccccc !important;
+}
+
+#changelist .session-tiered .turns-panel {
+  border-left: 3px solid #417690;
+}
+
+/* Django dark-mode admin */
+[data-theme="dark"] #changelist .session-tiered #result_list tr,
+[data-theme="dark"] #changelist .session-tiered #result_list th,
+[data-theme="dark"] #changelist .session-tiered #result_list td,
+[data-theme="dark"] #changelist .session-tiered .turns-table th,
+[data-theme="dark"] #changelist .session-tiered .turns-table td,
+[data-theme="dark"] #changelist .session-tiered .turns-cell,
+[data-theme="dark"] #changelist .session-tiered .turns-panel {
+  background-color: #ffffff !important;
+  color: #212121 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  #changelist .session-tiered #result_list tr,
+  #changelist .session-tiered #result_list th,
+  #changelist .session-tiered #result_list td,
+  #changelist .session-tiered .turns-table th,
+  #changelist .session-tiered .turns-table td,
+  #changelist .session-tiered .turns-cell,
+  #changelist .session-tiered .turns-panel {
+    background-color: #ffffff !important;
+    color: #212121 !important;
+  }
+}

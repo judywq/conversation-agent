@@ -1,0 +1,47 @@
+{% load i18n %}
+{% if panel_header_title %}
+<div class="turns-header">
+  <strong>{{ panel_header_title }}</strong>
+  <span class="turns-meta">
+    ·
+    <a href="{% url 'admin:conversation_conversationsession_change' session.pk %}">
+      {% translate "Open session" %}
+    </a>
+  </span>
+</div>
+{% endif %}
+
+{% if children %}
+  <table class="turns-table">
+    <thead>
+      <tr>
+        <th>{% translate "Turn" %}</th>
+        <th>{% translate "Query" %}</th>
+        <th>{% translate "Sources" %}</th>
+        <th>{% translate "Statuses" %}</th>
+        <th>{% translate "Created" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tr in children %}
+        <tr>
+          <td class="mono">
+            <a href="{% url 'admin:conversation_turnrecord_change' tr.turn_id %}">
+              {{ tr.turn.turn_index }}{% if tr.turn.subturn_index %}.{{ tr.turn.subturn_index }}{% endif %}
+            </a>
+          </td>
+          <td>
+            <a href="{% url 'admin:conversation_turnretrieval_change' tr.pk %}">
+              {{ tr.query|truncatechars:80 }}
+            </a>
+          </td>
+          <td class="mono">{{ tr.requested_sources|join:", " }}</td>
+          <td class="mono">{{ tr.source_statuses }}</td>
+          <td>{{ tr.created_at }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="quiet">{% translate "No turn retrievals for this session." %}</div>
+{% endif %}

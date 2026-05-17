@@ -1,0 +1,11 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'conversation/admin_session_tiered.css' %}">
+{% endblock %}
+
+{% block result_list %}
+  {% include "admin/conversation/includes/_group_by_session_result_list.html" %}
+{% endblock %}

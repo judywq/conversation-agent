@@ -1,0 +1,68 @@
+{% load i18n %}
+{% if panel_header_title %}
+<div class="turns-header">
+  <strong>{{ panel_header_title }}</strong>
+  <span class="turns-meta">
+    ·
+    <a href="{% url 'admin:conversation_conversationsession_change' session.pk %}">
+      {% translate "Open session" %}
+    </a>
+  </span>
+</div>
+{% endif %}
+
+{% if children %}
+  <table class="turns-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>{% translate "Speaker" %}</th>
+        <th>{% translate "SA" %}</th>
+        <th>{% translate "Target" %}</th>
+        <th>{% translate "Retrieval" %}</th>
+        <th>{% translate "Utterance" %}</th>
+        <th>{% translate "Created" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in children %}
+        <tr>
+          <td class="mono">
+            {{ t.turn_index }}{% if t.subturn_index %}.{{ t.subturn_index }}{% endif %}
+          </td>
+          <td>
+            <a href="{% url 'admin:conversation_turnrecord_change' t.pk %}">
+              {{ t.speaker_type }}: {{ t.speaker }}
+            </a>
+          </td>
+          <td>{{ t.speech_act|default:"" }}{% if t.subtype %} / {{ t.subtype }}{% endif %}</td>
+          <td>{{ t.target|default:"" }}</td>
+          <td class="retrieval-kinds mono">
+            {% with traces=t.retrieval_traces.all %}
+              {% if traces %}
+                {% for tr in traces %}
+                  {% if tr.requested_sources %}
+                    {{ tr.requested_sources|join:", " }}
+                  {% elif tr.source_statuses %}
+                    {% for key in tr.source_statuses %}
+                      {% if not forloop.first %}, {% endif %}{{ key }}
+                    {% endfor %}
+                  {% else %}
+                    <span class="quiet">—</span>
+                  {% endif %}
+                  {% if not forloop.last %} · {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="quiet">—</span>
+              {% endif %}
+            {% endwith %}
+          </td>
+          <td class="utterance">{{ t.utterance|truncatechars:140 }}</td>
+          <td>{{ t.created_at }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="quiet">{% translate "No turn records for this session." %}</div>
+{% endif %}

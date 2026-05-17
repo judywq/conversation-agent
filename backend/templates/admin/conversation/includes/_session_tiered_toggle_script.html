@@ -1,0 +1,23 @@
+<script>
+  (function () {
+    const toggles = document.querySelectorAll(".session-toggle");
+    for (const btn of toggles) {
+      btn.addEventListener("click", () => {
+        const panelId = btn.getAttribute("aria-controls");
+        const panelRow = panelId ? document.getElementById(panelId) : null;
+        if (!panelRow) return;
+
+        const isOpen = !panelRow.hasAttribute("hidden");
+        if (isOpen) {
+          panelRow.setAttribute("hidden", "");
+          btn.setAttribute("aria-expanded", "false");
+          btn.textContent = "▸";
+        } else {
+          panelRow.removeAttribute("hidden");
+          btn.setAttribute("aria-expanded", "true");
+          btn.textContent = "▾";
+        }
+      });
+    }
+  })();
+</script>

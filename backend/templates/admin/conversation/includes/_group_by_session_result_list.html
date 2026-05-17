@@ -1,0 +1,25 @@
+{% load i18n %}
+{% include "admin/conversation/includes/_session_tiered_styles.html" %}
+<div class="session-tiered session-grouped-results">
+  {% if session_result_groups %}
+    <table id="result_list" class="session-grouped-table">
+      {% include "admin/conversation/includes/_session_tiered_table_head.html" %}
+      <tbody>
+        {% for session, children in session_result_groups %}
+          {% include "admin/conversation/includes/_session_group_header_row.html" %}
+          <tr id="{{ group_panel_id_prefix }}-{{ session.pk }}" class="turns-row session-group-panel" hidden>
+            <td colspan="8" class="turns-cell">
+              <div class="turns-panel">
+                {% include child_panel_template with session=session children=children panel_header_title="" %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="quiet">{% translate "No results found." %}</p>
+  {% endif %}
+</div>
+
+{% include "admin/conversation/includes/_session_tiered_toggle_script.html" %}

@@ -3,6 +3,8 @@ from django.db.models import Prefetch
 from django.utils.text import Truncator
 from django.utils.translation import gettext_lazy as _
 
+from backend.conversation.admin_session_grouped import GroupBySessionChangeListMixin
+
 from .models import ConversationLLMPrompt
 from .models import ConversationSession
 from .models import KnowledgeSnippet
@@ -146,6 +148,10 @@ class ConversationSessionAdmin(admin.ModelAdmin):
     search_fields = ["id", "topic", "user__email", "user__username"]
     readonly_fields = ["created_at", "updated_at"]
     change_list_template = "admin/conversation/conversationsession/change_list.html"
+
+    class Media:
+        css = {"all": ("conversation/admin_session_tiered.css",)}
+
     fieldsets = (
         (None, {"fields": ("user", "topic")}),
         (
@@ -179,7 +185,12 @@ class ConversationSessionAdmin(admin.ModelAdmin):
         turns_qs = TurnRecord.objects.order_by("turn_index", "subturn_index", "id").prefetch_related(
             "retrieval_traces",
         )
-        return qs.prefetch_related(Prefetch("turns", queryset=turns_qs), "user_audios")
+        logs_qs = TurnEngineLog.objects.order_by("-created_at", "-id")
+        return qs.prefetch_related(
+            Prefetch("turns", queryset=turns_qs),
+            Prefetch("turn_engine_logs", queryset=logs_qs),
+            "user_audios",
+        )
 
     @admin.display(description="Topic")
     def topic_excerpt(self, obj: ConversationSession) -> str:
@@ -352,7 +363,13 @@ class UserMemoryAdmin(admin.ModelAdmin):
 
 
 @admin.register(TurnRetrieval)
-class TurnRetrievalAdmin(admin.ModelAdmin):
+class TurnRetrievalAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
+    child_panel_template = "admin/conversation/includes/_panel_turn_retrievals.html"
+    session_list_ordering = ("-turn__session_id", "turn__turn_index", "turn__subturn_index", "id")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("turn", "turn__session", "turn__session__user")
+
     list_display = ["id", "turn", "query", "created_at"]
     list_display_links = ["id", "turn"]
     search_fields = ["query", "rendered_context", "error_message"]
@@ -376,7 +393,18 @@ class TurnRetrievalAdmin(admin.ModelAdmin):
 
 
 @admin.register(TurnRecord)
-class TurnRecordAdmin(admin.ModelAdmin):
+class TurnRecordAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
+    child_panel_template = "admin/conversation/includes/_panel_turn_records.html"
+    session_list_ordering = ("-session_id", "turn_index", "subturn_index", "id")
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("session", "session__user")
+            .prefetch_related("retrieval_traces")
+        )
+
     list_display = [
         "id",
         "session",
@@ -431,7 +459,14 @@ class ConversationLLMPromptAdmin(admin.ModelAdmin):
 
 
 @admin.register(TurnEngineLog)
-class TurnEngineLogAdmin(admin.ModelAdmin):
+class TurnEngineLogAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
+    change_list_template = "admin/conversation/turnenginelog/change_list.html"
+    child_panel_template = "admin/conversation/includes/_panel_turn_engine_logs.html"
+    session_list_ordering = ("-session_id", "-created_at", "-id")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("session", "session__user")
+
     list_display = [
         "id",
         "session",
@@ -445,7 +480,6 @@ class TurnEngineLogAdmin(admin.ModelAdmin):
     list_display_links = ["id", "event"]
     list_filter = ["component", "level", "created_at"]
     search_fields = ["event", "message", "correlation_id", "context"]
-    change_list_template = "admin/conversation/turnenginelog/change_list.html"
     readonly_fields = [
         "session",
         "component",
@@ -490,7 +524,13 @@ class TurnEngineLogAdmin(admin.ModelAdmin):
 
 
 @admin.register(UserAudio)
-class UserAudioAdmin(admin.ModelAdmin):
+class UserAudioAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
+    child_panel_template = "admin/conversation/includes/_panel_user_audios.html"
+    session_list_ordering = ("-session_id", "-created_at", "-id")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("session", "session__user", "user", "turn")
+
     list_display = [
         "id",
         "session",

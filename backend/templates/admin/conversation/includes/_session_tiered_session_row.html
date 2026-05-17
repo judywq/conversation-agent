@@ -1,0 +1,27 @@
+{% load i18n %}
+<tr class="session-row" data-session-id="{{ session.pk }}">
+  <td class="column-expander">
+    <button
+      type="button"
+      class="session-toggle"
+      aria-expanded="false"
+      aria-controls="{{ expand_panel_id_prefix }}-{{ session.pk }}"
+      title="{% translate 'Show details' %}"
+    >
+      ▸
+    </button>
+  </td>
+  <td class="field-session">
+    <a href="{% url 'admin:conversation_conversationsession_change' session.pk %}">
+      #{{ session.pk }}
+    </a>
+  </td>
+  <td class="field-user">
+    <a href="{% url 'admin:users_user_change' session.user_id %}">{{ session.user }}</a>
+  </td>
+  <td class="field-topic">{{ session.topic|default:"" }}</td>
+  <td class="field-turns">{{ session.turn_count }}</td>
+  <td class="field-paused">{% if session.paused %}✓{% endif %}</td>
+  <td class="field-terminate">{% if session.terminate %}✓{% endif %}</td>
+  <td class="field-created">{{ session.created_at }}</td>
+</tr>

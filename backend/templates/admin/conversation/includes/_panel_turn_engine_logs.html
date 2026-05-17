@@ -1,0 +1,43 @@
+{% load i18n %}
+{% if panel_header_title %}
+<div class="turns-header">
+  <strong>{{ panel_header_title }}</strong>
+  <span class="turns-meta">
+    ·
+    <a href="{% url 'admin:conversation_conversationsession_change' session.pk %}">
+      {% translate "Open session" %}
+    </a>
+  </span>
+</div>
+{% endif %}
+
+{% if children %}
+  <table class="turns-table">
+    <thead>
+      <tr>
+        <th>{% translate "Created" %}</th>
+        <th>{% translate "Component" %}</th>
+        <th>{% translate "Level" %}</th>
+        <th>{% translate "Event" %}</th>
+        <th>{% translate "Timing" %}</th>
+        <th>{% translate "Message" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in children %}
+        <tr>
+          <td>{{ log.created_at }}</td>
+          <td class="mono">{{ log.component }}</td>
+          <td>{{ log.level }}</td>
+          <td>
+            <a href="{% url 'admin:conversation_turnenginelog_change' log.pk %}">{{ log.event }}</a>
+          </td>
+          <td class="mono"></td>
+          <td>{{ log.message|truncatechars:120 }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="quiet">{% translate "No engine logs for this session." %}</div>
+{% endif %}
