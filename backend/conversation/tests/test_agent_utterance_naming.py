@@ -188,13 +188,33 @@ def test_build_agent_retrieval_context_routes_memory_to_unified_sources(user, mo
 
 
 @pytest.mark.django_db
-def test_build_agent_retrieval_context_skips_retrieve_when_not_requested(user, monkeypatch):
+def test_build_agent_retrieval_context_always_retrieves_exemplar_when_facilitator_says_none(
+    user,
+    monkeypatch,
+):
     session, _agent = _make_session_with_agent(user)
+    captured = {}
 
-    def fail_retrieve(*args, **kwargs):
-        raise AssertionError("retrieve() should not be called when no retrieval is requested")
+    def fake_retrieve(  # noqa: PLR0913
+        query,
+        *,
+        session,
+        user,
+        sources,
+        top_k,
+        speech_act_type,
+        speech_act_subtype,
+    ):
+        captured["sources"] = sources
+        return RetrievedContext(
+            query=query,
+            requested_sources=sorted(sources),
+            source_statuses={"exemplar": "success"},
+            items=[],
+            rendered_context="Retrieved information:",
+        )
 
-    monkeypatch.setattr(agent_service, "retrieve", fail_retrieve)
+    monkeypatch.setattr(agent_service, "retrieve", fake_retrieve)
 
     context = _build_agent_retrieval_context(
         session,
@@ -204,9 +224,53 @@ def test_build_agent_retrieval_context_skips_retrieve_when_not_requested(user, m
         },
     )
 
-    assert context.requested_sources == []
-    assert context.source_statuses == {"none": "skipped"}
-    assert "No retrieval requested" in context.rendered_context
+    assert captured["sources"] == {"exemplar"}
+    assert "exemplar" in context.source_statuses
+
+
+@pytest.mark.django_db
+def test_build_agent_retrieval_context_fact_checker_web_when_facilitator_says_none(
+    user,
+    monkeypatch,
+):
+    session, agent = _make_session_with_agent(user)
+    agent.personality = {"persona_name": "Fact Checker"}
+    agent.save(update_fields=["personality"])
+    captured = {}
+
+    def fake_retrieve(  # noqa: PLR0913
+        query,
+        *,
+        session,
+        user,
+        sources,
+        top_k,
+        speech_act_type,
+        speech_act_subtype,
+    ):
+        captured["sources"] = sources
+        return RetrievedContext(
+            query=query,
+            requested_sources=sorted(sources),
+            source_statuses={"exemplar": "success", "web": "success"},
+            items=[],
+            rendered_context="Retrieved information:",
+        )
+
+    monkeypatch.setattr(agent_service, "retrieve", fake_retrieve)
+
+    _build_agent_retrieval_context(
+        session,
+        {
+            "retrieval_requirement": "none",
+            "type": "ASSERTIVES",
+            "subtype": "inform",
+            "content_requirement": "Verify the claim with a source.",
+        },
+        agent=agent,
+    )
+
+    assert captured["sources"] == {"exemplar", "web"}
 
 
 @pytest.mark.parametrize(

@@ -191,6 +191,36 @@ def _build_agent_retrieval_query(
     )
 
 
+def _agent_persona_name(
+    facilitator_plan: dict,
+    *,
+    agent: AgentProfile | None = None,
+) -> str:
+    if agent is not None:
+        return str((agent.personality or {}).get("persona_name") or "")
+    return str(facilitator_plan.get("_agent_persona_name") or "")
+
+
+def resolve_agent_retrieval_sources(
+    facilitator_plan: dict,
+    *,
+    agent: AgentProfile | None = None,
+) -> set[str]:
+    """
+    Effective retrieval sources for an agent turn (feat/rag-rules behavior).
+
+    Always include Speech Act exemplars from the knowledge corpus. Fact Checker
+    ASSERTIVES turns also get web search regardless of facilitator retrieval_need.
+    """
+    sources = set(map_retrieval_sources(facilitator_plan.get("retrieval_requirement")))
+    sources.add("exemplar")
+    sa_type = str(facilitator_plan.get("type") or "").upper()
+    persona_name = _agent_persona_name(facilitator_plan, agent=agent)
+    if persona_name == "Fact Checker" and sa_type == "ASSERTIVES":
+        sources.add("web")
+    return sources
+
+
 def _build_agent_retrieval_context(
     session: ConversationSession,
     facilitator_plan: dict,
@@ -198,26 +228,7 @@ def _build_agent_retrieval_context(
     agent: AgentProfile | None = None,
 ) -> RetrievedContext:
     retrieval_query = _build_agent_retrieval_query(session, facilitator_plan)
-    sources = map_retrieval_sources(facilitator_plan.get("retrieval_requirement"))
-    if not sources:
-        return RetrievedContext(
-            query=retrieval_query,
-            requested_sources=[],
-            source_statuses={"none": "skipped"},
-            items=[],
-            rendered_context=(
-                "No retrieval requested. Continue using conversation context only."
-            ),
-        )
-
-    persona_name = str(
-        (agent.personality or {}).get("persona_name")
-        if agent is not None
-        else facilitator_plan.get("_agent_persona_name") or "",
-    )
-    sa_type = str(facilitator_plan.get("type") or "").upper()
-    if persona_name == "Fact Checker" and sa_type == "ASSERTIVES":
-        sources.add("web")
+    sources = resolve_agent_retrieval_sources(facilitator_plan, agent=agent)
 
     return retrieve(
         retrieval_query,

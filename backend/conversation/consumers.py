@@ -13,6 +13,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnEngineLog
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
+from backend.conversation.services.agent import resolve_agent_retrieval_sources
 from backend.conversation.services.agent_selection import (
     select_complementary_agent_personas,
 )
@@ -332,9 +333,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         session.id,
                         decision.next_speaker_id,
                     )
-                    # 2) Upgrade to "searching_online" only when Fact Checker is doing
-                    # an ASSERTIVES turn (the case where web search actually fires).
-                    if persona == "Fact Checker" and str(plan.get("type") or "").upper() == "ASSERTIVES":
+                    # 2) Show searching_online only when web retrieval will actually run.
+                    plan_for_retrieval = {
+                        **plan,
+                        "_agent_persona_name": persona,
+                    }
+                    if "web" in resolve_agent_retrieval_sources(plan_for_retrieval):
                         await self.send_json({
                             "type": "agent_status",
                             "status": "searching_online",
