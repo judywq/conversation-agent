@@ -1,7 +1,7 @@
 import asyncio
 import random
-from uuid import uuid4
 import time
+from uuid import uuid4
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -13,10 +13,13 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnEngineLog
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
-from backend.conversation.services.agent_selection import select_complementary_agent_personas
+from backend.conversation.services.agent_selection import (
+    select_complementary_agent_personas,
+)
 from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_unique_names
 from backend.conversation.services.retrieval import persist_turn_retrieval_safely
+from backend.conversation.services.tts import synthesize_speech
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import mark_terminate
@@ -24,9 +27,44 @@ from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
-from backend.conversation.services.tts import synthesize_speech
+from backend.conversation.services.utterance_duplicates import DuplicateDetectionResult
+from backend.conversation.services.utterance_duplicates import (
+    detect_duplicate_agent_utterance,
+)
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
+
+
+def log_agent_utterance_duplicate_detection(
+    *,
+    session: ConversationSession,
+    agent_id: str,
+    result: DuplicateDetectionResult,
+    correlation_id: str,
+    turn_index: int,
+) -> None:
+    if not result.is_duplicate:
+        return
+
+    context = result.to_log_context()
+    context.update(
+        {
+            "speaker": agent_id,
+            "future_policy": "regeneration_or_replanning_not_implemented",
+        },
+    )
+    TurnEngineLog.objects.create(
+        session=session,
+        component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+        level=TurnEngineLog.LEVEL_INFO,
+        event="agent_utterance_duplicate_detected",
+        message="agent_utterance_duplicate_result_exposed",
+        context=context,
+        correlation_id=correlation_id,
+        turn_index=turn_index,
+        subturn_index=0,
+    )
+
 
 def _slugify_agent_id(text: str) -> str:
     """
@@ -547,6 +585,14 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         generated = generate_agent_utterance_with_retrieval(session, agent=agent, facilitator_plan=plan)
         t_utter_ms = int((time.perf_counter() - t_utter0) * 1000)
         utterance = generated.utterance
+        duplicate_result = detect_duplicate_agent_utterance(session, utterance)
+        log_agent_utterance_duplicate_detection(
+            session=session,
+            agent_id=agent_id,
+            result=duplicate_result,
+            correlation_id=self._correlation_id,
+            turn_index=int(session.turn_count),
+        )
 
         audio_url = None
         t_tts_ms: int | None = None

@@ -18,6 +18,8 @@ from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.web_search import build_web_search_query
 
 _AGENT_RETRIEVAL_TOP_K = 5
+_MAX_QUESTIONS_PER_UTTERANCE = 2
+_MAX_SENTENCES_PER_UTTERANCE = 3
 
 
 @dataclass(frozen=True)
@@ -29,8 +31,10 @@ class GeneratedAgentUtterance:
 def _user_display_name(session: ConversationSession) -> str:
     try:
         profile = getattr(session.user, "userprofile", None)
-        preferred = (getattr(profile, "preferred_name", "") or "").strip() if profile else ""
-    except Exception:
+        preferred = (
+            (getattr(profile, "preferred_name", "") or "").strip() if profile else ""
+        )
+    except (AttributeError, TypeError):
         preferred = ""
     if preferred:
         return preferred
@@ -67,12 +71,8 @@ def _enforce_directive_target_name(
     target_display_name: str,
 ) -> str:
     text = (utterance or "").strip()
-    if not text:
-        return text
-    if str(speech_act_type or "").upper() != "DIRECTIVES":
-        return text
     name = (target_display_name or "").strip()
-    if not name:
+    if not text or str(speech_act_type or "").upper() != "DIRECTIVES" or not name:
         return text
 
     # If the name already appears, don't add it again.
@@ -97,7 +97,7 @@ def _limit_to_two_questions(utterance: str) -> str:
     This is intentionally simple; it prevents multi-question monologues.
     """
     text = (utterance or "").strip()
-    if text.count("?") <= 2:
+    if text.count("?") <= _MAX_QUESTIONS_PER_UTTERANCE:
         return text
     first = text.find("?")
     second = text.find("?", first + 1)
@@ -108,7 +108,8 @@ def _limit_to_two_questions(utterance: str) -> str:
 
 def _strip_bracketed_text(utterance: str) -> str:
     """
-    Remove bracketed/parenthetical fragments. The user explicitly doesn't want bracketed info.
+    Remove bracketed/parenthetical fragments.
+    The user explicitly doesn't want bracketed info.
     """
     text = (utterance or "").strip()
     if not text:
@@ -118,27 +119,29 @@ def _strip_bracketed_text(utterance: str) -> str:
     # Normalize whitespace created by deletions
     text = re.sub(r"\s{2,}", " ", text).strip()
     # Clean stray spaces before punctuation
-    text = re.sub(r"\s+([,.!?])", r"\1", text)
-    return text
+    return re.sub(r"\s+([,.!?])", r"\1", text)
 
 
 def _strip_dash_punctuation(utterance: str) -> str:
     """
-    Remove dash-like punctuation (hyphen / en dash / em dash) to keep style conversational.
+    Remove dash-like punctuation to keep style conversational.
     """
     text = (utterance or "").strip()
     if not text:
         return text
-    text = text.replace("—", " ").replace("–", " ").replace("-", " ")
+    text = text.replace("\u2014", " ").replace("\u2013", " ").replace("-", " ")
     text = re.sub(r"\s{2,}", " ", text).strip()
-    text = re.sub(r"\s+([,.!?])", r"\1", text)
-    return text
+    return re.sub(r"\s+([,.!?])", r"\1", text)
 
 
-def _avoid_question_ending_when_not_request(utterance: str, *, speech_act_type: str, speech_act_subtype: str) -> str:
+def _avoid_question_ending_when_not_request(
+    utterance: str,
+    *,
+    speech_act_type: str,
+    speech_act_subtype: str,
+) -> str:
     """
-    Many turns were ending with a question even when the dominant speech act isn't a request.
-    Enforce: only DIRECTIVES that are explicit requests/invites should typically end with '?'.
+    Only request-like DIRECTIVES should typically end with '?'.
     """
     text = (utterance or "").strip()
     if not text or not text.endswith("?"):
@@ -150,7 +153,13 @@ def _avoid_question_ending_when_not_request(utterance: str, *, speech_act_type: 
         return text[:-1].rstrip() + "."
 
     # Keep '?' only for request-like directive subtypes.
-    request_like = {"request_info", "request_confirm", "request_action", "request_permission", "invite"}
+    request_like = {
+        "request_info",
+        "request_confirm",
+        "request_action",
+        "request_permission",
+        "invite",
+    }
     if st in request_like:
         return text
     return text[:-1].rstrip() + "."
@@ -158,7 +167,7 @@ def _avoid_question_ending_when_not_request(utterance: str, *, speech_act_type: 
 
 def _limit_to_three_sentences(utterance: str) -> str:
     """
-    Safety clamp: keep at most three sentences. We approximate sentences by ., !, ? boundaries.
+    Safety clamp: keep at most three sentences.
     """
     text = (utterance or "").strip()
     if not text:
@@ -166,12 +175,15 @@ def _limit_to_three_sentences(utterance: str) -> str:
     # Split on sentence-ending punctuation while keeping the punctuation.
     parts = re.split(r"(?<=[.!?])\s+", text)
     parts = [p.strip() for p in parts if p.strip()]
-    if len(parts) <= 3:
+    if len(parts) <= _MAX_SENTENCES_PER_UTTERANCE:
         return text
-    return " ".join(parts[:3]).strip()
+    return " ".join(parts[:_MAX_SENTENCES_PER_UTTERANCE]).strip()
 
 
-def _build_agent_retrieval_query(session: ConversationSession, facilitator_plan: dict) -> str:
+def _build_agent_retrieval_query(
+    session: ConversationSession,
+    facilitator_plan: dict,
+) -> str:
     return build_web_search_query(
         topic=session.topic or "",
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
@@ -181,14 +193,28 @@ def _build_agent_retrieval_query(session: ConversationSession, facilitator_plan:
 
 def _build_agent_retrieval_context(
     session: ConversationSession,
-    *,
-    agent: AgentProfile,
     facilitator_plan: dict,
+    *,
+    agent: AgentProfile | None = None,
 ) -> RetrievedContext:
     retrieval_query = _build_agent_retrieval_query(session, facilitator_plan)
     sources = map_retrieval_sources(facilitator_plan.get("retrieval_requirement"))
-    sources.add("exemplar")
-    persona_name = str((agent.personality or {}).get("persona_name") or "")
+    if not sources:
+        return RetrievedContext(
+            query=retrieval_query,
+            requested_sources=[],
+            source_statuses={"none": "skipped"},
+            items=[],
+            rendered_context=(
+                "No retrieval requested. Continue using conversation context only."
+            ),
+        )
+
+    persona_name = str(
+        (agent.personality or {}).get("persona_name")
+        if agent is not None
+        else facilitator_plan.get("_agent_persona_name") or "",
+    )
     sa_type = str(facilitator_plan.get("type") or "").upper()
     if persona_name == "Fact Checker" and sa_type == "ASSERTIVES":
         sources.add("web")
@@ -226,7 +252,14 @@ def generate_agent_utterance_with_retrieval(
     turns = get_short_term_turns(session, limit=3)
     context = turns_to_messages(turns)
     history = json.dumps(context, ensure_ascii=False, indent=2)
-    retrieval_context = _build_agent_retrieval_context(session, agent=agent, facilitator_plan=facilitator_plan)
+    retrieval_plan = {
+        **facilitator_plan,
+        "_agent_persona_name": str((agent.personality or {}).get("persona_name") or ""),
+    }
+    retrieval_context = _build_agent_retrieval_context(
+        session,
+        retrieval_plan,
+    )
 
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")
@@ -244,7 +277,10 @@ def generate_agent_utterance_with_retrieval(
         history=history,
         target=str(facilitator_plan.get("target") or "everyone"),
         target_type=_target_type(str(facilitator_plan.get("target") or "")),
-        target_display_name=_target_display_name(session, str(facilitator_plan.get("target") or "")),
+        target_display_name=_target_display_name(
+            session,
+            str(facilitator_plan.get("target") or ""),
+        ),
         speech_act_type=str(facilitator_plan.get("type") or "ASSERTIVES"),
         speech_act_subtype=str(facilitator_plan.get("subtype") or "inform"),
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
@@ -257,8 +293,13 @@ def generate_agent_utterance_with_retrieval(
     text = result.content if hasattr(result, "content") else str(result)
     speech_act_type = str(facilitator_plan.get("type") or "ASSERTIVES")
     speech_act_subtype = str(facilitator_plan.get("subtype") or "")
-    target_display_name = _target_display_name(session, str(facilitator_plan.get("target") or ""))
-    cleaned = _limit_to_two_questions(_strip_dash_punctuation(_strip_bracketed_text(text.strip())))
+    target_display_name = _target_display_name(
+        session,
+        str(facilitator_plan.get("target") or ""),
+    )
+    cleaned = _limit_to_two_questions(
+        _strip_dash_punctuation(_strip_bracketed_text(text.strip())),
+    )
     cleaned = _avoid_question_ending_when_not_request(
         cleaned,
         speech_act_type=speech_act_type,
@@ -270,4 +311,7 @@ def generate_agent_utterance_with_retrieval(
         speech_act_type=speech_act_type,
         target_display_name=target_display_name,
     )
-    return GeneratedAgentUtterance(utterance=utterance, retrieval_context=retrieval_context)
+    return GeneratedAgentUtterance(
+        utterance=utterance,
+        retrieval_context=retrieval_context,
+    )
