@@ -101,6 +101,31 @@ class TurnRecord(TimestampedBase):
     source = models.CharField(max_length=50, null=True, blank=True)  # e.g., "mic", "text"
     audio_url = models.URLField(max_length=1000, null=True, blank=True)
 
+    # Agent utterance duplicate detection (vs prior agent turns in the same session).
+    duplicate_similarity_score = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+    )
+    duplicate_is_repetition = models.BooleanField(null=True, blank=True)
+    duplicate_threshold = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+    )
+    duplicate_matched_turn = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="duplicate_matches",
+    )
+    duplicate_matched_utterance = models.TextField(blank=True, default="")
+    duplicate_matched_speaker = models.CharField(max_length=100, blank=True, default="")
+    duplicate_matched_turn_index = models.IntegerField(null=True, blank=True)
+    duplicate_matched_subturn_index = models.IntegerField(null=True, blank=True)
+    duplicate_reason = models.CharField(max_length=80, blank=True, default="")
+
     class Meta:
         ordering = ["turn_index", "subturn_index"]
         unique_together = [("session", "turn_index", "subturn_index")]

@@ -127,6 +127,40 @@ def empty_duplicate_result(
     )
 
 
+def apply_duplicate_detection_to_turn(
+    turn: TurnRecord,
+    result: DuplicateDetectionResult,
+) -> TurnRecord:
+    """Persist duplicate detection metadata on an agent turn for admin inspection."""
+    if turn.speaker_type != TurnRecord.SPEAKER_TYPE_AGENT:
+        return turn
+
+    turn.duplicate_similarity_score = result.score
+    turn.duplicate_is_repetition = result.is_duplicate
+    turn.duplicate_threshold = result.threshold
+    turn.duplicate_matched_utterance = result.matched_utterance or ""
+    turn.duplicate_matched_speaker = result.matched_speaker or ""
+    turn.duplicate_matched_turn_index = result.turn_index
+    turn.duplicate_matched_subturn_index = result.subturn_index
+    turn.duplicate_reason = result.reason or ""
+    turn.duplicate_matched_turn_id = result.matched_turn_id
+    turn.save(
+        update_fields=[
+            "duplicate_similarity_score",
+            "duplicate_is_repetition",
+            "duplicate_threshold",
+            "duplicate_matched_utterance",
+            "duplicate_matched_speaker",
+            "duplicate_matched_turn_index",
+            "duplicate_matched_subturn_index",
+            "duplicate_reason",
+            "duplicate_matched_turn",
+            "updated_at",
+        ],
+    )
+    return turn
+
+
 def detect_duplicate_agent_utterance(
     session: ConversationSession,
     candidate_utterance: str,
@@ -174,14 +208,15 @@ def detect_duplicate_agent_utterance(
             best_score = scored.score
             best_turn = turn
 
-    if best_turn is None or best_score < resolved_threshold:
+    if best_turn is None:
         return empty_duplicate_result(
             threshold=resolved_threshold,
-            reason="below_threshold",
+            reason="no_prior_agent_turns",
         )
 
+    is_duplicate = best_score >= resolved_threshold
     return DuplicateDetectionResult(
-        is_duplicate=True,
+        is_duplicate=is_duplicate,
         score=best_score,
         threshold=resolved_threshold,
         matched_utterance=best_turn.utterance,
@@ -189,5 +224,5 @@ def detect_duplicate_agent_utterance(
         matched_turn_id=best_turn.id,
         turn_index=best_turn.turn_index,
         subturn_index=best_turn.subturn_index,
-        reason="duplicate_threshold_met",
+        reason="duplicate_threshold_met" if is_duplicate else "below_threshold",
     )

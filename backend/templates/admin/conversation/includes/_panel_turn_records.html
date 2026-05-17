@@ -20,6 +20,11 @@
         <th>{% translate "SA" %}</th>
         <th>{% translate "Target" %}</th>
         <th>{% translate "Retrieval" %}</th>
+        <th>{% translate "Dup. score" %}</th>
+        <th>{% translate "Repetition?" %}</th>
+        <th>{% translate "Matched turn" %}</th>
+        <th>{% translate "Matched speaker" %}</th>
+        <th>{% translate "Similar utterance" %}</th>
         <th>{% translate "Utterance" %}</th>
         <th>{% translate "Created" %}</th>
       </tr>
@@ -56,6 +61,43 @@
                 <span class="quiet">—</span>
               {% endif %}
             {% endwith %}
+          </td>
+          <td class="mono">
+            {% if t.duplicate_similarity_score is not None %}
+              {{ t.duplicate_similarity_score|floatformat:3 }}
+            {% else %}
+              <span class="quiet">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if t.duplicate_is_repetition is None %}
+              <span class="quiet">—</span>
+            {% elif t.duplicate_is_repetition %}
+              {% translate "Yes" %}
+            {% else %}
+              {% translate "No" %}
+            {% endif %}
+          </td>
+          <td class="mono">
+            {% if t.duplicate_matched_turn_index is not None %}
+              {% if t.duplicate_matched_turn_id %}
+                <a href="{% url 'admin:conversation_turnrecord_change' t.duplicate_matched_turn_id %}">
+                  {{ t.duplicate_matched_turn_index }}.{{ t.duplicate_matched_subturn_index|default:0 }}
+                </a>
+              {% else %}
+                {{ t.duplicate_matched_turn_index }}.{{ t.duplicate_matched_subturn_index|default:0 }}
+              {% endif %}
+            {% else %}
+              <span class="quiet">—</span>
+            {% endif %}
+          </td>
+          <td>{{ t.duplicate_matched_speaker|default:"" }}</td>
+          <td class="utterance">
+            {% if t.duplicate_matched_utterance %}
+              {{ t.duplicate_matched_utterance|truncatechars:80 }}
+            {% else %}
+              <span class="quiet">—</span>
+            {% endif %}
           </td>
           <td class="utterance">{{ t.utterance|truncatechars:140 }}</td>
           <td>{{ t.created_at }}</td>

@@ -30,6 +30,9 @@ from backend.conversation.services.turn_processor import set_pending_forced_user
 from backend.conversation.services.turn_processor import set_user_override_requested
 from backend.conversation.services.utterance_duplicates import DuplicateDetectionResult
 from backend.conversation.services.utterance_duplicates import (
+    apply_duplicate_detection_to_turn,
+)
+from backend.conversation.services.utterance_duplicates import (
     detect_duplicate_agent_utterance,
 )
 
@@ -617,6 +620,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             source="llm",
             audio_url=audio_url,
         )
+        apply_duplicate_detection_to_turn(processed.turn, duplicate_result)
         persist_turn_retrieval_safely(processed.turn, generated.retrieval_context)
         total_ms = int((time.perf_counter() - t0) * 1000)
         TurnEngineLog.objects.create(

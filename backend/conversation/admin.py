@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.db.models import Prefetch
+from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.text import Truncator
 from django.utils.translation import gettext_lazy as _
 
@@ -77,13 +79,77 @@ class SourceFileListFilter(MetadataValueListFilter):
     metadata_key = "file_name"
 
 
-class TurnRecordInline(admin.TabularInline):
+class TurnDuplicateAdminMixin:
+    @admin.display(description="Dup. score", ordering="duplicate_similarity_score")
+    def duplicate_score_display(self, obj: TurnRecord) -> str:
+        if obj.duplicate_similarity_score is None:
+            return "—"
+        return f"{obj.duplicate_similarity_score:.3f}"
+
+    @admin.display(description="Repetition?", ordering="duplicate_is_repetition")
+    def duplicate_repetition_display(self, obj: TurnRecord) -> str:
+        if obj.duplicate_is_repetition is None:
+            return "—"
+        return _("Yes") if obj.duplicate_is_repetition else _("No")
+
+    @admin.display(description="Matched speaker")
+    def duplicate_matched_speaker_display(self, obj: TurnRecord) -> str:
+        if not obj.duplicate_matched_speaker:
+            return "—"
+        return obj.duplicate_matched_speaker
+
+    @admin.display(description="Matched turn #")
+    def duplicate_matched_turn_index_display(self, obj: TurnRecord) -> str:
+        if obj.duplicate_matched_turn_index is None:
+            return "—"
+        subturn = obj.duplicate_matched_subturn_index or 0
+        return f"{obj.duplicate_matched_turn_index}.{subturn}"
+
+    @admin.display(description="Similar utterance")
+    def duplicate_similar_utterance_display(self, obj: TurnRecord) -> str:
+        if not obj.duplicate_matched_utterance and obj.duplicate_matched_turn_id is None:
+            return "—"
+        excerpt = Truncator(obj.duplicate_matched_utterance).chars(120, truncate="...")
+        if obj.duplicate_matched_turn_id:
+            url = reverse("admin:conversation_turnrecord_change", args=[obj.duplicate_matched_turn_id])
+            turn_label = self.duplicate_matched_turn_index_display(obj)
+            return format_html(
+                '<a href="{}">Turn {}</a> ({}): {}',
+                url,
+                turn_label,
+                obj.duplicate_matched_speaker or "—",
+                excerpt,
+            )
+        return excerpt
+
+    @admin.display(description="Matched prior turn")
+    def duplicate_matched_turn_link(self, obj: TurnRecord) -> str:
+        if obj.duplicate_matched_turn_id is None:
+            return "—"
+        matched = obj.duplicate_matched_turn
+        url = reverse("admin:conversation_turnrecord_change", args=[matched.pk])
+        return format_html(
+            '<a href="{}">#{} — {}.{} {}</a>',
+            url,
+            matched.pk,
+            matched.turn_index,
+            matched.subturn_index,
+            matched.speaker,
+        )
+
+
+class TurnRecordInline(TurnDuplicateAdminMixin, admin.TabularInline):
     model = TurnRecord
     fields = [
         "turn_index",
         "subturn_index",
         "speaker_type",
         "speaker",
+        "duplicate_score_display",
+        "duplicate_repetition_display",
+        "duplicate_matched_turn_index_display",
+        "duplicate_matched_speaker_display",
+        "duplicate_similar_utterance_display",
         "speech_act",
         "subtype",
         "target",
@@ -393,7 +459,7 @@ class TurnRetrievalAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
 
 
 @admin.register(TurnRecord)
-class TurnRecordAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
+class TurnRecordAdmin(TurnDuplicateAdminMixin, GroupBySessionChangeListMixin, admin.ModelAdmin):
     child_panel_template = "admin/conversation/includes/_panel_turn_records.html"
     session_list_ordering = ("-session_id", "turn_index", "subturn_index", "id")
 
@@ -401,7 +467,7 @@ class TurnRecordAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .select_related("session", "session__user")
+            .select_related("session", "session__user", "duplicate_matched_turn")
             .prefetch_related("retrieval_traces")
         )
 
@@ -412,13 +478,16 @@ class TurnRecordAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
         "subturn_index",
         "speaker_type",
         "speaker",
+        "duplicate_score_display",
+        "duplicate_repetition_display",
+        "duplicate_similar_utterance_display",
         "source",
         "audio_url",
         "created_at",
     ]
     list_display_links = ["id", "session"]
-    list_filter = ["speaker_type", "source", "created_at"]
-    search_fields = ["speaker", "utterance", "audio_url"]
+    list_filter = ["speaker_type", "duplicate_is_repetition", "source", "created_at"]
+    search_fields = ["speaker", "utterance", "audio_url", "duplicate_matched_utterance"]
     readonly_fields = [
         "session",
         "speaker",
@@ -431,9 +500,62 @@ class TurnRecordAdmin(GroupBySessionChangeListMixin, admin.ModelAdmin):
         "subturn_index",
         "source",
         "audio_url",
+        "duplicate_similarity_score",
+        "duplicate_is_repetition",
+        "duplicate_threshold",
+        "duplicate_reason",
+        "duplicate_matched_turn",
+        "duplicate_matched_turn_link",
+        "duplicate_matched_turn_index",
+        "duplicate_matched_subturn_index",
+        "duplicate_matched_speaker",
+        "duplicate_matched_utterance",
+        "duplicate_similar_utterance_display",
         "created_at",
         "updated_at",
     ]
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "session",
+                    "turn_index",
+                    "subturn_index",
+                    "speaker_type",
+                    "speaker",
+                    "utterance",
+                    "speech_act",
+                    "subtype",
+                    "target",
+                    "source",
+                    "audio_url",
+                ),
+            },
+        ),
+        (
+            _("Duplicate detection"),
+            {
+                "fields": (
+                    "duplicate_similarity_score",
+                    "duplicate_threshold",
+                    "duplicate_is_repetition",
+                    "duplicate_reason",
+                    "duplicate_matched_turn_link",
+                    "duplicate_matched_turn",
+                    "duplicate_matched_turn_index",
+                    "duplicate_matched_subturn_index",
+                    "duplicate_matched_speaker",
+                    "duplicate_matched_utterance",
+                    "duplicate_similar_utterance_display",
+                ),
+            },
+        ),
+        (
+            _("Timestamps"),
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
 
     def has_add_permission(self, request):
         return False

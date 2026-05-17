@@ -4,11 +4,13 @@ import pytest
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
+from backend.conversation.services.utterance_duplicates import apply_duplicate_detection_to_turn
 from backend.conversation.services.utterance_duplicates import compute_duplicate_score
 from backend.conversation.services.utterance_duplicates import (
     detect_duplicate_agent_utterance,
 )
 from backend.conversation.services.utterance_duplicates import normalize_utterance
+from backend.conversation.services.turn_processor import append_turn
 
 DEFAULT_THRESHOLD = 0.75
 DUPLICATE_UTTERANCE = (
@@ -199,3 +201,63 @@ def test_detect_duplicate_agent_utterance_respects_recent_limit(user) -> None:
     )
 
     assert result.is_duplicate is False
+
+
+@pytest.mark.django_db
+def test_detect_duplicate_agent_utterance_keeps_best_match_below_threshold(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="practice")
+    prior = TurnRecord.objects.create(
+        session=session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="We should compare tuition costs and campus housing options.",
+        turn_index=0,
+        subturn_index=0,
+    )
+
+    result = detect_duplicate_agent_utterance(
+        session,
+        "We should compare tuition costs and campus housing options today.",
+        threshold=DEFAULT_THRESHOLD,
+        min_useful_tokens=MIN_USEFUL_TOKENS,
+        recent_limit=20,
+    )
+
+    assert result.is_duplicate is False
+    assert result.reason == "below_threshold"
+    assert result.matched_turn_id == prior.id
+    assert result.matched_utterance == prior.utterance
+    assert result.matched_speaker == prior.speaker
+    assert result.turn_index == prior.turn_index
+    assert result.subturn_index == prior.subturn_index
+    assert result.score > 0.0
+
+
+@pytest.mark.django_db
+def test_apply_duplicate_detection_to_turn_persists_matched_fields(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="practice")
+    prior = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance=DUPLICATE_UTTERANCE,
+        source="llm",
+    ).turn
+    current = append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance=DUPLICATE_UTTERANCE,
+        source="llm",
+    ).turn
+
+    result = detect_duplicate_agent_utterance(session, DUPLICATE_UTTERANCE)
+    apply_duplicate_detection_to_turn(current, result)
+    current.refresh_from_db()
+
+    assert current.duplicate_is_repetition is True
+    assert current.duplicate_matched_turn_id == prior.id
+    assert current.duplicate_matched_utterance == prior.utterance
+    assert current.duplicate_matched_speaker == prior.speaker
+    assert current.duplicate_matched_turn_index == prior.turn_index
+    assert current.duplicate_matched_subturn_index == prior.subturn_index
