@@ -181,18 +181,17 @@ def _build_agent_retrieval_query(session: ConversationSession, facilitator_plan:
 
 def _build_agent_retrieval_context(
     session: ConversationSession,
+    *,
+    agent: AgentProfile,
     facilitator_plan: dict,
 ) -> RetrievedContext:
     retrieval_query = _build_agent_retrieval_query(session, facilitator_plan)
     sources = map_retrieval_sources(facilitator_plan.get("retrieval_requirement"))
-    if not sources:
-        return RetrievedContext(
-            query=retrieval_query,
-            requested_sources=[],
-            source_statuses={"none": "skipped"},
-            items=[],
-            rendered_context="No retrieval requested. Continue using conversation context only.",
-        )
+    sources.add("exemplar")
+    persona_name = str((agent.personality or {}).get("persona_name") or "")
+    sa_type = str(facilitator_plan.get("type") or "").upper()
+    if persona_name == "Fact Checker" and sa_type == "ASSERTIVES":
+        sources.add("web")
 
     return retrieve(
         retrieval_query,
@@ -227,7 +226,7 @@ def generate_agent_utterance_with_retrieval(
     turns = get_short_term_turns(session, limit=3)
     context = turns_to_messages(turns)
     history = json.dumps(context, ensure_ascii=False, indent=2)
-    retrieval_context = _build_agent_retrieval_context(session, facilitator_plan)
+    retrieval_context = _build_agent_retrieval_context(session, agent=agent, facilitator_plan=facilitator_plan)
 
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")

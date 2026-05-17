@@ -98,7 +98,7 @@ If {next_speaker_type} is "agent":
     "subtype": "<subtype>"
   },
   "content_requirement": "<instruction>",
-  "retrieval need": "<web_search | memory | speech act exemplar| none>"
+  "retrieval need": "<memory | none>"
 }
 
 # Constraints
@@ -110,9 +110,7 @@ If {next_speaker_type} is "agent":
   - "everyone" (for general contributions)
 - If the instruction includes a question/request addressed to a specific participant by NAME, set `target` to that participant id using {participants_map}.
 - decide whether to retrieve information:
-  - "web_search" for factual info
   - "memory" for past discussion reference
-  - "exemplar" for an exemplar utterance of the same SA subtype
   - "none" otherwise
 - Ensure the instruction fits the speaker's role and keeps the discussion progressing.
 - Avoid repetition.

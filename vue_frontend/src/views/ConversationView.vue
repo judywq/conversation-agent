@@ -43,7 +43,9 @@ type Turn = {
 
 const turns = ref<Turn[]>([])
 const turnList = computed<Turn[]>(() => turns.value)
-const agentStatus = ref<'idle' | 'thinking' | 'finished'>('idle')
+const agentStatus = ref<'idle' | 'thinking' | 'finished' | 'searching_online'>('idle')
+const activeAgentName = ref('')
+const pendingTermination = ref<(() => void) | null>(null)
 const needUserTurn = ref(false)
 const needFirstTurnChoice = ref(false)
 const inputText = ref('')
@@ -87,10 +89,25 @@ function clearRecordingPreview() {
   recordedChunks.value = []
 }
 
+function maybeFirePendingTermination() {
+  if (!pendingTermination.value) return
+  if (currentAudio.value) return
+  if (audioQueue.value.length > 0) return
+  const finalize = pendingTermination.value
+  pendingTermination.value = null
+  finalize()
+}
+
 function playQueuedAudio() {
-  if (currentAudio.value || audioQueue.value.length === 0) return
+  if (currentAudio.value || audioQueue.value.length === 0) {
+    maybeFirePendingTermination()
+    return
+  }
   const nextUrl = audioQueue.value.shift()
-  if (!nextUrl) return
+  if (!nextUrl) {
+    maybeFirePendingTermination()
+    return
+  }
   const audio = new Audio(nextUrl)
   currentAudio.value = audio
   audio.onended = () => {
@@ -161,18 +178,34 @@ function handleEvent(e: ConversationWsEvent) {
     isPaused.value = false
   }
   if (e.type === 'session_ended' || e.type === 'terminated') {
-    // Preserve logs on termination/end; only reset the live session controls.
-    isEnded.value = true
-    isPaused.value = false
-    needUserTurn.value = false
-    needFirstTurnChoice.value = false
-    agentStatus.value = 'idle'
-    sessionId.value = null
-    audioQueue.value = []
-    if (currentAudio.value) {
-      currentAudio.value.pause()
-      currentAudio.value.currentTime = 0
-      currentAudio.value = null
+    const applyEndedState = () => {
+      isEnded.value = true
+      isPaused.value = false
+      needUserTurn.value = false
+      needFirstTurnChoice.value = false
+      agentStatus.value = 'idle'
+      sessionId.value = null
+    }
+    const flushAudio = () => {
+      audioQueue.value = []
+      if (currentAudio.value) {
+        currentAudio.value.pause()
+        currentAudio.value.currentTime = 0
+        currentAudio.value = null
+      }
+    }
+
+    if (e.type === 'session_ended') {
+      // User-initiated end: stop audio now.
+      flushAudio()
+      applyEndedState()
+    } else {
+      // Natural max-turns termination: let the last audio finish before flipping UI state.
+      if (currentAudio.value || audioQueue.value.length > 0) {
+        pendingTermination.value = applyEndedState
+      } else {
+        applyEndedState()
+      }
     }
   }
   if (e.type === 'need_user_turn') {
@@ -182,6 +215,11 @@ function handleEvent(e: ConversationWsEvent) {
   }
   if (e.type === 'agent_status') {
     agentStatus.value = e.status
+    if (e.status === 'searching_online' || e.status === 'thinking') {
+      activeAgentName.value = e.agent_display_name ?? ''
+    } else {
+      activeAgentName.value = ''
+    }
   }
   if (e.type === 'turn') {
     isEnded.value = false
@@ -380,7 +418,8 @@ onUnmounted(() => {
           <span v-else-if="isPaused">Paused</span>
           <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
           <span v-else-if="!selectedCefrLevel">Generate and choose a CEFR sample</span>
-          <span v-else-if="agentStatus === 'thinking'">Agent thinking…</span>
+          <span v-else-if="agentStatus === 'searching_online'">{{ activeAgentName || 'Agent' }} is checking online…</span>
+          <span v-else-if="agentStatus === 'thinking'">{{ activeAgentName || 'Agent' }} is thinking…</span>
           <span v-else-if="needFirstTurnChoice">Choose who speaks first</span>
           <span v-else-if="needUserTurn">Your turn</span>
           <span v-else>Idle</span>
@@ -485,6 +524,19 @@ onUnmounted(() => {
                 <Button variant="outline" size="sm" @click="playAudioNow(t.audio_url!)">
                   Play audio
                 </Button>
+              </div>
+            </div>
+            <div
+              v-if="agentStatus === 'searching_online' || agentStatus === 'thinking'"
+              class="border border-dashed rounded-md p-3 space-y-1 opacity-70 italic"
+            >
+              <div class="text-xs text-muted-foreground">
+                <span v-if="agentStatus === 'searching_online'">
+                  {{ activeAgentName || 'Agent' }} is checking online…
+                </span>
+                <span v-else>
+                  {{ activeAgentName || 'Agent' }} is thinking…
+                </span>
               </div>
             </div>
           </CardContent>

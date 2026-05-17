@@ -279,9 +279,34 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 return
 
             if decision.next_speaker_type == "agent":
-                await self.send_json({"type": "agent_status", "status": "thinking"})
+                persona, agent_display_name = await self._get_agent_persona_and_name(
+                    session.id,
+                    decision.next_speaker_id,
+                )
+                # 1) Show "thinking" right away so the user sees the banner immediately.
+                await self.send_json({
+                    "type": "agent_status",
+                    "status": "thinking",
+                    "agent_display_name": agent_display_name,
+                })
                 try:
-                    turn = await self._append_agent_llm_turn(session.id, agent_id=decision.next_speaker_id)
+                    resolved_agent_id, plan = await self._build_plan_for_agent(
+                        session.id,
+                        decision.next_speaker_id,
+                    )
+                    # 2) Upgrade to "searching_online" only when Fact Checker is doing
+                    # an ASSERTIVES turn (the case where web search actually fires).
+                    if persona == "Fact Checker" and str(plan.get("type") or "").upper() == "ASSERTIVES":
+                        await self.send_json({
+                            "type": "agent_status",
+                            "status": "searching_online",
+                            "agent_display_name": agent_display_name,
+                        })
+                    turn = await self._append_agent_llm_turn(
+                        session.id,
+                        agent_id=resolved_agent_id,
+                        plan=plan,
+                    )
                 except Exception as e:
                     await self._log_turn_engine(
                         session_id=session.id,
@@ -392,6 +417,19 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         return participants
 
     @database_sync_to_async
+    def _get_agent_persona_and_name(self, session_id: int, agent_id: str) -> tuple[str, str]:
+        agent = AgentProfile.objects.filter(session_id=session_id, agent_id=agent_id).only(
+            "personality",
+            "display_name",
+            "agent_id",
+        ).first()
+        if not agent:
+            return "", ""
+        persona = str((agent.personality or {}).get("persona_name") or "")
+        display_name = (agent.display_name or agent.agent_id or "").strip()
+        return persona, display_name
+
+    @database_sync_to_async
     def _mark_terminate(self, session_id: int) -> None:
         session = ConversationSession.objects.get(id=session_id)
         mark_terminate(session)
@@ -447,7 +485,33 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         return processed.turn
 
     @database_sync_to_async
-    def _append_agent_llm_turn(self, session_id: int, *, agent_id: str | None = None) -> TurnRecord:
+    def _build_plan_for_agent(self, session_id: int, agent_id: str | None) -> tuple[str, dict]:
+        """Resolve the agent and run the facilitator step.
+
+        Returns the resolved agent_id and the facilitator plan so the caller can
+        inspect plan["type"] (e.g. to decide whether to show "checking online" UI)
+        before the rest of the turn pipeline executes.
+        """
+        session = ConversationSession.objects.get(id=session_id)
+        if agent_id:
+            agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
+        elif session.turn_count == 0:
+            agents = list(AgentProfile.objects.filter(session=session))
+            agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
+        else:
+            idx = (session.turn_count % 3) + 1
+            agent = AgentProfile.objects.get(session=session, agent_id=f"agent_{idx}")
+        plan = build_facilitator_plan(session, agent=agent)
+        return agent.agent_id, plan
+
+    @database_sync_to_async
+    def _append_agent_llm_turn(
+        self,
+        session_id: int,
+        *,
+        agent_id: str | None = None,
+        plan: dict | None = None,
+    ) -> TurnRecord:
         session = ConversationSession.objects.get(id=session_id)
         if agent_id:
             agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
@@ -462,7 +526,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         agent_id = agent.agent_id
 
         t0 = time.perf_counter()
-        plan = build_facilitator_plan(session, agent=agent)
+        if plan is None:
+            plan = build_facilitator_plan(session, agent=agent)
         TurnEngineLog.objects.create(
             session=session,
             component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,

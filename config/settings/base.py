@@ -60,6 +60,8 @@ USER_MEMORY_EXTRACTION_ENABLED = env.bool(
     "USER_MEMORY_EXTRACTION_ENABLED",
     default=True,
 )
+WEB_SEARCH_PROVIDER = env.str("WEB_SEARCH_PROVIDER", default="openai")
+TAVILY_API = env.str("TAVILY_API", default="")
 
 # DATABASES
 # ------------------------------------------------------------------------------

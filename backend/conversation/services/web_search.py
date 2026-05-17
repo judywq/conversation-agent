@@ -16,6 +16,7 @@ import json
 import logging
 from typing import Any
 
+import requests
 from django.conf import settings
 from openai import OpenAI
 from openai import OpenAIError
@@ -241,9 +242,76 @@ def _format_openai_web_search_response(response: Any) -> str:
     return "\n".join(lines).strip()
 
 
+_TAVILY_MAX_QUERY_CHARS = 400
+
+
+def _fetch_via_tavily(query: str) -> str:
+    api_key = (getattr(settings, "TAVILY_API", "") or "").strip()
+    if not api_key:
+        return "(Tavily API key is not configured; proceed without verified external facts.)"
+
+    # Drop the "Latest turn: ..." verbatim utterance — it's conversational context,
+    # not useful search signal. Topic + facilitator instruction is what we want to verify.
+    # Truncate as a safety net in case content_requirement is unusually long.
+    search_query = query.split("\nLatest turn:", 1)[0].strip()[:_TAVILY_MAX_QUERY_CHARS]
+
+    timeout = float(getattr(settings, "WEB_SEARCH_TIMEOUT_SEC", 30.0))
+    try:
+        response = requests.post(
+            "https://api.tavily.com/search",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "query": search_query,
+                "max_results": 5,
+                "include_answer": True,
+                "search_depth": "basic",
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        body = ""
+        if getattr(exc, "response", None) is not None:
+            body = (exc.response.text or "")[:300]
+        logger.warning("Tavily web search request failed: %s | body: %s", exc, body)
+        return "(Web search failed; proceed without verified external facts.)"
+
+    try:
+        data = response.json()
+    except ValueError:
+        return "(Web search returned no usable snippets.)"
+
+    lines: list[str] = []
+    answer = (data.get("answer") or "").strip() if isinstance(data, dict) else ""
+    if answer:
+        lines.append(f"Summary: {answer}")
+
+    results = data.get("results", []) if isinstance(data, dict) else []
+    for index, result in enumerate(results, start=1):
+        if not isinstance(result, dict):
+            continue
+        title = str(result.get("title") or "").strip()
+        url = str(result.get("url") or "").strip()
+        content = str(result.get("content") or "").strip()
+        if not (title or url or content):
+            continue
+        lines.append(f"{index}.")
+        if title:
+            lines.append(f"   Title: {title}")
+        if url:
+            lines.append(f"   URL: {url}")
+        if content:
+            lines.append(f"   Excerpt: {content}")
+
+    return "\n".join(lines).strip() or "(Web search returned no usable snippets.)"
+
+
 def fetch_web_search_context(query: str) -> str:
     """
-    Use OpenAI Responses API web search and normalize the answer plus citations for prompts.
+    Run a web search via the configured provider and normalize the response for prompt injection.
     """
     enabled = getattr(settings, "WEB_SEARCH_ENABLED", False)
     if not enabled:
@@ -252,6 +320,10 @@ def fetch_web_search_context(query: str) -> str:
     q = (query or "").strip()
     if not q:
         return "(No search query could be built; proceed using discussion context only.)"
+
+    provider = (getattr(settings, "WEB_SEARCH_PROVIDER", "openai") or "openai").strip().lower()
+    if provider == "tavily":
+        return _fetch_via_tavily(q)
 
     api_key = (getattr(settings, "OPENAI_API_KEY", "") or "").strip()
     if not api_key:
