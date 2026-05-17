@@ -23,9 +23,9 @@ def test_sync_user_profile_memory_creates_stable_profile_memories(user):
     contents = list(
         UserMemory.objects.filter(user=user).values_list("content", flat=True),
     )
-    assert "用户希望被称呼为 Judy。" in contents
-    assert "用户专业是 Computer Science。" in contents
-    assert "用户当前 CEFR 水平是 B2。" in contents
+    assert "The user prefers to be called Judy." in contents
+    assert "The user's major is Computer Science." in contents
+    assert "The user's current CEFR level is B2." in contents
     assert all("Generated sample" not in content for content in contents)
     assert all("learning Chinese" not in content for content in contents)
 
@@ -67,5 +67,5 @@ def test_profile_update_signal_triggers_profile_memory_sync(user):
     assert UserMemory.objects.filter(
         user=user,
         source_label="profile_sync",
-        content="用户专业是 Computer Science。",
+        content="The user's major is Computer Science.",
     ).exists()

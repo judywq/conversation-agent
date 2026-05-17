@@ -27,11 +27,11 @@ def _profile_memory_specs(user: Any) -> list[tuple[str, str]]:
     major = (profile.major or "").strip()
     cefr_level = (profile.cefr_level or "").strip().upper()
     if preferred_name:
-        specs.append(("preferred_name", f"用户希望被称呼为 {preferred_name}。"))
+        specs.append(("preferred_name", f"The user prefers to be called {preferred_name}."))
     if major:
-        specs.append(("major", f"用户专业是 {major}。"))
+        specs.append(("major", f"The user's major is {major}."))
     if cefr_level:
-        specs.append(("cefr_level", f"用户当前 CEFR 水平是 {cefr_level}。"))
+        specs.append(("cefr_level", f"The user's current CEFR level is {cefr_level}."))
     return specs
 
 

@@ -84,7 +84,17 @@ def _looks_sensitive(content: str) -> bool:
 
 def _looks_like_temporary_topic(content: str) -> bool:
     lowered = content.casefold()
-    return "topic" in lowered or "当前话题" in content or "本轮话题" in content
+    english_markers = (
+        "current topic",
+        "this session topic",
+        "session topic",
+    )
+    return (
+        "topic" in lowered
+        or any(marker in lowered for marker in english_markers)
+        or "当前话题" in content
+        or "本轮话题" in content
+    )
 
 
 def _looks_like_cefr_sample(content: str) -> bool:
@@ -97,8 +107,21 @@ def _looks_like_cefr_sample(content: str) -> bool:
 
 
 def _weakness_has_enough_evidence(candidate: MemoryCandidate) -> bool:
-    text = f"{candidate.content} {candidate.reason}"
-    return "明确" in text or "长期" in text or "反复" in text or "多次" in text
+    text = f"{candidate.content} {candidate.reason}".casefold()
+    english_markers = (
+        "explicit",
+        "clearly stated",
+        "long-term",
+        "long term",
+        "repeated",
+        "recurring",
+        "multiple times",
+        "often struggles",
+    )
+    chinese_markers = ("明确", "长期", "反复", "多次")
+    return any(marker in text for marker in english_markers) or any(
+        marker in f"{candidate.content} {candidate.reason}" for marker in chinese_markers
+    )
 
 
 def _candidate_rejection_reason(
@@ -190,6 +213,7 @@ def build_memory_extraction_prompt(
         "Do not save temporary topics, generated CEFR sample text, "
         "sensitive information, or agent-only claims. "
         "For weakness, only save explicit long-term weakness or repeated evidence. "
+        "Write every content and reason field in English, even if the user spoke another language. "
         f"Session topic: {session.topic}\n"
         f"Recent messages: {json.dumps(recent_messages, ensure_ascii=False)}\n"
         f"Latest user utterance: {turn.utterance}"

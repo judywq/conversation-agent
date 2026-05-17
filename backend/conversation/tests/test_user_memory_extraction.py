@@ -42,10 +42,10 @@ def test_validate_candidate_accepts_learning_preference():
     candidate = MemoryCandidate(
         action="create",
         memory_type="learning_preference",
-        content="用户更喜欢先看例子再看语法解释。",
+        content="The user prefers examples before grammar explanations.",
         confidence=0.9,
         source_label="conversation",
-        reason="用户明确表达了稳定学习偏好",
+        reason="User explicitly stated a stable learning preference",
     )
 
     result = validate_candidate(candidate)
@@ -59,7 +59,7 @@ def test_validate_candidate_rejects_invalid_memory_type(memory_type):
     candidate = MemoryCandidate(
         action="create",
         memory_type=memory_type,
-        content="用户更喜欢中文解释。",
+        content="The user prefers explanations in Chinese.",
         confidence=0.9,
         source_label="conversation",
         reason="test",
@@ -93,7 +93,7 @@ def test_validate_candidate_rejects_invalid_or_low_confidence(confidence):
     candidate = MemoryCandidate(
         action="create",
         memory_type="learning_preference",
-        content="用户更喜欢中文解释。",
+        content="The user prefers explanations in Chinese.",
         confidence=confidence,
         source_label="conversation",
         reason="test",
@@ -113,6 +113,7 @@ def test_validate_candidate_rejects_invalid_or_low_confidence(confidence):
         ("请记住我的电话 13812345678", "sensitive"),
         ("我的邮箱是 test@example.com", "sensitive"),
         ("这次 topic 是学习汉语", "temporary"),
+        ("The current topic is learning Chinese.", "temporary"),
         ("A1 sample: I like apples.", "cefr_sample"),
     ],
 )
@@ -136,7 +137,7 @@ def test_validate_candidate_rejects_single_language_mistake_as_weakness():
     candidate = MemoryCandidate(
         action="create",
         memory_type="weakness",
-        content="用户这一次漏用了冠词。",
+        content="The user missed an article once in this turn.",
         confidence=0.9,
         source_label="conversation",
         reason="single mistake",
@@ -152,10 +153,10 @@ def test_validate_candidate_accepts_explicit_weakness():
     candidate = MemoryCandidate(
         action="create",
         memory_type="weakness",
-        content="用户明确表示自己长期容易混淆英语冠词。",
+        content="The user explicitly struggles with English articles long term.",
         confidence=0.9,
         source_label="conversation",
-        reason="用户明确表达长期弱点",
+        reason="explicit long-term weakness",
     )
 
     result = validate_candidate(candidate)
@@ -166,7 +167,8 @@ def test_validate_candidate_accepts_explicit_weakness():
 def test_parse_memory_response_handles_valid_json():
     candidates = parse_memory_response(
         '{"memories":[{"action":"create","memory_type":"learning_preference",'
-        '"content":"用户更喜欢中文解释。","confidence":0.9,"reason":"explicit"}]}',
+        '"content":"The user prefers explanations in Chinese.",'
+        '"confidence":0.9,"reason":"explicit"}]}',
     )
 
     assert len(candidates) == 1
@@ -184,12 +186,13 @@ def test_extract_memory_candidates_uses_llm(user):
         session=session,
         speaker="user",
         speaker_type=TurnRecord.SPEAKER_TYPE_USER,
-        utterance="以后请用中文解释语法。",
+        utterance="Please explain grammar in Chinese from now on.",
         turn_index=0,
     )
     llm = FakeMemoryLLM(
         '{"memories":[{"action":"create","memory_type":"instruction",'
-        '"content":"用户希望以后用中文解释语法。","confidence":0.9,"reason":"explicit"}]}',
+        '"content":"The user wants grammar explained in Chinese.",'
+        '"confidence":0.9,"reason":"explicit"}]}',
     )
 
     candidates = extract_memory_candidates(
@@ -201,7 +204,8 @@ def test_extract_memory_candidates_uses_llm(user):
 
     assert len(candidates) == 1
     assert candidates[0].memory_type == "instruction"
-    assert "以后请用中文解释语法" in str(llm.messages[0].content)
+    assert "Please explain grammar in Chinese" in str(llm.messages[0].content)
+    assert "Write every content and reason field in English" in str(llm.messages[0].content)
 
 
 @pytest.mark.django_db
@@ -211,13 +215,13 @@ def test_persist_memory_candidates_creates_user_memory(user):
         session=session,
         speaker="user",
         speaker_type=TurnRecord.SPEAKER_TYPE_USER,
-        utterance="以后请用中文解释语法。",
+        utterance="Please explain grammar in Chinese from now on.",
         turn_index=0,
     )
     candidate = MemoryCandidate(
         action="create",
         memory_type="instruction",
-        content="用户希望以后用中文解释语法。",
+        content="The user wants grammar explained in Chinese.",
         confidence=0.9,
         source_label="conversation",
         reason="explicit",
@@ -246,19 +250,19 @@ def test_persist_memory_candidates_skips_exact_duplicate(user):
         session=session,
         speaker="user",
         speaker_type=TurnRecord.SPEAKER_TYPE_USER,
-        utterance="以后请用中文解释语法。",
+        utterance="Please explain grammar in Chinese from now on.",
         turn_index=0,
     )
     UserMemory.objects.create(
         user=user,
         memory_type="instruction",
-        content="用户希望以后用中文解释语法。",
+        content="The user wants grammar explained in Chinese.",
         source_label="conversation_extraction",
     )
     candidate = MemoryCandidate(
         action="create",
         memory_type="instruction",
-        content=" 用户希望以后用中文解释语法。 ",
+        content=" The user wants grammar explained in Chinese. ",
         confidence=0.9,
         source_label="conversation",
         reason="explicit",
@@ -293,7 +297,7 @@ def test_schedule_memory_extraction_for_turn_submits_scalar_ids(
         session=session,
         speaker="user",
         speaker_type=TurnRecord.SPEAKER_TYPE_USER,
-        utterance="以后请用中文解释语法。",
+        utterance="Please explain grammar in Chinese from now on.",
         turn_index=0,
     )
 
@@ -351,7 +355,7 @@ def test_user_turn_signal_schedules_memory_extraction(settings, user):
             session=session,
             speaker="user",
             speaker_type=TurnRecord.SPEAKER_TYPE_USER,
-            utterance="以后请用中文解释语法。",
+            utterance="Please explain grammar in Chinese from now on.",
             turn_index=0,
         )
 
