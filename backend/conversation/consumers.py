@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 import time
 from uuid import uuid4
@@ -37,6 +38,8 @@ from backend.conversation.services.utterance_duplicates import (
 )
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
+
+logger = logging.getLogger(__name__)
 
 
 def log_agent_utterance_duplicate_detection(
@@ -549,14 +552,67 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         plan = build_facilitator_plan(session, agent=agent)
         return agent.agent_id, plan
 
-    @database_sync_to_async
-    def _append_agent_llm_turn(
+    async def _synthesize_agent_audio(
+        self,
+        *,
+        text: str,
+        voice: str,
+    ) -> tuple[str | None, int | None]:
+        """
+        Run TTS off the DB thread so a slow Fish API call cannot block admin/HTTP.
+        """
+        connect_timeout = float(getattr(settings, "FISH_TTS_CONNECT_TIMEOUT_SEC", 15.0))
+        read_timeout = float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 90.0))
+        # Wait for Fish to finish; small buffer over HTTP read timeout.
+        tts_timeout = connect_timeout + read_timeout + 10.0
+        t_tts0 = time.perf_counter()
+        try:
+            audio_url = await asyncio.wait_for(
+                asyncio.to_thread(
+                    synthesize_speech,
+                    text=text,
+                    voice=voice,
+                ),
+                timeout=tts_timeout,
+            )
+            t_tts_ms = int((time.perf_counter() - t_tts0) * 1000)
+            return audio_url, t_tts_ms
+        except Exception:
+            logger.exception(
+                "agent_tts_failed voice=%s text_chars=%d timeout_sec=%.0f",
+                voice,
+                len(text),
+                tts_timeout,
+            )
+            return None, None
+
+    async def _append_agent_llm_turn(
         self,
         session_id: int,
         *,
         agent_id: str | None = None,
         plan: dict | None = None,
     ) -> TurnRecord:
+        prep = await self._prepare_agent_llm_turn(
+            session_id,
+            agent_id=agent_id,
+            plan=plan,
+        )
+        voice = prep["voice"]
+        audio_url, t_tts_ms = await self._synthesize_agent_audio(
+            text=prep["utterance"],
+            voice=voice,
+        )
+        return await self._finalize_agent_llm_turn(prep, audio_url=audio_url, t_tts_ms=t_tts_ms)
+
+    @database_sync_to_async
+    def _prepare_agent_llm_turn(
+        self,
+        session_id: int,
+        *,
+        agent_id: str | None = None,
+        plan: dict | None = None,
+    ) -> dict:
         session = ConversationSession.objects.get(id=session_id)
         if agent_id:
             agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
@@ -601,16 +657,34 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             turn_index=int(session.turn_count),
         )
 
-        audio_url = None
-        t_tts_ms: int | None = None
-        try:
-            voice = agent.voice or "alloy"
-            t_tts0 = time.perf_counter()
-            audio_url = synthesize_speech(text=utterance, voice=voice)
-            t_tts_ms = int((time.perf_counter() - t_tts0) * 1000)
-        except Exception:
-            # If TTS fails (missing key, etc.), continue without audio.
-            audio_url = None
+        return {
+            "session": session,
+            "agent_id": agent_id,
+            "plan": plan,
+            "utterance": utterance,
+            "generated": generated,
+            "duplicate_result": duplicate_result,
+            "t_utter_ms": t_utter_ms,
+            "t0": t0,
+            "voice": agent.voice or "alloy",
+        }
+
+    @database_sync_to_async
+    def _finalize_agent_llm_turn(
+        self,
+        prep: dict,
+        *,
+        audio_url: str | None,
+        t_tts_ms: int | None,
+    ) -> TurnRecord:
+        session = prep["session"]
+        agent_id = prep["agent_id"]
+        plan = prep["plan"]
+        utterance = prep["utterance"]
+        generated = prep["generated"]
+        duplicate_result = prep["duplicate_result"]
+        t_utter_ms = prep["t_utter_ms"]
+        t0 = prep["t0"]
 
         processed = process_agent_turn(
             session,

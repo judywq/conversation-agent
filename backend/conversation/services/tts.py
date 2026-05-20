@@ -119,6 +119,8 @@ def _synthesize_fish_speech(
     if reference_id:
         payload["reference_id"] = reference_id
 
+    connect_timeout = float(getattr(settings, "FISH_TTS_CONNECT_TIMEOUT_SEC", 15.0))
+    read_timeout = float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 90.0))
     response = requests.post(
         "https://api.fish.audio/v1/tts",
         headers={
@@ -127,7 +129,7 @@ def _synthesize_fish_speech(
             "model": model,
         },
         json=payload,
-        timeout=float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 60.0)),
+        timeout=(connect_timeout, read_timeout),
     )
     response.raise_for_status()
     return response.content
