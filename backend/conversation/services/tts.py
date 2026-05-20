@@ -1,12 +1,28 @@
 from uuid import uuid4
 
+import requests
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from openai import OpenAI
 
-from backend.llm_caller.models import APIKey
 from backend.conversation.exceptions import ServiceConfigurationError
+from backend.llm_caller.models import APIKey
+
+
+OPENAI_BUILTIN_VOICES = {
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "fable",
+    "nova",
+    "onyx",
+    "sage",
+    "shimmer",
+    "verse",
+}
 
 
 def _get_openai_key() -> str:
@@ -25,23 +41,37 @@ def _get_openai_key() -> str:
 def synthesize_speech(
     *,
     text: str,
-    voice: str = "alloy",
-    model: str = "gpt-4o-mini-tts",
-    audio_format: str = "mp3",
+    voice: str | None = None,
+    model: str | None = None,
+    audio_format: str | None = None,
 ) -> str:
     """
     Generates speech audio, stores it under MEDIA_ROOT, and returns a public URL.
     """
-    client = OpenAI(api_key=_get_openai_key())
-    response = client.audio.speech.create(
-        model=model,
-        voice=voice,
-        input=text,
-        response_format=audio_format,
-    )
-    audio_bytes = response.read()
+    provider = str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower()
+    if provider == "fish":
+        selected_format = audio_format or settings.FISH_TTS_FORMAT
+        audio_bytes = _synthesize_fish_speech(
+            text=text,
+            voice=voice,
+            model=model or settings.FISH_TTS_MODEL,
+            audio_format=selected_format,
+        )
+    elif provider == "openai":
+        selected_format = audio_format or "mp3"
+        audio_bytes = _synthesize_openai_speech(
+            text=text,
+            voice=voice or settings.OPENAI_TTS_VOICE,
+            model=model or settings.OPENAI_TTS_MODEL,
+            audio_format=selected_format,
+        )
+    else:
+        raise ServiceConfigurationError(
+            f"Unsupported TTS_PROVIDER '{provider}'. Expected 'openai' or 'fish'.",
+            code="TTS_PROVIDER_UNSUPPORTED",
+        )
 
-    file_name = f"audio/{uuid4().hex}.{audio_format}"
+    file_name = f"audio/{uuid4().hex}.{selected_format}"
     path = default_storage.save(file_name, ContentFile(audio_bytes))
 
     domain = settings.DOMAIN_NAME
@@ -49,3 +79,63 @@ def synthesize_speech(
         domain = f"http://{domain}"
     return f"{domain}{settings.MEDIA_URL}{path}"
 
+
+def _synthesize_openai_speech(
+    *,
+    text: str,
+    voice: str,
+    model: str,
+    audio_format: str,
+) -> bytes:
+    client = OpenAI(api_key=_get_openai_key())
+    response = client.audio.speech.create(
+        model=model,
+        voice=voice,
+        input=text,
+        response_format=audio_format,
+    )
+    return response.read()
+
+
+def _synthesize_fish_speech(
+    *,
+    text: str,
+    voice: str | None,
+    model: str,
+    audio_format: str,
+) -> bytes:
+    api_key = str(getattr(settings, "FISH_API_KEY", "") or "").strip()
+    if not api_key:
+        raise ServiceConfigurationError(
+            "TTS requires FISH_API_KEY when TTS_PROVIDER=fish.",
+            code="TTS_API_KEY_MISSING",
+        )
+
+    payload = {
+        "text": text,
+        "format": audio_format,
+    }
+    reference_id = _select_fish_reference_id(voice)
+    if reference_id:
+        payload["reference_id"] = reference_id
+
+    response = requests.post(
+        "https://api.fish.audio/v1/tts",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "model": model,
+        },
+        json=payload,
+        timeout=float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 60.0)),
+    )
+    response.raise_for_status()
+    return response.content
+
+
+def _select_fish_reference_id(voice: str | None) -> str:
+    configured = str(getattr(settings, "FISH_TTS_REFERENCE_ID", "") or "").strip()
+    requested = str(voice or "").strip()
+    if requested and requested.lower() not in OPENAI_BUILTIN_VOICES:
+        return requested
+    return configured

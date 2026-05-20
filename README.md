@@ -81,6 +81,20 @@ Embedding settings:
 - Vector dimension is fixed at 1536 by the Django model and migration. Changing it requires a new migration and embedding backfill.
 - Recall tuning: `VECTOR_RECALL_ENABLED`, `HYBRID_KEYWORD_CANDIDATES`, `HYBRID_VECTOR_CANDIDATES`, `HYBRID_RRF_K`, `HYBRID_KEYWORD_WEIGHT`, and `HYBRID_VECTOR_WEIGHT` control hybrid retrieval behavior.
 
+### Text To Speech
+
+The default TTS implementation is configurable. OpenAI remains available for compatibility, and Fish Audio can be enabled with:
+
+```sh
+export TTS_PROVIDER="fish"
+export FISH_API_KEY="xxxxx"
+export FISH_TTS_MODEL="s2-pro"
+export FISH_TTS_FORMAT="mp3"
+export FISH_TTS_REFERENCE_ID="8ef4a238714b45718ce04243307c57a7"
+```
+
+See [Fish Audio TTS Migration README](docs/fish_audio_tts_readme.md) for the changed files, API examples, voice IDs, and local test steps.
+
 Generate missing embeddings after importing knowledge data:
 
 ```sh

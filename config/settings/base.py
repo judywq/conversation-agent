@@ -518,6 +518,15 @@ INIT_LLM_MODELS = [
 # Text-game seed data (genres + prompt templates) was removed.
 
 OPENAI_API_KEY = env.str("OPENAI_API_KEY", default="")
+TTS_PROVIDER = env.str("TTS_PROVIDER", default="openai")
+OPENAI_TTS_MODEL = env.str("OPENAI_TTS_MODEL", default="gpt-4o-mini-tts")
+OPENAI_TTS_VOICE = env.str("OPENAI_TTS_VOICE", default="alloy")
+FISH_API_KEY = env.str("FISH_API_KEY", default="")
+FISH_TTS_MODEL = env.str("FISH_TTS_MODEL", default="s2-pro")
+FISH_TTS_REFERENCE_ID = env.str("FISH_TTS_REFERENCE_ID", default="")
+FISH_TTS_FORMAT = env.str("FISH_TTS_FORMAT", default="mp3")
+FISH_TTS_TIMEOUT_SEC = env.float("FISH_TTS_TIMEOUT_SEC", default=60.0)
+CEFR_TTS_MAX_WORKERS = env.int("CEFR_TTS_MAX_WORKERS", default=0)
 EMBEDDING_PROVIDER = env.str("EMBEDDING_PROVIDER", default="openai")
 EMBEDDING_MODEL = env.str("EMBEDDING_MODEL", default="text-embedding-3-small")
 EMBEDDING_DIMENSIONS = 1536

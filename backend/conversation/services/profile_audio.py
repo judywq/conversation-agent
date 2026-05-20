@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
+from django.conf import settings
 from django.db import close_old_connections
 from langchain_core.messages import SystemMessage
 
@@ -25,6 +26,15 @@ def _audio_url_log_hint(audio_url: str) -> str:
         path = urlparse(audio_url).path
         return path.rsplit("/", 1)[-1] if path else urlparse(audio_url).netloc
     return audio_url.rsplit("/", 1)[-1]
+
+
+def _cefr_tts_max_workers() -> int:
+    configured = int(getattr(settings, "CEFR_TTS_MAX_WORKERS", 0) or 0)
+    if configured > 0:
+        return min(configured, len(CEFR_LEVELS))
+    if str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower() == "fish":
+        return 1
+    return len(CEFR_LEVELS)
 
 
 def generate_cefr_topic_samples(*, topic: str, voice: str = "alloy") -> list[dict[str, str]]:
@@ -136,7 +146,14 @@ def generate_cefr_topic_samples(*, topic: str, voice: str = "alloy") -> list[dic
     )
     t_pool0 = time.perf_counter()
     try:
-        with ThreadPoolExecutor(max_workers=len(CEFR_LEVELS)) as executor:
+        max_workers = _cefr_tts_max_workers()
+        logger.info(
+            "cefr_samples tts_pool_workers topic=%s max_workers=%d provider=%s",
+            topic_log,
+            max_workers,
+            getattr(settings, "TTS_PROVIDER", "openai"),
+        )
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             samples = list(executor.map(synthesize_level, CEFR_LEVELS))
     except Exception:
         logger.exception(
