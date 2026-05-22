@@ -19,7 +19,7 @@ from backend.conversation.services.agent_selection import (
     select_complementary_agent_personas,
 )
 from backend.conversation.services.facilitator import build_facilitator_plan
-from backend.conversation.services.names import pick_unique_names
+from backend.conversation.services.names import pick_voice_preset_for_persona
 from backend.conversation.services.retrieval import persist_turn_retrieval_safely
 from backend.conversation.services.tts import synthesize_speech
 from backend.conversation.services.turn_manager import decide_next_speaker
@@ -387,7 +387,6 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         # Agents should match the user's selected level (no longer forced higher).
         agent_cefr_level = str(user_cefr_level or "").upper().strip() or "B2"
         selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
-        display_names = pick_unique_names(len(selected_prompts))
         used_ids: set[str] = set()
         agent_rows: list[AgentProfile] = []
         for idx, selected in enumerate(selected_prompts):
@@ -396,17 +395,22 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if candidate in used_ids:
                 candidate = f"{base}_{idx + 1}"
             used_ids.add(candidate)
+            voice_preset = pick_voice_preset_for_persona(selected.prompt.persona_name)
             agent_rows.append(
                 AgentProfile(
                     session=session,
                     agent_id=candidate,
-                    display_name=display_names[idx],
+                    display_name=voice_preset.name,
                     personality={
                         "persona_name": selected.prompt.persona_name,
                         "source_trait": selected.source_trait,
                         "user_level": selected.user_level,
                         "major": user_major,
+                        "voice_chinese_name": voice_preset.chinese_name,
+                        "voice_gender": voice_preset.gender,
+                        "voice_title": voice_preset.title,
                     },
+                    voice=voice_preset.reference_id,
                     traits={
                         "style": selected.prompt.persona_name.lower().replace(" ", "_"),
                         "proficiency_level": agent_cefr_level,
@@ -460,6 +464,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     "name": a.display_name or a.agent_id,
                     "type": "agent",
                     "persona_name": (a.personality or {}).get("persona_name") or "",
+                    "gender": (a.personality or {}).get("voice_gender") or "",
+                    "voice_title": (a.personality or {}).get("voice_title") or "",
                 },
             )
         return participants
@@ -547,8 +553,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             agents = list(AgentProfile.objects.filter(session=session))
             agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
         else:
-            idx = (session.turn_count % 3) + 1
-            agent = AgentProfile.objects.get(session=session, agent_id=f"agent_{idx}")
+            agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
+            agent = agents[int(session.turn_count) % len(agents)]
         plan = build_facilitator_plan(session, agent=agent)
         return agent.agent_id, plan
 
@@ -621,9 +627,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             agents = list(AgentProfile.objects.filter(session=session))
             agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
         else:
-            idx = (session.turn_count % 3) + 1
-            agent_id = f"agent_{idx}"
-            agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
+            agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
+            agent = agents[int(session.turn_count) % len(agents)]
         agent_id = agent.agent_id
 
         t0 = time.perf_counter()

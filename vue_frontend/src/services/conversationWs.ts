@@ -1,7 +1,17 @@
 export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
   | { type: 'session_started'; session_id: number; topic: string }
-  | { type: 'participants'; participants: Array<{ id: string; name: string; type: 'user' | 'agent'; persona_name?: string }> }
+  | {
+      type: 'participants'
+      participants: Array<{
+        id: string
+        name: string
+        type: 'user' | 'agent'
+        persona_name?: string
+        gender?: string
+        voice_title?: string
+      }>
+    }
   | { type: 'need_first_turn_choice' }
   | { type: 'paused' }
   | { type: 'resumed' }
@@ -57,4 +67,3 @@ export class ConversationWsClient {
     this.ws = null
   }
 }
-

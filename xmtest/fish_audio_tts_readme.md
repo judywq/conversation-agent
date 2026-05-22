@@ -280,3 +280,197 @@ CEFR_TTS_MAX_WORKERS=0
 ```
 
 这样该 agent 的 TTS 会使用自己的 `reference_id`。没有单独配置时，会回退到 `FISH_TTS_REFERENCE_ID`。
+
+## 7. 正式对话里如何使用人名和声音
+
+当前项目已经把 5 个 agent 性格和 10 个 Fish Audio 声音绑定到正式 conversation agent 创建流程里：每个性格都有一男一女两个声音候选。
+
+相关代码：
+
+```text
+backend/conversation/services/names.py
+backend/conversation/consumers.py
+backend/conversation/services/tts.py
+```
+
+### 7.1 性格、名字和声音绑定表
+
+配置位置：
+
+```text
+backend/conversation/services/names.py
+```
+
+当前绑定关系：
+
+| Agent 性格 | 男声 | 男声 reference_id | 女声 | 女声 reference_id |
+|------------|------|-------------------|------|-------------------|
+| Discussion Driver | Liam / 利亚姆 / Energetic Male | `802e3bc2b27e49c2995d23ef70e6ac89` | Ava / 艾娃 / id-Friendly Women | `b545c585f631496c914815291da4e893` |
+| Fact Checker | Oliver / 奥利弗 / id-alex | `1d52151a55eb4878a997bd06e816b5f6` | Sophia / 索菲亚 / id-Paula | `c2623f0c075b4492ac367989aee1576f` |
+| Idea Explorer | Noah / 诺亚 / ALEX_CHIKNA | `52e0660e03fe4f9a8d2336f67cab5440` | Mia / 米娅 / id-Female Voice | `2a9605eeafe84974b5b20628d42c0060` |
+| Supportive Builder | Ethan / 伊森 / ELITE | `d8a1340984ee4b63ad1ffae27a6a4339` | Emma / 艾玛 / id-ss | `1954744f560e4a0fa316bd6ec8a6b055` |
+| Tense Skeptic | Lucas / 卢卡斯 / id-Ethan | `536d3a5e000945adb7038665781a4aca` | Isabella / 伊莎贝拉 / id-Ogechi old women | `edb42faa2d0e4cd5aa6aa1ae67de2e86` |
+
+### 7.2 新建对话时发生什么
+
+用户在前端开始一个新 conversation 时，后端会执行：
+
+```text
+backend/conversation/consumers.py -> _create_session()
+```
+
+流程是：
+
+1. `select_agent_personas_for_session(...)` 根据用户 OCEAN profile 选出 1-5 个 agent 性格。
+2. `pick_voice_preset_for_persona(persona_name)` 从该性格绑定的一男一女里随机选一个声音。
+3. 创建 `AgentProfile` 时写入名字、声音 ID、性别和 Fish 声音标题：
+
+```py
+display_name="Mia",
+voice="2a9605eeafe84974b5b20628d42c0060",
+personality={
+    "persona_name": "Idea Explorer",
+    "voice_gender": "female",
+    "voice_title": "id-Female Voice",
+}
+```
+
+后续 agent 说话时，代码会取：
+
+```py
+voice = agent.voice or "alloy"
+synthesize_speech(text=utterance, voice=voice)
+```
+
+在 `TTS_PROVIDER=fish` 时，`voice` 会被当作 Fish Audio 的 `reference_id` 发送给：
+
+```text
+POST https://api.fish.audio/v1/tts
+```
+
+因此，名字和声音的真正绑定点是数据库里的：
+
+```text
+AgentProfile.display_name
+AgentProfile.voice
+AgentProfile.personality["persona_name"]
+AgentProfile.personality["voice_gender"]
+AgentProfile.personality["voice_title"]
+```
+
+### 7.3 如何启用
+
+确保本地 env/secrets 里有：
+
+```text
+TTS_PROVIDER=fish
+FISH_API_KEY=你的 Fish API key
+FISH_TTS_MODEL=s2-pro
+FISH_TTS_FORMAT=mp3
+```
+
+如果你使用 Docker，本项目通常读取：
+
+```text
+.envs/.local/.django
+.envs/.local/.secrets
+```
+
+推荐把私密 key 放在：
+
+```text
+.envs/.local/.secrets
+```
+
+修改后重启：
+
+```sh
+docker compose -f docker-compose.local.yml up
+```
+
+如果你机器只能用旧命令，也可以：
+
+```sh
+docker-compose -f docker-compose.local.yml up
+```
+
+### 7.4 如何验证正式绑定是否生效
+
+先新建一个 conversation。注意：旧 session 里已经创建好的 `AgentProfile` 不会自动变，必须新开对话。
+
+然后进 Django shell 查看最近一个 session 的 agent：
+
+```sh
+docker compose -f docker-compose.local.yml exec django /entrypoint python manage.py shell
+```
+
+在 shell 里执行：
+
+```py
+from backend.conversation.models import ConversationSession
+
+session = ConversationSession.objects.order_by("-id").first()
+for agent in session.agent_profiles.order_by("agent_id"):
+    print(agent.agent_id, agent.display_name, agent.voice)
+```
+
+正常会看到类似：
+
+```text
+discussion_driver Liam 802e3bc2b27e49c2995d23ef70e6ac89
+fact_checker Oliver 1d52151a55eb4878a997bd06e816b5f6
+idea_explorer Mia 2a9605eeafe84974b5b20628d42c0060
+```
+
+只要 `agent.voice` 是 Fish 的长 ID，而不是 `alloy`、`nova`、`shimmer`，就说明绑定成功。
+
+### 7.5 如何试听这 10 个声音
+
+测试脚本位置：
+
+```text
+xmtest/test_fish_audio_10_voices.py
+```
+
+只打印人名和声音，不调用 API：
+
+```sh
+python xmtest/test_fish_audio_10_voices.py --dry-run
+```
+
+实际生成 10 个 mp3：
+
+```sh
+export FISH_API_KEY="你的 Fish API key"
+python xmtest/test_fish_audio_10_voices.py
+```
+
+输出目录：
+
+```text
+xmtest/fish_voice_samples/
+```
+
+### 7.6 如何更换某个人名对应的声音
+
+改这个文件：
+
+```text
+backend/conversation/services/names.py
+```
+
+找到对应的 `AgentVoicePreset`，只需要替换：
+
+```py
+title="新的 Fish 声音标题"
+reference_id="新的 Fish reference_id"
+note="备注"
+```
+
+如果你也想让试听脚本保持一致，同步修改：
+
+```text
+xmtest/test_fish_audio_10_voices.py
+```
+
+改完后重新启动后端，并新建 conversation。已经存在的旧 session 不会自动更新。

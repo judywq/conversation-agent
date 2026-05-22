@@ -27,6 +27,8 @@ type Participant = {
   name: string
   type: 'user' | 'agent'
   persona_name?: string
+  gender?: string
+  voice_title?: string
 }
 
 const participants = ref<Participant[]>([])
@@ -497,6 +499,9 @@ onUnmounted(() => {
                 <span class="font-medium">{{ p.name }}</span>
                 <span class="text-xs text-muted-foreground" v-if="p.type === 'agent' && p.persona_name">
                   · {{ p.persona_name }}
+                </span>
+                <span class="text-xs text-muted-foreground" v-if="p.type === 'agent' && p.gender">
+                  · {{ p.gender }}
                 </span>
               </div>
               <div class="text-xs text-muted-foreground">{{ p.type }}</div>
