@@ -20,8 +20,10 @@ from backend.conversation.services.agent_selection import (
 )
 from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_voice_preset_for_persona
+from backend.conversation.services.names import provider_voice_id
 from backend.conversation.services.retrieval import persist_turn_retrieval_safely
 from backend.conversation.services.tts import synthesize_speech
+from backend.conversation.services.tts import tts_provider_timeouts
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import mark_terminate
@@ -410,7 +412,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         "voice_gender": voice_preset.gender,
                         "voice_title": voice_preset.title,
                     },
-                    voice=voice_preset.reference_id,
+                    voice=provider_voice_id(voice_preset),
                     traits={
                         "style": selected.prompt.persona_name.lower().replace(" ", "_"),
                         "proficiency_level": agent_cefr_level,
@@ -567,9 +569,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         """
         Run TTS off the DB thread so a slow Fish API call cannot block admin/HTTP.
         """
-        connect_timeout = float(getattr(settings, "FISH_TTS_CONNECT_TIMEOUT_SEC", 15.0))
-        read_timeout = float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 90.0))
-        # Wait for Fish to finish; small buffer over HTTP read timeout.
+        connect_timeout, read_timeout = tts_provider_timeouts()
+        # Wait for TTS to finish; small buffer over HTTP read timeout.
         tts_timeout = connect_timeout + read_timeout + 10.0
         t_tts0 = time.perf_counter()
         try:

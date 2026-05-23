@@ -12,6 +12,7 @@ from langchain_core.messages import SystemMessage
 from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.names import cefr_tts_voice_for_level
 from backend.conversation.services.tts import synthesize_speech
 
 logger = logging.getLogger(__name__)
@@ -32,15 +33,20 @@ def _cefr_tts_max_workers() -> int:
     configured = int(getattr(settings, "CEFR_TTS_MAX_WORKERS", 0) or 0)
     if configured > 0:
         return min(configured, len(CEFR_LEVELS))
-    if str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower() == "fish":
+    if str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower() in {"fish", "elevenlabs"}:
         return 1
     return len(CEFR_LEVELS)
 
 
-def generate_cefr_topic_samples(*, topic: str, voice: str = "alloy") -> list[dict[str, str]]:
+def generate_cefr_topic_samples(*, topic: str, voice: str | None = None) -> list[dict[str, str]]:
     t_pipeline0 = time.perf_counter()
     topic_log = topic[:200]
-    logger.info("cefr_samples pipeline_start topic=%s voice=%s", topic_log, voice)
+    provider = str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower()
+    logger.info(
+        "cefr_samples pipeline_start topic=%s provider=%s",
+        topic_log,
+        provider,
+    )
 
     t_prompt0 = time.perf_counter()
     try:
@@ -105,16 +111,18 @@ def generate_cefr_topic_samples(*, topic: str, voice: str = "alloy") -> list[dic
         close_old_connections()
         thread_name = threading.current_thread().name
         text = texts_by_level[level]
+        level_voice = voice or cefr_tts_voice_for_level(level)
         logger.info(
-            "cefr_samples tts_level_start topic=%s level=%s text_chars=%d thread=%s",
+            "cefr_samples tts_level_start topic=%s level=%s voice=%s text_chars=%d thread=%s",
             topic_log,
             level,
+            level_voice,
             len(text),
             thread_name,
         )
         t_level0 = time.perf_counter()
         try:
-            audio_url = synthesize_speech(text=text, voice=voice)
+            audio_url = synthesize_speech(text=text, voice=level_voice)
         except Exception:
             level_ms = int((time.perf_counter() - t_level0) * 1000)
             level_timings[level] = level_ms

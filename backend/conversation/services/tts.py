@@ -25,6 +25,19 @@ OPENAI_BUILTIN_VOICES = {
 }
 
 
+def tts_provider_timeouts(provider: str | None = None) -> tuple[float, float]:
+    selected = str(provider or getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower()
+    if selected == "elevenlabs":
+        connect = float(getattr(settings, "ELEVENLABS_TTS_CONNECT_TIMEOUT_SEC", 15.0))
+        read = float(getattr(settings, "ELEVENLABS_TTS_TIMEOUT_SEC", 90.0))
+        return connect, read
+    if selected == "fish":
+        connect = float(getattr(settings, "FISH_TTS_CONNECT_TIMEOUT_SEC", 15.0))
+        read = float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 90.0))
+        return connect, read
+    return 15.0, 90.0
+
+
 def _get_openai_key() -> str:
     key_obj = APIKey.objects.filter(is_active=True, llm_type="openai").order_by("order").first()
     if key_obj and key_obj.key:
@@ -57,6 +70,14 @@ def synthesize_speech(
             model=model or settings.FISH_TTS_MODEL,
             audio_format=selected_format,
         )
+    elif provider == "elevenlabs":
+        selected_format = audio_format or "mp3"
+        audio_bytes = _synthesize_elevenlabs_speech(
+            text=text,
+            voice=voice,
+            model=model or settings.ELEVENLABS_MODEL_ID,
+            output_format=audio_format or settings.ELEVENLABS_OUTPUT_FORMAT,
+        )
     elif provider == "openai":
         selected_format = audio_format or "mp3"
         audio_bytes = _synthesize_openai_speech(
@@ -67,7 +88,7 @@ def synthesize_speech(
         )
     else:
         raise ServiceConfigurationError(
-            f"Unsupported TTS_PROVIDER '{provider}'. Expected 'openai' or 'fish'.",
+            f"Unsupported TTS_PROVIDER '{provider}'. Expected 'openai', 'fish', or 'elevenlabs'.",
             code="TTS_PROVIDER_UNSUPPORTED",
         )
 
@@ -119,8 +140,7 @@ def _synthesize_fish_speech(
     if reference_id:
         payload["reference_id"] = reference_id
 
-    connect_timeout = float(getattr(settings, "FISH_TTS_CONNECT_TIMEOUT_SEC", 15.0))
-    read_timeout = float(getattr(settings, "FISH_TTS_TIMEOUT_SEC", 90.0))
+    connect_timeout, read_timeout = tts_provider_timeouts("fish")
     response = requests.post(
         "https://api.fish.audio/v1/tts",
         headers={
@@ -135,8 +155,54 @@ def _synthesize_fish_speech(
     return response.content
 
 
+def _synthesize_elevenlabs_speech(
+    *,
+    text: str,
+    voice: str | None,
+    model: str,
+    output_format: str,
+) -> bytes:
+    api_key = str(getattr(settings, "ELEVENLABS_API_KEY", "") or "").strip()
+    if not api_key:
+        raise ServiceConfigurationError(
+            "TTS requires ELEVENLABS_API_KEY when TTS_PROVIDER=elevenlabs.",
+            code="TTS_API_KEY_MISSING",
+        )
+
+    voice_id = _select_elevenlabs_voice_id(voice)
+    if not voice_id:
+        raise ServiceConfigurationError(
+            "TTS requires a voice_id when TTS_PROVIDER=elevenlabs.",
+            code="TTS_VOICE_ID_MISSING",
+        )
+
+    connect_timeout, read_timeout = tts_provider_timeouts("elevenlabs")
+    request_timeout = connect_timeout + read_timeout
+
+    from elevenlabs.client import ElevenLabs
+
+    client = ElevenLabs(api_key=api_key, timeout=request_timeout)
+    audio = client.text_to_speech.convert(
+        text=text,
+        voice_id=voice_id,
+        model_id=model,
+        output_format=output_format,
+    )
+    if isinstance(audio, (bytes, bytearray)):
+        return bytes(audio)
+    return b"".join(chunk for chunk in audio)
+
+
 def _select_fish_reference_id(voice: str | None) -> str:
     configured = str(getattr(settings, "FISH_TTS_REFERENCE_ID", "") or "").strip()
+    requested = str(voice or "").strip()
+    if requested and requested.lower() not in OPENAI_BUILTIN_VOICES:
+        return requested
+    return configured
+
+
+def _select_elevenlabs_voice_id(voice: str | None) -> str:
+    configured = str(getattr(settings, "ELEVENLABS_DEFAULT_VOICE_ID", "") or "").strip()
     requested = str(voice or "").strip()
     if requested and requested.lower() not in OPENAI_BUILTIN_VOICES:
         return requested
