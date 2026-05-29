@@ -1,3 +1,6 @@
+import logging
+import time
+from typing import Callable
 from uuid import uuid4
 
 import requests
@@ -8,6 +11,41 @@ from openai import OpenAI
 
 from backend.conversation.exceptions import ServiceConfigurationError
 from backend.llm_caller.models import APIKey
+
+logger = logging.getLogger(__name__)
+
+_TTS_RETRY_BACKOFFS_SEC = (0.5, 1.0)
+
+
+def _retry_tts_call(
+    call: Callable[[], bytes],
+    *,
+    retry_on: tuple[type[BaseException], ...],
+    provider: str,
+) -> bytes:
+    """
+    Retry a TTS HTTP call on transient connection-layer errors (TLS handshake
+    drops, connection resets). Backoffs of 0.5s and 1.0s — two retries max.
+    Does NOT retry on HTTP status errors (4xx/5xx); those are deterministic.
+    """
+    total_attempts = len(_TTS_RETRY_BACKOFFS_SEC) + 1
+    for attempt in range(total_attempts):
+        try:
+            return call()
+        except retry_on as exc:
+            if attempt == total_attempts - 1:
+                logger.warning(
+                    "tts_retry_exhausted provider=%s attempts=%d error=%s",
+                    provider, total_attempts, type(exc).__name__,
+                )
+                raise
+            sleep_for = _TTS_RETRY_BACKOFFS_SEC[attempt]
+            logger.warning(
+                "tts_retry provider=%s attempt=%d/%d backoff=%.1f error=%s",
+                provider, attempt + 1, total_attempts, sleep_for, type(exc).__name__,
+            )
+            time.sleep(sleep_for)
+    raise RuntimeError("unreachable")
 
 
 OPENAI_BUILTIN_VOICES = {
@@ -141,18 +179,30 @@ def _synthesize_fish_speech(
         payload["reference_id"] = reference_id
 
     connect_timeout, read_timeout = tts_provider_timeouts("fish")
-    response = requests.post(
-        "https://api.fish.audio/v1/tts",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "model": model,
-        },
-        json=payload,
-        timeout=(connect_timeout, read_timeout),
+
+    def _call() -> bytes:
+        response = requests.post(
+            "https://api.fish.audio/v1/tts",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "model": model,
+            },
+            json=payload,
+            timeout=(connect_timeout, read_timeout),
+        )
+        response.raise_for_status()
+        return response.content
+
+    return _retry_tts_call(
+        _call,
+        retry_on=(
+            requests.exceptions.SSLError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ),
+        provider="fish",
     )
-    response.raise_for_status()
-    return response.content
 
 
 def _synthesize_elevenlabs_speech(
@@ -179,18 +229,31 @@ def _synthesize_elevenlabs_speech(
     connect_timeout, read_timeout = tts_provider_timeouts("elevenlabs")
     request_timeout = connect_timeout + read_timeout
 
+    import httpx
     from elevenlabs.client import ElevenLabs
 
-    client = ElevenLabs(api_key=api_key, timeout=request_timeout)
-    audio = client.text_to_speech.convert(
-        text=text,
-        voice_id=voice_id,
-        model_id=model,
-        output_format=output_format,
+    def _call() -> bytes:
+        client = ElevenLabs(api_key=api_key, timeout=request_timeout)
+        audio = client.text_to_speech.convert(
+            text=text,
+            voice_id=voice_id,
+            model_id=model,
+            output_format=output_format,
+        )
+        if isinstance(audio, (bytes, bytearray)):
+            return bytes(audio)
+        return b"".join(chunk for chunk in audio)
+
+    return _retry_tts_call(
+        _call,
+        retry_on=(
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+            httpx.TimeoutException,
+        ),
+        provider="elevenlabs",
     )
-    if isinstance(audio, (bytes, bytearray)):
-        return bytes(audio)
-    return b"".join(chunk for chunk in audio)
 
 
 def _select_fish_reference_id(voice: str | None) -> str:

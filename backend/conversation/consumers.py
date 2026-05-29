@@ -607,7 +607,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         )
         voice = prep["voice"]
         audio_url, t_tts_ms = await self._synthesize_agent_audio(
-            text=prep["utterance"],
+            text=prep["utterance_tts"],
             voice=voice,
         )
         return await self._finalize_agent_llm_turn(prep, audio_url=audio_url, t_tts_ms=t_tts_ms)
@@ -668,6 +668,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             "agent_id": agent_id,
             "plan": plan,
             "utterance": utterance,
+            "utterance_tts": generated.utterance_tts,
             "generated": generated,
             "duplicate_result": duplicate_result,
             "t_utter_ms": t_utter_ms,
@@ -696,6 +697,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             session,
             speaker=agent_id,
             utterance=utterance,
+            utterance_tts=prep["utterance_tts"],
             facilitator_plan=plan,
             source="llm",
             audio_url=audio_url,

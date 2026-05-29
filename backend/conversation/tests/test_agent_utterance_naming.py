@@ -9,7 +9,6 @@ from backend.conversation.services.agent import _avoid_question_ending_when_not_
 from backend.conversation.services.agent import _build_agent_retrieval_context
 from backend.conversation.services.agent import _enforce_directive_target_name
 from backend.conversation.services.agent import _limit_to_three_sentences
-from backend.conversation.services.agent import _strip_bracketed_text
 from backend.conversation.services.agent import generate_agent_utterance
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
 from backend.conversation.services.retrieval import RetrievedContext
@@ -41,12 +40,6 @@ def test_enforce_directive_target_name_noop_for_non_directives():
         target_display_name="Alex",
     )
     assert out == "I agree with that."
-
-
-def test_strip_bracketed_text_removes_parentheses_and_brackets():
-    out = _strip_bracketed_text("I agree (as agent_2) [meta]. Let's continue.")
-    assert "agent_2" not in out
-    assert "meta" not in out
 
 
 def test_avoid_question_ending_converts_non_directives_to_period():
@@ -483,4 +476,107 @@ def test_generate_agent_utterance_with_retrieval_returns_context_for_persistence
     )
 
     assert generated.utterance == "Let's continue from what we already discussed."
+    assert generated.utterance_tts == "Let's continue from what we already discussed."
     assert generated.retrieval_context == retrieval_context
+
+
+def _patch_minimal_pipeline(monkeypatch, llm_content: str) -> None:
+    monkeypatch.setattr(
+        agent_service,
+        "_build_agent_retrieval_context",
+        lambda session, facilitator_plan: RetrievedContext(
+            query="query",
+            requested_sources=[],
+            source_statuses={},
+            items=[],
+            rendered_context="",
+        ),
+    )
+
+    class FakeResult:
+        content = llm_content
+
+    class FakeLLM:
+        def invoke(self, messages):
+            return FakeResult()
+
+    monkeypatch.setattr(agent_service, "get_default_chat_llm", lambda: FakeLLM())
+
+
+@pytest.mark.django_db
+def test_generate_agent_utterance_keeps_valid_audio_tag_in_tts_strips_for_display(
+    user,
+    monkeypatch,
+):
+    session, agent = _make_session_with_agent(user)
+    _patch_minimal_pipeline(monkeypatch, "[reflective] Hmm, I'm not sure about that.")
+
+    generated = generate_agent_utterance_with_retrieval(
+        session,
+        agent=agent,
+        facilitator_plan={
+            "type": "ASSERTIVES",
+            "subtype": "opinion",
+            "content_requirement": "",
+        },
+    )
+
+    assert generated.utterance == "Hmm, I'm not sure about that."
+    assert generated.utterance_tts == "[reflective] Hmm, I'm not sure about that."
+
+
+@pytest.mark.django_db
+def test_generate_agent_utterance_strips_unknown_bracket_content_from_both(
+    user,
+    monkeypatch,
+):
+    session, agent = _make_session_with_agent(user)
+    _patch_minimal_pipeline(monkeypatch, "[meta] I agree (as agent_2). Let's continue.")
+
+    generated = generate_agent_utterance_with_retrieval(
+        session,
+        agent=agent,
+        facilitator_plan={
+            "type": "ASSERTIVES",
+            "subtype": "opinion",
+            "content_requirement": "",
+        },
+    )
+
+    for field in (generated.utterance, generated.utterance_tts):
+        assert "meta" not in field
+        assert "agent_2" not in field
+        assert "I agree" in field
+        assert "Let's continue" in field
+
+
+@pytest.mark.django_db
+def test_generate_agent_utterance_mixed_tags_display_tag_free_tts_only_valid(
+    user,
+    monkeypatch,
+):
+    session, agent = _make_session_with_agent(user)
+    _patch_minimal_pipeline(
+        monkeypatch,
+        "[deliberate] The data is clear. [meta] (as agent_2) [quietly] Trust me.",
+    )
+
+    generated = generate_agent_utterance_with_retrieval(
+        session,
+        agent=agent,
+        facilitator_plan={
+            "type": "ASSERTIVES",
+            "subtype": "inform",
+            "content_requirement": "",
+        },
+    )
+
+    assert "[" not in generated.utterance
+    assert "(" not in generated.utterance
+    assert "The data is clear." in generated.utterance
+    assert "Trust me." in generated.utterance
+
+    assert "[deliberate]" in generated.utterance_tts
+    assert "[quietly]" in generated.utterance_tts
+    assert "meta" not in generated.utterance_tts
+    assert "agent_2" not in generated.utterance_tts

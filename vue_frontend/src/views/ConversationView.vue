@@ -377,13 +377,41 @@ async function generateCefrSamples() {
   }
 }
 
+function toggleRecordingFromKeyboard() {
+  if (micState.value === 'recording') {
+    stopRecording()
+    return
+  }
+  if (micState.value !== 'idle' && micState.value !== 'error') {
+    return
+  }
+  if (!needUserTurn.value || needFirstTurnChoice.value) return
+  void startRecording()
+}
+
+function handleRecordShortcut(event: KeyboardEvent) {
+  if (event.code !== 'Space') return
+  if (event.repeat) return
+  if (event.metaKey || event.ctrlKey || event.altKey) return
+  const focused = document.activeElement as HTMLElement | null
+  if (focused) {
+    const tag = focused.tagName?.toUpperCase()
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return
+    if (focused.isContentEditable) return
+  }
+  event.preventDefault()
+  toggleRecordingFromKeyboard()
+}
+
 onMounted(() => {
   ws.connect()
   const off = ws.onEvent(handleEvent)
+  window.addEventListener('keydown', handleRecordShortcut)
   onUnmounted(() => off())
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', handleRecordShortcut)
   clearRecordingPreview()
   audioQueue.value = []
   if (currentAudio.value) {
@@ -570,6 +598,11 @@ onUnmounted(() => {
                 <Button variant="outline" :disabled="micState !== 'recording'" @click="stopRecording">
                   Stop
                 </Button>
+              </div>
+              <div class="text-xs text-muted-foreground">
+                Press
+                <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
+                to start or stop recording.
               </div>
 
               <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">

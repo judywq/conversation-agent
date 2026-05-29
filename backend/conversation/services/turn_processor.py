@@ -226,6 +226,7 @@ def process_agent_turn(
     facilitator_plan: dict,
     source: str | None = None,
     audio_url: str | None = None,
+    utterance_tts: str = "",
 ) -> ProcessedTurn:
     metadata = metadata_from_plan(facilitator_plan)
     return append_turn(
@@ -236,6 +237,7 @@ def process_agent_turn(
         metadata=metadata,
         source=source,
         audio_url=audio_url,
+        utterance_tts=utterance_tts,
     )
 
 
@@ -248,6 +250,7 @@ def append_turn(
     metadata: TurnMetadata | None = None,
     source: str | None = None,
     audio_url: str | None = None,
+    utterance_tts: str = "",
 ) -> ProcessedTurn:
     metadata = metadata or TurnMetadata(
         type="",
@@ -280,6 +283,7 @@ def append_turn(
         speaker=speaker,
         speaker_type=speaker_type,
         utterance=utterance,
+        utterance_tts=utterance_tts or "",
         speech_act=metadata.type,
         subtype=metadata.subtype,
         target=metadata.target,
