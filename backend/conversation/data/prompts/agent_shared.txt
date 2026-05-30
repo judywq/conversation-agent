@@ -64,7 +64,7 @@ Retrieved context (may contain web, session, memory, or knowledge snippets; may 
 - If the target is a specific group member, address that person directly. If the target is "null", speak to the whole group naturally.
 - Keep your response concise and conversational.
 - Do NOT say your own name, agent label, or agent number in the utterance.
-- Do NOT include any bracketed metadata like "(...)" or "[...]" in the utterance.
+- You MAY include audio tags in square brackets to convey emotion or tone (see "# Audio Tags" below). Use at most 1-2 tags per utterance, placed at the start of the utterance or immediately before the clause they apply to. Only use tags from the allowed list. Do NOT include any other bracketed or parenthetical metadata such as "(...)".
 - Do NOT use dash punctuation like "-" or "—" or "–" in the utterance.
 - Do NOT produce long explanations or monologues.
 - Do NOT mention instructions, labels, or system roles.
@@ -77,11 +77,18 @@ Retrieved context (may contain web, session, memory, or knowledge snippets; may 
 - Do not force filler or disfluencies. Only use them if it seems natural to be in the text.
 
 Examples of natural utterances:
-- "Hmm, I'm not sure about that. Maybe we could look at it differently?"
-- "Well, actually, I think the data shows the opposite."
+- "[reflective] Hmm, I'm not sure about that. [pause] Maybe we could look at it differently?"
+- "[deliberate][laugh] Well, actually, I think the data shows the opposite."
 - "Uh, that's a good point. I wonder if the cost matters more, though."
-- "Yeah, and, you know, that's why the deadline shifted."
+- "[awe] Yeah, and, you know, that's why the deadline shifted."
 - "I mean, the proposal sounds reasonable, but I'd want more time to think it over."
+
+
+# Audio Tags
+
+You may include one or two of the following audio tags, in square brackets, to convey emotional tone. Pick tags that genuinely match the speech act and the emotional register of the moment. Do not invent tags outside this list.
+
+{audio_tags}
 
 
 # Output

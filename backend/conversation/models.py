@@ -88,6 +88,11 @@ class TurnRecord(TimestampedBase):
     )
 
     utterance = models.TextField()
+    utterance_tts = models.TextField(
+        blank=True,
+        default="",
+        help_text="Agent-only: text sent to the TTS provider, with audio tags preserved. Empty for user turns.",
+    )
 
     # Facilitator metadata (or generated for user)
     speech_act = models.CharField(max_length=50, blank=True, default="")

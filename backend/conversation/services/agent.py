@@ -8,6 +8,9 @@ from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.prompts import load_agent_persona_prompts
 from backend.conversation.prompts import render_prompt_template
+from backend.conversation.services.audio_tags import filter_to_valid_audio_tags
+from backend.conversation.services.audio_tags import format_audio_tags_for_prompt
+from backend.conversation.services.audio_tags import strip_audio_tags
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
@@ -25,6 +28,7 @@ _MAX_SENTENCES_PER_UTTERANCE = 3
 @dataclass(frozen=True)
 class GeneratedAgentUtterance:
     utterance: str
+    utterance_tts: str
     retrieval_context: RetrievedContext
 
 
@@ -104,22 +108,6 @@ def _limit_to_two_questions(utterance: str) -> str:
     if second == -1:
         return text[: first + 1].strip()
     return text[: second + 1].strip()
-
-
-def _strip_bracketed_text(utterance: str) -> str:
-    """
-    Remove bracketed/parenthetical fragments.
-    The user explicitly doesn't want bracketed info.
-    """
-    text = (utterance or "").strip()
-    if not text:
-        return text
-    text = re.sub(r"\[[^\]]*\]", "", text)
-    text = re.sub(r"\([^)]*\)", "", text)
-    # Normalize whitespace created by deletions
-    text = re.sub(r"\s{2,}", " ", text).strip()
-    # Clean stray spaces before punctuation
-    return re.sub(r"\s+([,.!?])", r"\1", text)
 
 
 def _strip_dash_punctuation(utterance: str) -> str:
@@ -296,6 +284,7 @@ def generate_agent_utterance_with_retrieval(
         speech_act_subtype=str(facilitator_plan.get("subtype") or "inform"),
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
         retrieved_context=retrieval_context.rendered_context,
+        audio_tags=format_audio_tags_for_prompt(),
     )
     system = SystemMessage(content=prompt_text)
 
@@ -308,21 +297,20 @@ def generate_agent_utterance_with_retrieval(
         session,
         str(facilitator_plan.get("target") or ""),
     )
-    cleaned = _limit_to_two_questions(
-        _strip_dash_punctuation(_strip_bracketed_text(text.strip())),
-    )
+    cleaned = _limit_to_two_questions(_strip_dash_punctuation(text.strip()))
     cleaned = _avoid_question_ending_when_not_request(
         cleaned,
         speech_act_type=speech_act_type,
         speech_act_subtype=speech_act_subtype,
     )
     cleaned = _limit_to_three_sentences(cleaned)
-    utterance = _enforce_directive_target_name(
+    cleaned = _enforce_directive_target_name(
         cleaned,
         speech_act_type=speech_act_type,
         target_display_name=target_display_name,
     )
     return GeneratedAgentUtterance(
-        utterance=utterance,
+        utterance=strip_audio_tags(cleaned),
+        utterance_tts=filter_to_valid_audio_tags(cleaned),
         retrieval_context=retrieval_context,
     )
