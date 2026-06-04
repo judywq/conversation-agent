@@ -66,6 +66,15 @@ USER_MEMORY_EXTRACTION_ENABLED = env.bool(
 WEB_SEARCH_PROVIDER = env.str("WEB_SEARCH_PROVIDER", default="openai")
 TAVILY_API = env.str("TAVILY_API", default="")
 
+# News ingestion from Miniflux.
+MINIFLUX_BASE_URL = env.str("MINIFLUX_BASE_URL", default="")
+MINIFLUX_API_TOKEN = env.str("MINIFLUX_API_TOKEN", default="")
+MINIFLUX_USERNAME = env.str("MINIFLUX_USERNAME", default="")
+MINIFLUX_PASSWORD = env.str("MINIFLUX_PASSWORD", default="")
+MINIFLUX_TIMEOUT_SEC = env.float("MINIFLUX_TIMEOUT_SEC", default=15.0)
+NEWS_SYNC_BATCH_SIZE = env.int("NEWS_SYNC_BATCH_SIZE", default=100)
+NEWS_CLASSIFICATION_BATCH_SIZE = env.int("NEWS_CLASSIFICATION_BATCH_SIZE", default=25)
+
 # DATABASES
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
@@ -129,6 +138,7 @@ LOCAL_APPS = [
     "backend.users",
     "backend.llm_caller",
     "backend.conversation",
+    "backend.news",
     # Your stuff: custom apps go here
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
@@ -362,6 +372,16 @@ CELERY_TASK_TIME_LIMIT = 60 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#beat-scheduler
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+CELERY_BEAT_SCHEDULE = {
+    "sync-miniflux-news-hourly": {
+        "task": "backend.news.tasks.sync_miniflux_news",
+        "schedule": 60 * 60,
+    },
+    "classify-news-half-hourly": {
+        "task": "backend.news.tasks.classify_unclassified_news",
+        "schedule": 30 * 60,
+    },
+}
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#worker-send-task-events
 CELERY_WORKER_SEND_TASK_EVENTS = True
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#std-setting-task_send_sent_event
