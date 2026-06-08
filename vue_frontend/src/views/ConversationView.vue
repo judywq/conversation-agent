@@ -59,6 +59,7 @@ const mediaRecorder = ref<MediaRecorder | null>(null)
 const recordedChunks = ref<Blob[]>([])
 const recordedBlob = ref<Blob | null>(null)
 const recordedUrl = ref<string | null>(null)
+const autoSendRecordingAfterStop = ref(false)
 const currentAudio = ref<HTMLAudioElement | null>(null)
 const audioQueue = ref<string[]>([])
 
@@ -300,7 +301,12 @@ async function startRecording() {
       const blob = new Blob(recordedChunks.value, { type: 'audio/webm' })
       recordedBlob.value = blob
       recordedUrl.value = URL.createObjectURL(blob)
-      micState.value = 'preview'
+      if (autoSendRecordingAfterStop.value) {
+        autoSendRecordingAfterStop.value = false
+        void sendRecording()
+      } else {
+        micState.value = 'preview'
+      }
     }
     recorder.start()
     mediaRecorder.value = recorder
@@ -379,6 +385,7 @@ async function generateCefrSamples() {
 
 function toggleRecordingFromKeyboard() {
   if (micState.value === 'recording') {
+    autoSendRecordingAfterStop.value = true
     stopRecording()
     return
   }
@@ -602,7 +609,7 @@ onUnmounted(() => {
               <div class="text-xs text-muted-foreground">
                 Press
                 <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
-                to start or stop recording.
+                to start recording, then press again to stop and send.
               </div>
 
               <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
