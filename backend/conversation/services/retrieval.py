@@ -12,7 +12,7 @@ from django.db.models import Q
 from pgvector.django import CosineDistance
 
 from backend.conversation.models import ConversationSession
-from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import Exemplar
 from backend.conversation.models import SessionNewsChunk
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
@@ -68,7 +68,7 @@ class RetrievedContext:
 
 @dataclass
 class _KnowledgeCandidate:
-    snippet: KnowledgeSnippet
+    exemplar: Exemplar
     keyword_score: float | None = None
     keyword_rank: int | None = None
     vector_similarity: float | None = None
@@ -248,7 +248,7 @@ def _render_context(
             ).strip()
             previous_sentence = str(metadata.get("previous_sentence") or "").strip()
             next_sentence = str(metadata.get("next_sentence") or "").strip()
-            snippet_id = metadata.get("knowledge_snippet_id")
+            exemplar_id = metadata.get("exemplar_id")
             if speech_act:
                 lines.append(f"   Speech Act: {speech_act}")
             if source_file:
@@ -257,8 +257,8 @@ def _render_context(
                 lines.append(f"   Previous: {previous_sentence}")
             if next_sentence:
                 lines.append(f"   Next: {next_sentence}")
-            if snippet_id not in (None, ""):
-                lines.append(f"   Snippet ID: {snippet_id}")
+            if exemplar_id not in (None, ""):
+                lines.append(f"   Exemplar ID: {exemplar_id}")
         lines.append(f"   Excerpt: {item.excerpt}")
     return "\n".join(lines)
 
@@ -302,7 +302,7 @@ def _retrieve_web(query: str) -> tuple[list[RetrievedItem], str, str]:
 
 
 def _normal_knowledge_snippets() -> Any:
-    return KnowledgeSnippet.objects.filter(is_active=True).filter(
+    return Exemplar.objects.filter(is_active=True).filter(
         Q(metadata__kind__isnull=True) | ~Q(metadata__kind="speech_act_exemplar"),
     )
 
@@ -316,7 +316,7 @@ def _speech_act_exemplar_snippets(
     speech_act_type: str = "",
     speech_act_subtype: str = "",
 ) -> Any:
-    snippets = KnowledgeSnippet.objects.filter(
+    snippets = Exemplar.objects.filter(
         is_active=True,
         metadata__kind="speech_act_exemplar",
     )
@@ -359,7 +359,7 @@ def _keyword_candidates(
 
     ranked = sorted(scored_candidates, key=lambda x: (-x[0], x[1]))[:candidate_count]
     return [
-        _KnowledgeCandidate(snippet=snippet, keyword_score=score, keyword_rank=rank)
+        _KnowledgeCandidate(exemplar=snippet, keyword_score=score, keyword_rank=rank)
         for rank, (score, _snippet_id, snippet) in enumerate(ranked, start=1)
     ]
 
@@ -443,7 +443,7 @@ def _vector_candidates(
                 continue
             candidates.append(
                 _KnowledgeCandidate(
-                    snippet=snippet,
+                    exemplar=snippet,
                     vector_similarity=1.0 - float(distance),
                     vector_rank=rank,
                     embedding_model=snippet.embedding_model or result.model,
@@ -514,10 +514,10 @@ def _merge_candidates(
 ) -> list[_KnowledgeCandidate]:
     merged: dict[int, _KnowledgeCandidate] = {}
     for candidate in [*keyword_candidates, *vector_candidates]:
-        snippet_id = candidate.snippet.id
-        existing = merged.get(snippet_id)
+        exemplar_id = candidate.exemplar.id
+        existing = merged.get(exemplar_id)
         if existing is None:
-            merged[snippet_id] = candidate
+            merged[exemplar_id] = candidate
             continue
         if candidate.keyword_score is not None:
             existing.keyword_score = candidate.keyword_score
@@ -859,24 +859,24 @@ def _retrieve_knowledge(query: str, *, top_k: int) -> tuple[list[RetrievedItem],
 
     ranked_candidates = sorted(
         candidates,
-        key=lambda candidate: (-candidate.rerank_score(), candidate.snippet.id),
+        key=lambda candidate: (-candidate.rerank_score(), candidate.exemplar.id),
     )
     items = []
     for candidate in ranked_candidates[:top_k]:
-        snippet = candidate.snippet
+        exemplar = candidate.exemplar
         rerank_score = candidate.rerank_score()
         global_score = candidate.global_score()
         items.append(
             RetrievedItem(
                 source="knowledge",
-                title=snippet.title,
-                excerpt=_excerpt(snippet.content),
-                source_uri=snippet.source_uri,
-                source_label=snippet.source_label,
+                title=exemplar.title,
+                excerpt=_excerpt(exemplar.content),
+                source_uri=exemplar.source_uri,
+                source_label=exemplar.source_label,
                 score=global_score,
                 metadata={
-                    "knowledge_snippet_id": snippet.id,
-                    "metadata": snippet.metadata,
+                    "exemplar_id": exemplar.id,
+                    "metadata": exemplar.metadata,
                     "retrieval_channels": candidate.retrieval_channels,
                     "vector_status": vector_status,
                     "keyword_score": candidate.keyword_score,
@@ -937,13 +937,13 @@ def _retrieve_exemplar(
         vector_candidates, vector_status = [], SOURCE_NO_RESULTS
     candidates = _merge_candidates(keyword_candidates, vector_candidates)
     if has_label_filter:
-        candidate_ids = {candidate.snippet.id for candidate in candidates}
+        candidate_ids = {candidate.exemplar.id for candidate in candidates}
         for snippet in snippets.order_by("id"):
             if snippet.id in candidate_ids:
                 continue
             candidates.append(
                 _KnowledgeCandidate(
-                    snippet=snippet,
+                    exemplar=snippet,
                     keyword_score=_EXEMPLAR_LABEL_MATCH_FALLBACK_SCORE,
                     keyword_rank=None,
                 ),
@@ -959,24 +959,24 @@ def _retrieve_exemplar(
         key=lambda candidate: (
             -candidate.rerank_score(),
             -candidate.global_score(),
-            candidate.snippet.id,
+            candidate.exemplar.id,
         ),
     )[:top_k]
     for candidate in ranked_candidates:
-        snippet = candidate.snippet
-        raw_metadata = snippet.metadata if isinstance(snippet.metadata, dict) else {}
+        exemplar = candidate.exemplar
+        raw_metadata = exemplar.metadata if isinstance(exemplar.metadata, dict) else {}
         rerank_score = candidate.rerank_score()
         global_score = candidate.global_score()
         items.append(
             RetrievedItem(
                 source="exemplar",
-                title=snippet.title,
-                excerpt=_excerpt(snippet.content),
-                source_uri=snippet.source_uri,
-                source_label=snippet.source_label,
+                title=exemplar.title,
+                excerpt=_excerpt(exemplar.content),
+                source_uri=exemplar.source_uri,
+                source_label=exemplar.source_label,
                 score=global_score,
                 metadata={
-                    "knowledge_snippet_id": snippet.id,
+                    "exemplar_id": exemplar.id,
                     "kind": raw_metadata.get("kind", ""),
                     "SA_type": raw_metadata.get("SA_type", ""),
                     "subtype": raw_metadata.get("subtype", ""),

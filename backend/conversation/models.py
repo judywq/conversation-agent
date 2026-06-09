@@ -286,7 +286,7 @@ class SessionNewsChunk(TimestampedBase):
         return f"SessionNewsChunk(session={self.session_id}, article={self.news_article_id}, idx={self.chunk_index})"
 
 
-class KnowledgeSnippet(TimestampedBase):
+class Exemplar(TimestampedBase):
     title = models.CharField(max_length=255)
     content = models.TextField()
     source_uri = models.CharField(max_length=1000, blank=True, default="")
@@ -300,6 +300,8 @@ class KnowledgeSnippet(TimestampedBase):
     embedding_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        verbose_name = "Exemplar"
+        verbose_name_plural = "Exemplars"
         indexes = [
             HnswIndex(
                 name="conv_know_emb_hnsw",

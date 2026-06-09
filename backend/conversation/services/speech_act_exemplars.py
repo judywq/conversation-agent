@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import Exemplar
 from backend.conversation.services.facilitator import ALLOWED_SA
 
 EXEMPLAR_KIND = "speech_act_exemplar"
@@ -111,7 +111,7 @@ def import_speech_act_annotations(
 
     existing_import_keys = {
         import_key
-        for import_key in KnowledgeSnippet.objects.filter(
+        for import_key in Exemplar.objects.filter(
             metadata__kind=EXEMPLAR_KIND,
         ).values_list("metadata__import_key", flat=True)
         if isinstance(import_key, str) and import_key
@@ -150,7 +150,7 @@ def import_speech_act_annotations(
             f"{annotation.sa_type}/{annotation.subtype} "
             f"#{annotation.row_number}"
         )
-        KnowledgeSnippet.objects.create(
+        Exemplar.objects.create(
             title=title,
             content=annotation.sentence,
             source_uri=f"elfa-sa://{annotation.file_name}#{import_key[:12]}",

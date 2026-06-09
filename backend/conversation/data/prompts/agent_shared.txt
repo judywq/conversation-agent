@@ -41,7 +41,7 @@ Content requirement:
 
 # Retrieved information (RAG)
 
-Retrieved context (may contain web, session, memory, or knowledge snippets; may also report that no usable retrieval was found):
+Retrieved context (may contain web, session, memory, knowledge, news, or exemplars; may also report that no usable retrieval was found):
 {retrieved_context}
 
 # Generation Guidelines

@@ -8,11 +8,11 @@ from django.core.management import CommandError
 from django.core.management import call_command
 from django.test import override_settings
 
-from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import Exemplar
 from backend.conversation.models import UserMemory
 from backend.conversation.services.embeddings import EmbeddingResult
 from backend.conversation.services.embeddings import (
-    build_knowledge_snippet_embedding_text,
+    build_exemplar_embedding_text,
 )
 from backend.conversation.services.embeddings import build_user_memory_embedding_text
 from backend.conversation.services.embeddings import embedding_text_hash
@@ -20,14 +20,14 @@ from backend.conversation.services.embeddings import fake_embedding
 from backend.conversation.services.embeddings import generate_embedding
 from backend.conversation.services.embeddings import generate_embeddings
 from backend.conversation.services.embeddings import memory_embedding_is_stale
-from backend.conversation.services.embeddings import snippet_embedding_is_stale
+from backend.conversation.services.embeddings import exemplar_embedding_is_stale
 
 TEST_EMBEDDING_DIMENSIONS = 1536
 
 
 @pytest.mark.django_db
 def test_canonical_text_includes_speech_act_context() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/invite #1",
         content="I wonder whether there are any questions you'd like to ask.",
         source_label="CDIS01A.txt",
@@ -40,7 +40,7 @@ def test_canonical_text_includes_speech_act_context() -> None:
         },
     )
 
-    text = build_knowledge_snippet_embedding_text(snippet)
+    text = build_exemplar_embedding_text(snippet)
 
     assert "Title: CDIS01A DIRECTIVES/invite #1" in text
     assert "Content: I wonder whether there are any questions you'd like to ask." in text
@@ -100,7 +100,7 @@ def test_fake_embedding_is_deterministic_with_default_dimensions() -> None:
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_stale_returns_true_when_stored_model_differs() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples.",
         source_label="Course Handbook",
@@ -109,16 +109,16 @@ def test_stale_returns_true_when_stored_model_differs() -> None:
         embedding_dimensions=1536,
     )
     snippet.embedding_text_hash = embedding_text_hash(
-        build_knowledge_snippet_embedding_text(snippet),
+        build_exemplar_embedding_text(snippet),
     )
 
-    assert snippet_embedding_is_stale(snippet) is True
+    assert exemplar_embedding_is_stale(snippet) is True
 
 
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_stale_returns_true_when_stored_dimensions_differ() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples.",
         source_label="Course Handbook",
@@ -127,10 +127,10 @@ def test_stale_returns_true_when_stored_dimensions_differ() -> None:
         embedding_dimensions=512,
     )
     snippet.embedding_text_hash = embedding_text_hash(
-        build_knowledge_snippet_embedding_text(snippet),
+        build_exemplar_embedding_text(snippet),
     )
 
-    assert snippet_embedding_is_stale(snippet) is True
+    assert exemplar_embedding_is_stale(snippet) is True
 
 
 @pytest.mark.django_db
@@ -219,21 +219,21 @@ def test_generate_embeddings_batches_openai_inputs() -> None:
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_refresh_command_generates_missing_embedding() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples.",
         source_label="Course Handbook",
     )
     stdout = StringIO()
 
-    call_command("refresh_knowledge_embeddings", stdout=stdout)
+    call_command("refresh_exemplar_embeddings", stdout=stdout)
 
     snippet.refresh_from_db()
     assert len(snippet.embedding) == TEST_EMBEDDING_DIMENSIONS
     assert snippet.embedding_model == "fake"
     assert snippet.embedding_dimensions == TEST_EMBEDDING_DIMENSIONS
     assert snippet.embedding_text_hash == embedding_text_hash(
-        build_knowledge_snippet_embedding_text(snippet),
+        build_exemplar_embedding_text(snippet),
     )
     assert snippet.embedding_updated_at is not None
     assert "updated=1 dry_run=False" in stdout.getvalue()
@@ -242,14 +242,14 @@ def test_refresh_command_generates_missing_embedding() -> None:
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_refresh_command_limit_zero_writes_no_embeddings() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples.",
         source_label="Course Handbook",
     )
     stdout = StringIO()
 
-    call_command("refresh_knowledge_embeddings", "--limit", "0", stdout=stdout)
+    call_command("refresh_exemplar_embeddings", "--limit", "0", stdout=stdout)
 
     snippet.refresh_from_db()
     assert snippet.embedding is None
@@ -259,13 +259,13 @@ def test_refresh_command_limit_zero_writes_no_embeddings() -> None:
 @pytest.mark.django_db
 def test_refresh_command_rejects_negative_limit() -> None:
     with pytest.raises(CommandError, match="--limit must be greater than or equal to 0"):
-        call_command("refresh_knowledge_embeddings", "--limit", "-1")
+        call_command("refresh_exemplar_embeddings", "--limit", "-1")
 
 
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_refresh_command_updates_stale_embedding_when_requested() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples.",
         source_label="Course Handbook",
@@ -276,11 +276,11 @@ def test_refresh_command_updates_stale_embedding_when_requested() -> None:
     )
     stdout = StringIO()
 
-    call_command("refresh_knowledge_embeddings", "--stale", stdout=stdout)
+    call_command("refresh_exemplar_embeddings", "--stale", stdout=stdout)
 
     snippet.refresh_from_db()
     assert snippet.embedding_text_hash == embedding_text_hash(
-        build_knowledge_snippet_embedding_text(snippet),
+        build_exemplar_embedding_text(snippet),
     )
     assert list(snippet.embedding) != fake_embedding("old text")
     assert "updated=1 dry_run=False" in stdout.getvalue()
@@ -289,14 +289,14 @@ def test_refresh_command_updates_stale_embedding_when_requested() -> None:
 @pytest.mark.django_db
 @override_settings(EMBEDDING_PROVIDER="fake", EMBEDDING_DIMENSIONS=1536)
 def test_refresh_command_dry_run_does_not_write_embedding() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples.",
         source_label="Course Handbook",
     )
     stdout = StringIO()
 
-    call_command("refresh_knowledge_embeddings", "--dry-run", stdout=stdout)
+    call_command("refresh_exemplar_embeddings", "--dry-run", stdout=stdout)
 
     snippet.refresh_from_db()
     assert snippet.embedding is None
@@ -350,7 +350,7 @@ def test_refresh_user_memory_embeddings_dry_run_does_not_write(user) -> None:
 @pytest.mark.django_db
 def test_refresh_command_skip_errors_continues_after_embedding_failure() -> None:
     snippets = [
-        KnowledgeSnippet.objects.create(title=f"Snippet {index}", content=f"Text {index}")
+        Exemplar.objects.create(title=f"Snippet {index}", content=f"Text {index}")
         for index in range(3)
     ]
     stdout = StringIO()
@@ -366,13 +366,13 @@ def test_refresh_command_skip_errors_continues_after_embedding_failure() -> None
         )
 
     with patch(
-        "backend.conversation.management.commands.refresh_knowledge_embeddings.generate_embeddings",
+        "backend.conversation.management.commands.refresh_exemplar_embeddings.generate_embeddings",
         side_effect=TimeoutError("batch timeout"),
     ), patch(
-        "backend.conversation.management.commands.refresh_knowledge_embeddings.generate_embedding",
+        "backend.conversation.management.commands.refresh_exemplar_embeddings.generate_embedding",
         side_effect=embedding_or_timeout,
     ):
-        call_command("refresh_knowledge_embeddings", "--skip-errors", stdout=stdout)
+        call_command("refresh_exemplar_embeddings", "--skip-errors", stdout=stdout)
 
     for snippet in snippets:
         snippet.refresh_from_db()

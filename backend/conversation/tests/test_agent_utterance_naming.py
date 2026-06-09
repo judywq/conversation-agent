@@ -2,7 +2,7 @@ import pytest
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
-from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import Exemplar
 from backend.conversation.models import TurnRecord
 from backend.conversation.services import agent as agent_service
 from backend.conversation.services.agent import _avoid_question_ending_when_not_request
@@ -408,7 +408,7 @@ def test_generate_agent_utterance_injects_speech_act_exemplar_guidance(user, mon
         utterance="I am not sure what evidence you mean.",
         source="text",
     )
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="ULECD040 DIRECTIVES/request_info #2",
         content="have you any data on how people use the services",
         source_uri="elfa-sa://ULECD040.txt#import-key-1",
@@ -450,7 +450,7 @@ def test_generate_agent_utterance_injects_speech_act_exemplar_guidance(user, mon
 
     prompt = captured["system_prompt"]
     assert generated.retrieval_context.source_statuses["exemplar"] == "success"
-    assert generated.retrieval_context.items[0].metadata["knowledge_snippet_id"] == snippet.id
+    assert generated.retrieval_context.items[0].metadata["exemplar_id"] == snippet.id
     assert "have you any data on how people use the services" in prompt
     assert "Speech Act: DIRECTIVES/request_info" in prompt
     assert "Source file: ULECD040.txt" in prompt
