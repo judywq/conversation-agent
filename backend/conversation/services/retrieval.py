@@ -13,6 +13,7 @@ from pgvector.django import CosineDistance
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import SessionNewsChunk
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
 from backend.conversation.models import UserMemory
@@ -27,7 +28,7 @@ SOURCE_SUCCESS = "success"
 SOURCE_NO_RESULTS = "no-results"
 SOURCE_SKIPPED = "skipped"
 SOURCE_FAILED = "failed"
-SUPPORTED_SOURCES = {"web", "session", "memory", "knowledge", "exemplar"}
+SUPPORTED_SOURCES = {"web", "session", "memory", "knowledge", "exemplar", "news"}
 _WEB_STATUS_PREFIX = "(Web search"
 _EXEMPLAR_LABEL_MATCH_FALLBACK_SCORE = 0.1
 
@@ -68,6 +69,40 @@ class RetrievedContext:
 @dataclass
 class _KnowledgeCandidate:
     snippet: KnowledgeSnippet
+    keyword_score: float | None = None
+    keyword_rank: int | None = None
+    vector_similarity: float | None = None
+    vector_rank: int | None = None
+    embedding_model: str = ""
+
+    @property
+    def retrieval_channels(self) -> list[str]:
+        channels = []
+        if self.keyword_rank is not None:
+            channels.append("keyword")
+        if self.vector_rank is not None:
+            channels.append("vector")
+        return channels
+
+    def rerank_score(self) -> float:
+        rrf_k = float(getattr(settings, "HYBRID_RRF_K", 60))
+        keyword_weight = float(getattr(settings, "HYBRID_KEYWORD_WEIGHT", 1.0))
+        vector_weight = float(getattr(settings, "HYBRID_VECTOR_WEIGHT", 1.0))
+        score = 0.0
+        if self.keyword_rank is not None:
+            score += keyword_weight / (rrf_k + self.keyword_rank)
+        if self.vector_rank is not None:
+            score += vector_weight / (rrf_k + self.vector_rank)
+        return score
+
+    def global_score(self) -> float:
+        score = (self.keyword_score or 0.0) + max(self.vector_similarity or 0.0, 0.0)
+        return score or self.rerank_score()
+
+
+@dataclass
+class _NewsChunkCandidate:
+    chunk: SessionNewsChunk
     keyword_score: float | None = None
     keyword_rank: int | None = None
     vector_similarity: float | None = None
@@ -501,6 +536,107 @@ def _merge_knowledge_candidates(
     return _merge_candidates(keyword_candidates, vector_candidates)
 
 
+def _session_news_chunks(session: ConversationSession) -> Any:
+    article_ids = session.discussion_article_ids or []
+    if not article_ids:
+        return SessionNewsChunk.objects.none()
+    return SessionNewsChunk.objects.filter(
+        session=session,
+        news_article_id__in=article_ids,
+    ).select_related("news_article")
+
+
+def _keyword_news_candidates(
+    query: str,
+    chunks: Any,
+    *,
+    candidate_count: int,
+) -> list[_NewsChunkCandidate]:
+    terms = _tokenize(query)
+    if not terms or candidate_count <= 0:
+        return []
+
+    scored_candidates = []
+    for chunk in chunks:
+        article = chunk.news_article
+        score = _score_text(
+            terms,
+            chunk.content,
+            article.title if article else "",
+            article.url if article else "",
+        )
+        if score <= 0:
+            continue
+        scored_candidates.append((score, chunk.id, chunk))
+
+    ranked = sorted(scored_candidates, key=lambda x: (-x[0], x[1]))[:candidate_count]
+    return [
+        _NewsChunkCandidate(chunk=chunk, keyword_score=score, keyword_rank=rank)
+        for rank, (score, _chunk_id, chunk) in enumerate(ranked, start=1)
+    ]
+
+
+def _vector_news_candidates(
+    query: str,
+    chunks: Any,
+    *,
+    candidate_count: int,
+) -> tuple[list[_NewsChunkCandidate], str]:
+    if not getattr(settings, "VECTOR_RECALL_ENABLED", True) or candidate_count <= 0:
+        return [], SOURCE_SKIPPED
+
+    try:
+        chunks = chunks.filter(
+            embedding__isnull=False,
+            embedding_model=_expected_embedding_model(),
+            embedding_dimensions=_expected_embedding_dimensions(),
+        )
+        if not chunks.exists():
+            return [], SOURCE_NO_RESULTS
+        result = generate_embedding(query)
+        ranked = chunks.annotate(
+            distance=CosineDistance("embedding", result.vector),
+        ).order_by("distance", "id")[:candidate_count]
+        candidates = []
+        for rank, chunk in enumerate(ranked, start=1):
+            distance = getattr(chunk, "distance", None)
+            if distance is None:
+                continue
+            candidates.append(
+                _NewsChunkCandidate(
+                    chunk=chunk,
+                    vector_similarity=1.0 - float(distance),
+                    vector_rank=rank,
+                    embedding_model=chunk.embedding_model or result.model,
+                ),
+            )
+        return candidates, SOURCE_SUCCESS
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Vector news recall failed; falling back to keyword-only: %s", exc)
+        return [], SOURCE_FAILED
+
+
+def _merge_news_candidates(
+    keyword_candidates: list[_NewsChunkCandidate],
+    vector_candidates: list[_NewsChunkCandidate],
+) -> list[_NewsChunkCandidate]:
+    merged: dict[int, _NewsChunkCandidate] = {}
+    for candidate in [*keyword_candidates, *vector_candidates]:
+        chunk_id = candidate.chunk.id
+        existing = merged.get(chunk_id)
+        if existing is None:
+            merged[chunk_id] = candidate
+            continue
+        if candidate.keyword_score is not None:
+            existing.keyword_score = candidate.keyword_score
+            existing.keyword_rank = candidate.keyword_rank
+        if candidate.vector_similarity is not None:
+            existing.vector_similarity = candidate.vector_similarity
+            existing.vector_rank = candidate.vector_rank
+            existing.embedding_model = candidate.embedding_model
+    return list(merged.values())
+
+
 def _merge_memory_candidates(
     keyword_candidates: list[_MemoryCandidate],
     vector_candidates: list[_MemoryCandidate],
@@ -617,6 +753,74 @@ def _retrieve_memory(
                     "memory_type": memory.memory_type,
                     "confidence": memory.confidence,
                     "metadata": memory.metadata,
+                    "retrieval_channels": candidate.retrieval_channels,
+                    "vector_status": vector_status,
+                    "keyword_score": candidate.keyword_score,
+                    "keyword_rank": candidate.keyword_rank,
+                    "vector_similarity": candidate.vector_similarity,
+                    "vector_rank": candidate.vector_rank,
+                    "rerank_score": rerank_score,
+                    "global_score": global_score,
+                    "embedding_model": candidate.embedding_model,
+                },
+            ),
+        )
+    return items, SOURCE_SUCCESS
+
+
+def _retrieve_news(
+    session: ConversationSession,
+    query: str,
+    *,
+    top_k: int,
+) -> tuple[list[RetrievedItem], str]:
+    chunks = _session_news_chunks(session)
+    if not chunks.exists():
+        return [], SOURCE_NO_RESULTS
+    if not _tokenize(query):
+        return [], SOURCE_NO_RESULTS
+
+    keyword_candidate_count = int(getattr(settings, "HYBRID_KEYWORD_CANDIDATES", 20))
+    vector_candidate_count = int(getattr(settings, "HYBRID_VECTOR_CANDIDATES", 20))
+    keyword_candidates = _keyword_news_candidates(
+        query,
+        chunks.order_by("id"),
+        candidate_count=keyword_candidate_count,
+    )
+    vector_candidates, vector_status = _vector_news_candidates(
+        query,
+        chunks,
+        candidate_count=vector_candidate_count,
+    )
+    candidates = _merge_news_candidates(keyword_candidates, vector_candidates)
+
+    if not candidates:
+        if vector_status == SOURCE_FAILED:
+            return [], SOURCE_FAILED
+        return [], SOURCE_NO_RESULTS
+
+    ranked_candidates = sorted(
+        candidates,
+        key=lambda candidate: (-candidate.rerank_score(), candidate.chunk.id),
+    )
+    items = []
+    for candidate in ranked_candidates[:top_k]:
+        chunk = candidate.chunk
+        article = chunk.news_article
+        rerank_score = candidate.rerank_score()
+        global_score = candidate.global_score()
+        items.append(
+            RetrievedItem(
+                source="news",
+                title=article.title if article else f"News chunk {chunk.chunk_index}",
+                excerpt=_excerpt(chunk.content),
+                source_uri=article.url if article else "",
+                source_label=article.feed_title if article else "",
+                score=global_score,
+                metadata={
+                    "session_news_chunk_id": chunk.id,
+                    "news_article_id": chunk.news_article_id,
+                    "chunk_index": chunk.chunk_index,
                     "retrieval_channels": candidate.retrieval_channels,
                     "vector_status": vector_status,
                     "keyword_score": candidate.keyword_score,
@@ -851,6 +1055,8 @@ def retrieve(  # noqa: C901, PLR0913
                 speech_act_type=speech_act_type,
                 speech_act_subtype=speech_act_subtype,
             )
+        elif source == "news":
+            found, status = _retrieve_news(session, query, top_k=top_k)
         else:
             found, status = [], SOURCE_SKIPPED
         source_statuses[source] = status

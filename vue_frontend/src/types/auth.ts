@@ -17,6 +17,9 @@ export interface User {
   }>;
   preferred_name?: string | null;
   major?: string | null;
+  discussion_category?: string | null;
+  discussion_subtopic?: string | null;
+  discussion_scenario?: string | null;
 }
 
 export interface AuthState {

@@ -15,6 +15,7 @@ from backend.conversation.models import TurnEngineLog
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
 from backend.conversation.services.agent import resolve_agent_retrieval_sources
+from backend.conversation.services.session_news_chunks import materialize_session_news_knowledge
 from backend.conversation.services.agent_selection import (
     select_complementary_agent_personas,
 )
@@ -169,7 +170,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if str(profile_gate["cefr_sample_topic"] or "").strip() != topic.strip():
                 await self.send_json({"type": "error", "message": "Choose a CEFR listening level for this topic before starting."})
                 return
-            session = await self._create_session(topic=topic, agent_count=agent_count)
+            session = await self._create_session(
+                topic=topic,
+                agent_count=agent_count,
+                discussion=await self._discussion_context_for_topic(topic),
+            )
             self.session_id = session.id
             await self.send_json(
                 {
@@ -346,7 +351,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         **plan,
                         "_agent_persona_name": persona,
                     }
-                    if "web" in resolve_agent_retrieval_sources(plan_for_retrieval):
+                    if "web" in resolve_agent_retrieval_sources(
+                        plan_for_retrieval,
+                        session=session,
+                    ):
                         await self.send_json({
                             "type": "agent_status",
                             "status": "searching_online",
@@ -376,13 +384,60 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 continue
 
     @database_sync_to_async
-    def _create_session(self, *, topic: str, agent_count: int | None = None) -> ConversationSession:
+    def _discussion_context_for_topic(self, topic: str) -> dict:
+        user = self.scope["user"]
+        if not getattr(user, "is_authenticated", False):
+            return {}
+        user_model = get_user_model()
+        user = user_model.objects.select_related("userprofile").get(pk=user.pk)
+        profile = getattr(user, "userprofile", None)
+        if profile is None:
+            return {}
+        scenario = str(profile.discussion_scenario or "").strip()
+        if not scenario or scenario != str(topic or "").strip():
+            return {}
+        article_ids = list(profile.discussion_article_ids or [])
+        if not article_ids and profile.discussion_article_id:
+            article_ids = [profile.discussion_article_id]
+        return {
+            "news_category": str(profile.discussion_category or ""),
+            "news_subtopic": str(profile.discussion_subtopic or ""),
+            "scenario": scenario,
+            "news_article_id": profile.discussion_article_id,
+            "discussion_article_ids": article_ids,
+        }
+
+    @database_sync_to_async
+    def _create_session(
+        self,
+        *,
+        topic: str,
+        agent_count: int | None = None,
+        discussion: dict | None = None,
+    ) -> ConversationSession:
         user = self.scope["user"]
         desired_count = agent_count
         if desired_count is None:
             desired_count = int(getattr(settings, "CONVERSATION_AGENT_COUNT", 3) or 3)
         desired_count = max(1, min(5, int(desired_count)))
-        session = ConversationSession.objects.create(user=user, topic=topic, agent_count=desired_count)
+        discussion = discussion or {}
+        news_article_id = discussion.get("news_article_id")
+        discussion_article_ids = list(discussion.get("discussion_article_ids") or [])
+        if not discussion_article_ids and news_article_id:
+            discussion_article_ids = [int(news_article_id)]
+        scenario = str(discussion.get("scenario") or topic or "").strip()
+        session = ConversationSession.objects.create(
+            user=user,
+            topic=topic,
+            agent_count=desired_count,
+            news_category=str(discussion.get("news_category") or ""),
+            news_subtopic=str(discussion.get("news_subtopic") or ""),
+            scenario=scenario,
+            news_article_id=news_article_id if news_article_id else None,
+            discussion_article_ids=discussion_article_ids,
+        )
+        if discussion_article_ids:
+            materialize_session_news_knowledge(session, discussion_article_ids)
         ocean = user.userprofile.ocean if hasattr(user, "userprofile") else {}
         user_cefr_level = user.userprofile.cefr_level if hasattr(user, "userprofile") else ""
         user_major = user.userprofile.major if hasattr(user, "userprofile") else ""

@@ -22,6 +22,21 @@ class ConversationSession(TimestampedBase):
         related_name="conversation_sessions",
     )
     topic = models.CharField(max_length=500, blank=True, default="")
+    news_category = models.CharField(max_length=100, blank=True, default="")
+    news_subtopic = models.CharField(max_length=100, blank=True, default="")
+    scenario = models.TextField(blank=True, default="")
+    news_article = models.ForeignKey(
+        "news.NewsArticle",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="conversation_sessions",
+    )
+    discussion_article_ids = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="News article PKs selected as session knowledge base for RAG.",
+    )
 
     # ConversationState (spec-aligned)
     turn_count = models.IntegerField(default=0)
@@ -224,6 +239,51 @@ class TurnEngineLog(TimestampedBase):
 
     def __str__(self) -> str:
         return f"TurnEngineLog(session={self.session_id}, {self.component}/{self.level}, event={self.event})"
+
+
+class SessionNewsChunk(TimestampedBase):
+    session = models.ForeignKey(
+        ConversationSession,
+        on_delete=models.CASCADE,
+        related_name="news_chunks",
+    )
+    news_article = models.ForeignKey(
+        "news.NewsArticle",
+        on_delete=models.CASCADE,
+        related_name="session_chunks",
+    )
+    chunk_index = models.PositiveIntegerField(default=0)
+    content = models.TextField()
+    embedding = VectorField(dimensions=1536, null=True, blank=True)
+    embedding_model = models.CharField(max_length=100, null=True, blank=True, default="")
+    embedding_dimensions = models.PositiveIntegerField(null=True, blank=True)
+    embedding_text_hash = models.CharField(max_length=64, null=True, blank=True, default="")
+    embedding_updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("news_article_id", "chunk_index", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("session", "news_article", "chunk_index"),
+                name="unique_session_news_chunk",
+            ),
+        ]
+        indexes = [
+            HnswIndex(
+                name="conv_news_chunk_emb_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+            models.Index(
+                fields=("session", "news_article"),
+                name="conv_news_chunk_sess_art",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"SessionNewsChunk(session={self.session_id}, article={self.news_article_id}, idx={self.chunk_index})"
 
 
 class KnowledgeSnippet(TimestampedBase):

@@ -254,9 +254,22 @@ def _agent_persona_name(
     return str(facilitator_plan.get("_agent_persona_name") or "")
 
 
+def _should_retrieve_session_news(
+    facilitator_plan: dict,
+    session: ConversationSession,
+) -> bool:
+    article_ids = session.discussion_article_ids or []
+    if not article_ids:
+        return False
+    sa_type = str(facilitator_plan.get("type") or "").upper()
+    sa_subtype = str(facilitator_plan.get("subtype") or "").lower()
+    return sa_type == "ASSERTIVES" and sa_subtype == "inform"
+
+
 def resolve_agent_retrieval_sources(
     facilitator_plan: dict,
     *,
+    session: ConversationSession | None = None,
     agent: AgentProfile | None = None,
 ) -> set[str]:
     """
@@ -264,6 +277,7 @@ def resolve_agent_retrieval_sources(
 
     Always include Speech Act exemplars from the knowledge corpus. Fact Checker
     ASSERTIVES turns also get web search regardless of facilitator retrieval_need.
+    Session news is retrieved only on ASSERTIVES/inform turns when article IDs exist.
     """
     sources = set(map_retrieval_sources(facilitator_plan.get("retrieval_requirement")))
     sources.add("exemplar")
@@ -271,6 +285,8 @@ def resolve_agent_retrieval_sources(
     persona_name = _agent_persona_name(facilitator_plan, agent=agent)
     if persona_name == "Fact Checker" and sa_type == "ASSERTIVES":
         sources.add("web")
+    if session is not None and _should_retrieve_session_news(facilitator_plan, session):
+        sources.add("news")
     return sources
 
 
@@ -281,7 +297,11 @@ def _build_agent_retrieval_context(
     agent: AgentProfile | None = None,
 ) -> RetrievedContext:
     retrieval_query = _build_agent_retrieval_query(session, facilitator_plan)
-    sources = resolve_agent_retrieval_sources(facilitator_plan, agent=agent)
+    sources = resolve_agent_retrieval_sources(
+        facilitator_plan,
+        session=session,
+        agent=agent,
+    )
 
     return retrieve(
         retrieval_query,

@@ -70,6 +70,34 @@ class UserProfile(models.Model):
         help_text="User's academic major / field of study. Used as the default major for agents in their conversation sessions.",
     )
 
+    discussion_category = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Selected news taxonomy category slug for the pending discussion.",
+    )
+    discussion_subtopic = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Selected news taxonomy subtopic slug for the pending discussion.",
+    )
+    discussion_scenario = models.TextField(
+        blank=True,
+        default="",
+        help_text="LLM-generated discussion scenario for the pending conversation.",
+    )
+    discussion_article_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Optional news article id used as scenario context.",
+    )
+    discussion_article_ids = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="News article PKs selected for the pending discussion knowledge base.",
+    )
+
     def __str__(self) -> str:
         return f"{self.user.name} ({self.user.email})"
 

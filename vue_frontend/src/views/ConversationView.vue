@@ -410,11 +410,20 @@ function handleRecordShortcut(event: KeyboardEvent) {
   toggleRecordingFromKeyboard()
 }
 
-onMounted(() => {
+onMounted(async () => {
   ws.connect()
   const off = ws.onEvent(handleEvent)
   window.addEventListener('keydown', handleRecordShortcut)
   onUnmounted(() => off())
+  try {
+    await authStore.fetchUser()
+    const scenario = authStore.user?.discussion_scenario?.trim()
+    if (scenario && !topic.value.trim()) {
+      topic.value = scenario
+    }
+  } catch {
+    // Keep the page usable if profile refresh fails.
+  }
 })
 
 onUnmounted(() => {

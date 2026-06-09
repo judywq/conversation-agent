@@ -97,6 +97,24 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         allow_blank=True,
         allow_null=True,
     )
+    discussion_category = UserProfileTextField(
+        profile_attr="discussion_category",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    discussion_subtopic = UserProfileTextField(
+        profile_attr="discussion_subtopic",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    discussion_scenario = UserProfileTextField(
+        profile_attr="discussion_scenario",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
 
     class Meta:
         extra_fields = []
@@ -124,6 +142,9 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "cefr_sample_choices",
             "preferred_name",
             "major",
+            "discussion_category",
+            "discussion_subtopic",
+            "discussion_scenario",
         )
         read_only_fields = ("email",)
 
