@@ -9,6 +9,7 @@ from backend.conversation.services.agent import _avoid_question_ending_when_not_
 from backend.conversation.services.agent import _build_agent_retrieval_context
 from backend.conversation.services.agent import _enforce_directive_target_name
 from backend.conversation.services.agent import _limit_to_three_sentences
+from backend.conversation.services.agent import _normalize_directive_question_punctuation
 from backend.conversation.services.agent import generate_agent_utterance
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
 from backend.conversation.services.retrieval import RetrievedContext
@@ -63,6 +64,30 @@ def test_avoid_question_ending_keeps_request_like_directives():
 def test_limit_to_three_sentences_truncates():
     out = _limit_to_three_sentences("One. Two! Three? Four. Five.")
     assert out == "One. Two! Three?"
+
+
+def test_normalize_directive_question_punctuation_converts_named_period_to_question():
+    utterance = (
+        "Um, I take the school bus because it is easy and I can relax, "
+        "I mean sometimes I even think what if buses had fun screens for learning. "
+        "Do you like taking the school bus, Judy."
+    )
+    out = _normalize_directive_question_punctuation(
+        utterance,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+        target_display_name="Judy",
+    )
+    assert out.endswith("Do you like taking the school bus, Judy?")
+
+
+def test_enforce_directive_target_name_appends_to_period_ended_interrogative():
+    out = _enforce_directive_target_name(
+        "Do you like taking the school bus.",
+        speech_act_type="DIRECTIVES",
+        target_display_name="Judy",
+    )
+    assert out.endswith(", Judy?")
 
 
 def _make_session_with_agent(user):

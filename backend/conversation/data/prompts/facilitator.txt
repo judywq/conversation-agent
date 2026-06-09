@@ -108,7 +108,7 @@ If {next_speaker_type} is "agent":
 - Choose a clear target:
   - a specific participant (for responses, questions, challenges)
   - "everyone" (for general contributions)
-- If the instruction includes a question/request addressed to a specific participant by NAME, set `target` to that participant id using {participants_map}.
+- If the instruction includes a question/request addressed to a specific participant by NAME, set `target` to that participant id using {participants_map}, and use speech_act.type="DIRECTIVES" with a request-like subtype (request_info, request_confirm, request_action, request_permission, or invite).
 - decide whether to retrieve information:
   - "memory" for past discussion reference
   - "none" otherwise

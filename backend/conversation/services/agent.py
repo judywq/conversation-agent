@@ -23,6 +23,20 @@ from backend.conversation.services.web_search import build_web_search_query
 _AGENT_RETRIEVAL_TOP_K = 5
 _MAX_QUESTIONS_PER_UTTERANCE = 2
 _MAX_SENTENCES_PER_UTTERANCE = 3
+_REQUEST_LIKE_DIRECTIVE_SUBTYPES = frozenset(
+    {
+        "request_info",
+        "request_confirm",
+        "request_action",
+        "request_permission",
+        "invite",
+    },
+)
+_INTERROGATIVE_START = re.compile(
+    r"^(?:do|does|did|can|could|would|will|what|how|why|where|when|who|"
+    r"is|are|was|were|have|has|had)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +82,62 @@ def _target_type(target: str) -> str:
     return "agent"
 
 
+def _is_request_like_directive(*, speech_act_type: str, speech_act_subtype: str) -> bool:
+    if str(speech_act_type or "").upper() != "DIRECTIVES":
+        return False
+    return str(speech_act_subtype or "").lower() in _REQUEST_LIKE_DIRECTIVE_SUBTYPES
+
+
+def _last_sentence(text: str) -> str:
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    cleaned = [part.strip() for part in parts if part.strip()]
+    return cleaned[-1] if cleaned else (text or "").strip()
+
+
+def _looks_interrogative(sentence: str) -> bool:
+    core = (sentence or "").strip().rstrip(".!?")
+    if not core:
+        return False
+    return bool(_INTERROGATIVE_START.match(core))
+
+
+def _utterance_has_question_marker(text: str) -> bool:
+    if "?" in text:
+        return True
+    last = _last_sentence(text)
+    return last.endswith(".") and _looks_interrogative(last)
+
+
+def _normalize_directive_question_punctuation(
+    utterance: str,
+    *,
+    speech_act_type: str,
+    speech_act_subtype: str,
+    target_display_name: str = "",
+) -> str:
+    text = (utterance or "").strip()
+    if not text or not _is_request_like_directive(
+        speech_act_type=speech_act_type,
+        speech_act_subtype=speech_act_subtype,
+    ):
+        return text
+
+    name = (target_display_name or "").strip()
+    if name:
+        period_name = re.compile(
+            rf",\s*{re.escape(name)}\.$",
+            flags=re.IGNORECASE,
+        )
+        text = period_name.sub(f", {name}?", text)
+
+    last = _last_sentence(text)
+    if last.endswith(".") and _looks_interrogative(last):
+        prefix = text[: -len(last)].rstrip()
+        fixed_last = last[:-1].rstrip() + "?"
+        return f"{prefix} {fixed_last}".strip() if prefix else fixed_last
+    return text
+
+
 def _enforce_directive_target_name(
     utterance: str,
     *,
@@ -85,11 +155,13 @@ def _enforce_directive_target_name(
 
     # Only force a name when the utterance is clearly addressing the target
     # (e.g., a question/request). Otherwise, don't overuse names.
-    if "?" not in text:
+    if not _utterance_has_question_marker(text):
         return text
     # Do NOT start the utterance with the name (sounds daunting).
     # Instead, attach it naturally at the end of the (last) question.
     if text.endswith("?"):
+        return text[:-1].rstrip() + f", {name}?"
+    if text.endswith(".") and _looks_interrogative(_last_sentence(text)):
         return text[:-1].rstrip() + f", {name}?"
     # No dashes/em-dashes.
     return text + f", {name}"
@@ -141,14 +213,7 @@ def _avoid_question_ending_when_not_request(
         return text[:-1].rstrip() + "."
 
     # Keep '?' only for request-like directive subtypes.
-    request_like = {
-        "request_info",
-        "request_confirm",
-        "request_action",
-        "request_permission",
-        "invite",
-    }
-    if st in request_like:
+    if st in _REQUEST_LIKE_DIRECTIVE_SUBTYPES:
         return text
     return text[:-1].rstrip() + "."
 
@@ -304,6 +369,12 @@ def generate_agent_utterance_with_retrieval(
         speech_act_subtype=speech_act_subtype,
     )
     cleaned = _limit_to_three_sentences(cleaned)
+    cleaned = _normalize_directive_question_punctuation(
+        cleaned,
+        speech_act_type=speech_act_type,
+        speech_act_subtype=speech_act_subtype,
+        target_display_name=target_display_name,
+    )
     cleaned = _enforce_directive_target_name(
         cleaned,
         speech_act_type=speech_act_type,
