@@ -9,6 +9,8 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.facilitator import build_speech_act_distribution_for_prompt
+from backend.conversation.services.facilitator import clamp_facilitator_content_requirement
+from backend.conversation.services.facilitator import coerce_speech_act_plan
 from backend.conversation.services.makeshift import invite_user
 from backend.conversation.services.turn_processor import TurnMetadata
 from backend.conversation.services.turn_processor import append_turn
@@ -116,3 +118,31 @@ def test_build_facilitator_plan_includes_distribution_context(user):
     assert '"ASSERTIVES": 0.74' in text
     assert "steering_hint" in text
     assert "{sa_session_summary}" not in text
+
+
+def test_clamp_facilitator_content_requirement_keeps_first_sentence_only():
+    text = "Ask Judy about the bus. Then invite others to respond."
+    assert clamp_facilitator_content_requirement(text) == "Ask Judy about the bus."
+
+
+def test_clamp_facilitator_content_requirement_limits_to_fourteen_words():
+    text = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"
+    assert len(clamp_facilitator_content_requirement(text).split()) == 14
+
+
+def test_coerce_speech_act_plan_clamps_content_requirement():
+    plan = coerce_speech_act_plan(
+        {
+            "type": "DIRECTIVES",
+            "subtype": "request_info",
+            "target": "user",
+            "content_requirement": (
+                "Ask Judy whether she prefers the school bus or walking to campus every day. "
+                "Then ask others to share their commute habits too."
+            ),
+        },
+    )
+    assert plan["content_requirement"] == (
+        "Ask Judy whether she prefers the school bus or walking to campus every day."
+    )
+    assert len(plan["content_requirement"].split()) <= 14
