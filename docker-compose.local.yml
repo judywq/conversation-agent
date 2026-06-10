@@ -2,6 +2,7 @@ volumes:
   conversation_agent_local_postgres_data: {}
   conversation_agent_local_postgres_data_backups: {}
   conversation_agent_local_redis_data: {}
+  conversation_agent_local_miniflux_postgres_data: {}
 
 services:
   django: &django
@@ -45,6 +46,33 @@ services:
     volumes:
       - conversation_agent_local_redis_data:/data
 
+  miniflux-db:
+    image: docker.io/postgres:16-alpine
+    environment:
+      POSTGRES_USER: miniflux
+      POSTGRES_PASSWORD: miniflux_local_dev
+      POSTGRES_DB: miniflux
+    volumes:
+      - conversation_agent_local_miniflux_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniflux -d miniflux"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  miniflux:
+    image: docker.io/miniflux/miniflux:2.2.1
+    depends_on:
+      miniflux-db:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_URL: postgres://miniflux:miniflux_local_dev@miniflux-db:5432/miniflux?sslmode=disable
+      RUN_MIGRATIONS: "1"
+      CREATE_ADMIN: "1"
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: miniflux_local_dev
 
   celeryworker:
     <<: *django

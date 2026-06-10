@@ -3,9 +3,21 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast/use-toast'
 import { AuthService } from '@/services/authService'
-import { ConversationService, type CefrSample } from '@/services/conversationService'
+import {
+  ConversationService,
+  type CefrSample,
+  type DiscussionScenarioResult,
+  type NewsCategory,
+} from '@/services/conversationService'
 import { ConversationWsClient, type ConversationWsEvent } from '@/services/conversationWs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -16,6 +28,11 @@ const ws = new ConversationWsClient()
 const connected = ref(false)
 const sessionId = ref<number | null>(null)
 const topic = ref('')
+const taxonomy = ref<NewsCategory[]>([])
+const selectedCategory = ref('')
+const selectedSubtopic = ref('')
+const isGeneratingScenario = ref(false)
+const scenarioArticles = ref<DiscussionScenarioResult['articles']>([])
 const cefrSamples = ref<CefrSample[]>([])
 const cefrSampleList = computed<CefrSample[]>(() => cefrSamples.value)
 const selectedCefrLevel = ref<string | null>(null)
@@ -64,6 +81,19 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 const audioQueue = ref<string[]>([])
 
 const canStart = computed(() => connected.value && !sessionId.value && !!topic.value.trim() && !!selectedCefrLevel.value)
+
+const availableSubtopics = computed(() => {
+  const category = taxonomy.value.find((item) => item.slug === selectedCategory.value)
+  return category?.subtopics ?? []
+})
+
+const canGenerateScenario = computed(
+  () => !!selectedCategory.value && !!selectedSubtopic.value && !isGeneratingScenario.value && !sessionId.value,
+)
+
+watch(selectedCategory, () => {
+  selectedSubtopic.value = ''
+})
 
 watch(topic, () => {
   cefrSamples.value = []
@@ -410,13 +440,57 @@ function handleRecordShortcut(event: KeyboardEvent) {
   toggleRecordingFromKeyboard()
 }
 
+async function loadTaxonomy() {
+  try {
+    const payload = await ConversationService.fetchNewsTaxonomy()
+    taxonomy.value = payload.categories
+  } catch (error: any) {
+    toast({
+      title: 'Could not load news topics',
+      description: error?.message || 'Please refresh and try again.',
+      variant: 'destructive',
+    })
+  }
+}
+
+async function generateDiscussionScenario() {
+  if (!selectedCategory.value || !selectedSubtopic.value) return
+  isGeneratingScenario.value = true
+  try {
+    const result = await ConversationService.generateDiscussionScenario(
+      selectedCategory.value,
+      selectedSubtopic.value,
+    )
+    topic.value = result.scenario
+    scenarioArticles.value = result.articles
+    cefrSamples.value = []
+    selectedCefrLevel.value = null
+    await authStore.fetchUser()
+    toast({
+      title: 'Scenario ready',
+      description: `Generated from ${result.article_ids.length} article(s).`,
+    })
+  } catch (error: any) {
+    toast({
+      title: 'Could not generate scenario',
+      description: error?.message || 'Please try again.',
+      variant: 'destructive',
+    })
+  } finally {
+    isGeneratingScenario.value = false
+  }
+}
+
 onMounted(async () => {
   ws.connect()
   const off = ws.onEvent(handleEvent)
   window.addEventListener('keydown', handleRecordShortcut)
   onUnmounted(() => off())
+  await loadTaxonomy()
   try {
     await authStore.fetchUser()
+    selectedCategory.value = authStore.user?.discussion_category?.trim() || ''
+    selectedSubtopic.value = authStore.user?.discussion_subtopic?.trim() || ''
     const scenario = authStore.user?.discussion_scenario?.trim()
     if (scenario && !topic.value.trim()) {
       topic.value = scenario
@@ -446,10 +520,63 @@ onUnmounted(() => {
         <CardTitle>Conversation</CardTitle>
       </CardHeader>
       <CardContent class="space-y-4">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-2">
+            <div class="text-sm font-medium">Major category</div>
+            <Select v-model="selectedCategory" :disabled="!!sessionId || isGeneratingScenario">
+              <SelectTrigger class="w-full">
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="category in taxonomy" :key="category.slug" :value="category.slug">
+                  {{ category.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="space-y-2">
+            <div class="text-sm font-medium">Subtopic</div>
+            <Select
+              v-model="selectedSubtopic"
+              :disabled="!selectedCategory || !!sessionId || isGeneratingScenario"
+            >
+              <SelectTrigger class="w-full">
+                <SelectValue placeholder="Select a subtopic" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="subtopic in availableSubtopics"
+                  :key="subtopic.slug"
+                  :value="subtopic.slug"
+                >
+                  {{ subtopic.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            :disabled="!canGenerateScenario"
+            @click="generateDiscussionScenario"
+          >
+            {{ isGeneratingScenario ? 'Generating scenario…' : 'Generate scenario' }}
+          </Button>
+          <p v-if="isGeneratingScenario" class="text-sm text-muted-foreground">
+            Fetching article content and generating scenario…
+          </p>
+          <p v-else-if="scenarioArticles.length" class="text-sm text-muted-foreground">
+            Based on {{ scenarioArticles.length }} article{{ scenarioArticles.length === 1 ? '' : 's' }}:
+            {{ scenarioArticles.map((article) => article.title).join(', ') }}
+          </p>
+        </div>
+
         <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div class="flex-1 space-y-2">
-            <div class="text-sm font-medium">Topic</div>
-            <Textarea v-model="topic" placeholder="Enter a discussion topic…" class="min-h-[80px]" />
+            <div class="text-sm font-medium">Discussion scenario</div>
+            <Textarea v-model="topic" placeholder="Generate a scenario or enter your own topic…" class="min-h-[80px]" />
           </div>
           <div class="flex gap-2">
             <Button :disabled="!connected || !!sessionId || !topic.trim() || isGeneratingCefr || !authStore.user?.profile_completed" variant="outline" @click="generateCefrSamples">

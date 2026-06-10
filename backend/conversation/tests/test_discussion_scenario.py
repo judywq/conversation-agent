@@ -52,7 +52,7 @@ def test_discussion_scenario_api_validates_taxonomy(user, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "backend.conversation.api_views.generate_discussion_scenario",
+        "backend.conversation.api_views.setup_discussion_context",
         fake_generate,
     )
     response = client.post(

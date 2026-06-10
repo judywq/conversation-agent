@@ -161,6 +161,9 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         cefr_sample_choices = validated_data.pop("cefr_sample_choices", serializers.empty)
         preferred_name = validated_data.pop("preferred_name", serializers.empty)
         major = validated_data.pop("major", serializers.empty)
+        discussion_category = validated_data.pop("discussion_category", serializers.empty)
+        discussion_subtopic = validated_data.pop("discussion_subtopic", serializers.empty)
+        discussion_scenario = validated_data.pop("discussion_scenario", serializers.empty)
         user = super().update(instance, validated_data)
         if hasattr(user, "userprofile"):
             update_fields = []
@@ -182,6 +185,15 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             if major is not serializers.empty:
                 user.userprofile.major = (major or "").strip()
                 update_fields.append("major")
+            if discussion_category is not serializers.empty:
+                user.userprofile.discussion_category = (discussion_category or "").strip()
+                update_fields.append("discussion_category")
+            if discussion_subtopic is not serializers.empty:
+                user.userprofile.discussion_subtopic = (discussion_subtopic or "").strip()
+                update_fields.append("discussion_subtopic")
+            if discussion_scenario is not serializers.empty:
+                user.userprofile.discussion_scenario = (discussion_scenario or "").strip()
+                update_fields.append("discussion_scenario")
             if ocean is not serializers.empty:
                 required_traits = {
                     "openness",
