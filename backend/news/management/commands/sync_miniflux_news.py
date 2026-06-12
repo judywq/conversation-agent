@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from backend.news.sync import sync_recent_articles
+from backend.news.tasks import classify_unclassified_articles
 
 
 class Command(BaseCommand):
@@ -13,6 +14,17 @@ class Command(BaseCommand):
             type=int,
             default=settings.NEWS_SYNC_BATCH_SIZE,
             help="Maximum number of recent Miniflux entries to fetch.",
+        )
+        parser.add_argument(
+            "--classification-limit",
+            type=int,
+            default=settings.NEWS_CLASSIFICATION_BATCH_SIZE,
+            help="Maximum number of unclassified articles to classify after sync.",
+        )
+        parser.add_argument(
+            "--no-classify",
+            action="store_true",
+            help="Skip classification after sync.",
         )
 
     def handle(self, *args, **options):
@@ -28,4 +40,14 @@ class Command(BaseCommand):
                 f"updated={result.updated_count} "
                 f"duplicate_urls={result.duplicate_url_count}",
             ),
+        )
+
+        if options["no_classify"]:
+            return
+
+        classified_count = classify_unclassified_articles(
+            limit=options["classification_limit"],
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"Classification complete: classified={classified_count}"),
         )

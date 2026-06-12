@@ -119,3 +119,6 @@ pc:
 # Remove static volume
 rm-static-vol:
 	docker volume rm conversation_agent_production_django_static
+
+sync-news-%:
+	docker compose -f docker-compose.$*.yml run --rm django /entrypoint python manage.py sync_miniflux_news --limit 100
