@@ -84,7 +84,6 @@ def test_news_classification_records_llm_output():
         main_category="technology-ai",
         subtopics=["ai-teachers"],
         cefr_level="B1",
-        is_suitable=True,
         confidence=Decimal("0.82"),
         rationale="The article is about AI tutors in classrooms.",
         llm_model="fake-classifier",

@@ -60,7 +60,6 @@ class NewsClassification(TimestampedBase):
     main_category = models.CharField(max_length=100, blank=True)
     subtopics = models.JSONField(default=list, blank=True)
     cefr_level = models.CharField(max_length=8, blank=True)
-    is_suitable = models.BooleanField(default=False)
     confidence = models.DecimalField(
         max_digits=4,
         decimal_places=3,
@@ -88,14 +87,14 @@ class NewsClassification(TimestampedBase):
         ]
         indexes = [
             models.Index(
-                fields=("taxonomy_version", "main_category", "status", "is_suitable"),
+                fields=("taxonomy_version", "main_category", "status"),
                 name="news_class_lookup_idx",
             ),
         ]
 
     @property
     def is_ready_for_learning(self) -> bool:
-        return self.status == self.Status.SUCCEEDED and self.is_suitable
+        return self.status == self.Status.SUCCEEDED
 
     def __str__(self) -> str:
         return f"{self.article_id}:{self.taxonomy_version}:{self.main_category}"

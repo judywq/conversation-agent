@@ -46,7 +46,7 @@ def build_classification_prompt(article: NewsArticle) -> str:
     return (
         "Classify this news article for an English learning system.\n"
         "Return strict JSON only with keys: main_category, subtopics, cefr_level, "
-        "is_suitable, confidence, rationale.\n"
+        "confidence, rationale.\n"
         "Use only these taxonomy values:\n"
         f"{chr(10).join(taxonomy_lines)}\n\n"
         f"Title: {article.title}\n"
@@ -113,7 +113,6 @@ def save_successful_classification(
             "main_category": payload["main_category"],
             "subtopics": payload.get("subtopics") or [],
             "cefr_level": payload.get("cefr_level") or "",
-            "is_suitable": bool(payload.get("is_suitable")),
             "confidence": Decimal(str(payload.get("confidence", "0"))),
             "rationale": payload.get("rationale") or "",
             "llm_model": llm_model,
@@ -138,7 +137,6 @@ def save_failed_classification(
             "main_category": "",
             "subtopics": [],
             "cefr_level": "",
-            "is_suitable": False,
             "confidence": None,
             "rationale": "",
             "llm_model": llm_model,

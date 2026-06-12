@@ -25,10 +25,9 @@ class NewsClassificationAdmin(admin.ModelAdmin):
         "taxonomy_version",
         "main_category",
         "status",
-        "is_suitable",
         "confidence",
         "classified_at",
     )
-    list_filter = ("taxonomy_version", "main_category", "status", "is_suitable")
+    list_filter = ("taxonomy_version", "main_category", "status")
     search_fields = ("article__title", "main_category", "rationale")
     readonly_fields = ("created_at", "updated_at", "classified_at")

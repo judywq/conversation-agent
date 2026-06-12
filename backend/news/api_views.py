@@ -42,7 +42,6 @@ class ClassifiedArticleListView(APIView):
         classifications = NewsClassification.objects.filter(
             main_category=category,
             status=NewsClassification.Status.SUCCEEDED,
-            is_suitable=True,
             article__status=NewsArticle.Status.IMPORTED,
         ).select_related("article")
         if subtopic:

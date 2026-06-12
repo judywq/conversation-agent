@@ -66,7 +66,6 @@ def test_classify_unclassified_news_task_limits_batch(monkeypatch, settings, db)
         taxonomy_version=TAXONOMY_VERSION,
         main_category="technology-ai",
         subtopics=[],
-        is_suitable=True,
         status=NewsClassification.Status.SUCCEEDED,
     )
     calls = []
@@ -78,7 +77,6 @@ def test_classify_unclassified_news_task_limits_batch(monkeypatch, settings, db)
             taxonomy_version=TAXONOMY_VERSION,
             main_category="technology-ai",
             subtopics=[],
-            is_suitable=True,
             status=NewsClassification.Status.SUCCEEDED,
         )
 
@@ -113,7 +111,6 @@ def test_classify_unclassified_news_task_retries_failed_classifications(
         taxonomy_version=TAXONOMY_VERSION,
         main_category="",
         subtopics=[],
-        is_suitable=False,
         status=NewsClassification.Status.FAILED,
         error_message="temporary provider failure",
     )
@@ -127,7 +124,6 @@ def test_classify_unclassified_news_task_retries_failed_classifications(
             defaults={
                 "main_category": "technology-ai",
                 "subtopics": [],
-                "is_suitable": True,
                 "status": NewsClassification.Status.SUCCEEDED,
             },
         )[0]

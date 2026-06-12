@@ -44,7 +44,6 @@ def test_fetch_context_articles_orders_by_published_at():
             taxonomy_version=TAXONOMY_VERSION,
             main_category="technology-ai",
             subtopics=["ai-teachers"],
-            is_suitable=True,
             status=NewsClassification.Status.SUCCEEDED,
         )
 

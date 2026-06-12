@@ -26,7 +26,7 @@ def create_classified_article(
     title="AI tutors enter classrooms",
     main_category="technology-ai",
     subtopics=None,
-    is_suitable=True,
+    classification_status=NewsClassification.Status.SUCCEEDED,
     published_at=None,
 ):
     article = NewsArticle.objects.create(
@@ -47,10 +47,9 @@ def create_classified_article(
         main_category=main_category,
         subtopics=subtopics or ["ai-teachers"],
         cefr_level="B1",
-        is_suitable=is_suitable,
         confidence="0.800",
         rationale="Useful for learning.",
-        status=NewsClassification.Status.SUCCEEDED,
+        status=classification_status,
     )
     return article
 
@@ -66,7 +65,10 @@ def test_classified_articles_endpoint_requires_authentication():
 
 def test_classified_articles_endpoint_filters_by_category(authenticated_client):
     article = create_classified_article()
-    create_classified_article(title="Not suitable", is_suitable=False)
+    create_classified_article(
+        title="Failed classification",
+        classification_status=NewsClassification.Status.FAILED,
+    )
     create_classified_article(
         title="Business article",
         main_category="business-work-economy",
