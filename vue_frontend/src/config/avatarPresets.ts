@@ -13,12 +13,12 @@ export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
   { url: `${TALKING_HEAD_AVATARS}/mpfb.glb`, body: 'F' },
   { url: `${TALKING_HEAD_AVATARS}/brunette-t.glb`, body: 'F' },
   { url: `${TALKING_HEAD_AVATARS}/avaturn.glb`, body: 'F' },
-  { url: `${TALKING_HEAD_AVATARS}/vroid.glb`, body: 'F' },
+  // { url: `${TALKING_HEAD_AVATARS}/vroid.glb`, body: 'F' }, // Loading error for vroid.glb: THREE.GLTFLoader: setMeshoptDecoder must be called before loading compressed files
 ]
 
 export const MALE_AVATAR_PRESETS: AvatarPreset[] = [
   { url: `${TALKING_HEAD_AVATARS}/avatarsdk.glb`, body: 'M' },
-  { url: `${TALKING_HEAD_AVATARS}/vroid.glb`, body: 'M' },
+  // { url: `${TALKING_HEAD_AVATARS}/vroid.glb`, body: 'M' },
   { url: `${TALKING_HEAD_AVATARS}/brunette.glb`, body: 'M' },
   { url: `${TALKING_HEAD_AVATARS}/mpfb.glb`, body: 'M' },
   { url: `${TALKING_HEAD_AVATARS}/avaturn.glb`, body: 'M' },
