@@ -22,7 +22,7 @@ from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_voice_preset_for_persona
 from backend.conversation.services.names import provider_voice_id
 from backend.conversation.services.retrieval import persist_turn_retrieval_safely
-from backend.conversation.services.tts import synthesize_speech
+from backend.conversation.services.tts import synthesize_speech_with_lipsync
 from backend.conversation.services.tts import tts_provider_timeouts
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
@@ -460,14 +460,17 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
 
         participants: list[dict] = [{"id": "user", "name": user_name, "type": "user"}]
         for a in session.agent_profiles.order_by("agent_id"):
+            voice_gender = (a.personality or {}).get("voice_gender") or ""
+            avatar_body = "M" if str(voice_gender).strip().lower() in {"m", "male"} else "F"
             participants.append(
                 {
                     "id": a.agent_id,
                     "name": a.display_name or a.agent_id,
                     "type": "agent",
                     "persona_name": (a.personality or {}).get("persona_name") or "",
-                    "gender": (a.personality or {}).get("voice_gender") or "",
+                    "gender": voice_gender,
                     "voice_title": (a.personality or {}).get("voice_title") or "",
+                    "avatar_body": avatar_body,
                 },
             )
         return participants
@@ -565,7 +568,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         *,
         text: str,
         voice: str,
-    ) -> tuple[str | None, int | None]:
+    ) -> tuple[str | None, dict | None, int | None]:
         """
         Run TTS off the DB thread so a slow Fish API call cannot block admin/HTTP.
         """
@@ -574,16 +577,16 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         tts_timeout = connect_timeout + read_timeout + 10.0
         t_tts0 = time.perf_counter()
         try:
-            audio_url = await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 asyncio.to_thread(
-                    synthesize_speech,
+                    synthesize_speech_with_lipsync,
                     text=text,
                     voice=voice,
                 ),
                 timeout=tts_timeout,
             )
             t_tts_ms = int((time.perf_counter() - t_tts0) * 1000)
-            return audio_url, t_tts_ms
+            return result.audio_url, result.lipsync, t_tts_ms
         except Exception:
             logger.exception(
                 "agent_tts_failed voice=%s text_chars=%d timeout_sec=%.0f",
@@ -591,7 +594,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 len(text),
                 tts_timeout,
             )
-            return None, None
+            return None, None, None
 
     async def _append_agent_llm_turn(
         self,
@@ -606,11 +609,16 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             plan=plan,
         )
         voice = prep["voice"]
-        audio_url, t_tts_ms = await self._synthesize_agent_audio(
+        audio_url, lipsync, t_tts_ms = await self._synthesize_agent_audio(
             text=prep["utterance_tts"],
             voice=voice,
         )
-        return await self._finalize_agent_llm_turn(prep, audio_url=audio_url, t_tts_ms=t_tts_ms)
+        return await self._finalize_agent_llm_turn(
+            prep,
+            audio_url=audio_url,
+            lipsync=lipsync,
+            t_tts_ms=t_tts_ms,
+        )
 
     @database_sync_to_async
     def _prepare_agent_llm_turn(
@@ -682,6 +690,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         prep: dict,
         *,
         audio_url: str | None,
+        lipsync: dict | None,
         t_tts_ms: int | None,
     ) -> TurnRecord:
         session = prep["session"]
@@ -701,6 +710,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             facilitator_plan=plan,
             source="llm",
             audio_url=audio_url,
+            lipsync=lipsync,
         )
         apply_duplicate_detection_to_turn(processed.turn, duplicate_result)
         persist_turn_retrieval_safely(processed.turn, generated.retrieval_context)
@@ -812,5 +822,6 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             "subturn_index": getattr(turn, "subturn_index", 0),
             "source": turn.source,
             "audio_url": turn.audio_url,
+            "lipsync": turn.lipsync,
             "created_at": turn.created_at.isoformat() if turn.created_at else None,
         }

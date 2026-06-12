@@ -59,3 +59,14 @@ npm run test:e2e
 ```sh
 npm run lint
 ```
+
+## 3D agent avatars
+
+The conversation view renders one TalkingHead panel per agent when a session is active.
+
+- **Libraries:** `@met4citizen/talkinghead` and `three` (see `vite.config.ts` `optimizeDeps.exclude`).
+- **Browser:** Chrome or Edge with WebGL enabled works best.
+- **Warmup:** Click anywhere in the conversation page once to initialize avatar WebGL contexts (browser autoplay policy).
+- **Audio:** Agent speech uses server TTS (`audio_url`) plus word-level `lipsync` metadata from the WebSocket `turn` event. Web Audio fetches media directly from Django (`http://localhost:8000/media/...` in dev); Django CORS must allow `/media/` (see `CORS_URLS_REGEX` in backend settings).
+- **Models:** Default avatars load from the [TalkingHead sample GLBs](https://github.com/met4citizen/TalkingHead/tree/main/avatars); see `src/config/avatarPresets.ts`.
+- **Toggle:** Use **Avatars On/Off** during a session to fall back to plain audio playback.

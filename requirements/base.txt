@@ -37,6 +37,7 @@ google-genai==1.53.0 # https://github.com/google/generative-ai-python
 langgraph==0.2.74 # https://github.com/langchain-ai/langgraph
 langchain-community==0.3.18 # https://github.com/langchain-ai/langchain
 requests==2.32.3 # https://github.com/psf/requests
+mutagen==1.47.0  # https://github.com/quodlibet/mutagen
 elevenlabs==2.16.0 # https://github.com/elevenlabs/elevenlabs-python
 
 django-anymail[mailjet]==12.0  # https://github.com/anymail/django-anymail

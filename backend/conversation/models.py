@@ -105,6 +105,7 @@ class TurnRecord(TimestampedBase):
     # Web / audio metadata
     source = models.CharField(max_length=50, null=True, blank=True)  # e.g., "mic", "text"
     audio_url = models.URLField(max_length=1000, null=True, blank=True)
+    lipsync = models.JSONField(null=True, blank=True)
 
     # Agent utterance duplicate detection (vs prior agent turns in the same session).
     duplicate_similarity_score = models.FloatField(

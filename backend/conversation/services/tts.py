@@ -1,5 +1,7 @@
+import base64
 import logging
 import time
+from dataclasses import dataclass
 from typing import Callable
 from uuid import uuid4
 
@@ -10,6 +12,12 @@ from django.core.files.storage import default_storage
 from openai import OpenAI
 
 from backend.conversation.exceptions import ServiceConfigurationError
+from backend.conversation.services.lipsync import (
+    LipSyncData,
+    audio_duration_ms,
+    lipsync_from_elevenlabs_alignment,
+    proportional_lipsync,
+)
 from backend.llm_caller.models import APIKey
 
 logger = logging.getLogger(__name__)
@@ -89,6 +97,21 @@ def _get_openai_key() -> str:
     )
 
 
+@dataclass(frozen=True)
+class TtsResult:
+    audio_url: str
+    lipsync: dict[str, list[str] | list[int]]
+
+
+def _store_audio_bytes(audio_bytes: bytes, audio_format: str) -> str:
+    file_name = f"audio/{uuid4().hex}.{audio_format}"
+    path = default_storage.save(file_name, ContentFile(audio_bytes))
+    domain = settings.DOMAIN_NAME
+    if not domain.startswith("http"):
+        domain = f"http://{domain}"
+    return f"{domain}{settings.MEDIA_URL}{path}"
+
+
 def synthesize_speech(
     *,
     text: str,
@@ -130,13 +153,58 @@ def synthesize_speech(
             code="TTS_PROVIDER_UNSUPPORTED",
         )
 
-    file_name = f"audio/{uuid4().hex}.{selected_format}"
-    path = default_storage.save(file_name, ContentFile(audio_bytes))
+    return _store_audio_bytes(audio_bytes, selected_format)
 
-    domain = settings.DOMAIN_NAME
-    if not domain.startswith("http"):
-        domain = f"http://{domain}"
-    return f"{domain}{settings.MEDIA_URL}{path}"
+
+def synthesize_speech_with_lipsync(
+    *,
+    text: str,
+    voice: str | None = None,
+    model: str | None = None,
+    audio_format: str | None = None,
+) -> TtsResult:
+    """
+    Generates speech audio with word-level lip-sync metadata for TalkingHead avatars.
+    """
+    provider = str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower()
+    if provider == "elevenlabs":
+        selected_format = audio_format or "mp3"
+        audio_bytes, lipsync = _synthesize_elevenlabs_speech_with_lipsync(
+            text=text,
+            voice=voice,
+            model=model or settings.ELEVENLABS_MODEL_ID,
+            output_format=audio_format or settings.ELEVENLABS_OUTPUT_FORMAT,
+        )
+    elif provider == "fish":
+        selected_format = audio_format or settings.FISH_TTS_FORMAT
+        audio_bytes = _synthesize_fish_speech(
+            text=text,
+            voice=voice,
+            model=model or settings.FISH_TTS_MODEL,
+            audio_format=selected_format,
+        )
+        duration_ms = audio_duration_ms(audio_bytes, selected_format)
+        lipsync = proportional_lipsync(text, duration_ms).as_dict()
+    elif provider == "openai":
+        selected_format = audio_format or "mp3"
+        audio_bytes = _synthesize_openai_speech(
+            text=text,
+            voice=voice or settings.OPENAI_TTS_VOICE,
+            model=model or settings.OPENAI_TTS_MODEL,
+            audio_format=selected_format,
+        )
+        duration_ms = audio_duration_ms(audio_bytes, selected_format)
+        lipsync = proportional_lipsync(text, duration_ms).as_dict()
+    else:
+        raise ServiceConfigurationError(
+            f"Unsupported TTS_PROVIDER '{provider}'. Expected 'openai', 'fish', or 'elevenlabs'.",
+            code="TTS_PROVIDER_UNSUPPORTED",
+        )
+
+    return TtsResult(
+        audio_url=_store_audio_bytes(audio_bytes, selected_format),
+        lipsync=lipsync,
+    )
 
 
 def _synthesize_openai_speech(
@@ -254,6 +322,87 @@ def _synthesize_elevenlabs_speech(
         ),
         provider="elevenlabs",
     )
+
+
+def _synthesize_elevenlabs_speech_with_lipsync(
+    *,
+    text: str,
+    voice: str | None,
+    model: str,
+    output_format: str,
+) -> tuple[bytes, dict[str, list[str] | list[int]]]:
+    api_key = str(getattr(settings, "ELEVENLABS_API_KEY", "") or "").strip()
+    if not api_key:
+        raise ServiceConfigurationError(
+            "TTS requires ELEVENLABS_API_KEY when TTS_PROVIDER=elevenlabs.",
+            code="TTS_API_KEY_MISSING",
+        )
+
+    voice_id = _select_elevenlabs_voice_id(voice)
+    if not voice_id:
+        raise ServiceConfigurationError(
+            "TTS requires a voice_id when TTS_PROVIDER=elevenlabs.",
+            code="TTS_VOICE_ID_MISSING",
+        )
+
+    connect_timeout, read_timeout = tts_provider_timeouts("elevenlabs")
+    total_attempts = len(_TTS_RETRY_BACKOFFS_SEC) + 1
+    last_exc: BaseException | None = None
+
+    for attempt in range(total_attempts):
+        try:
+            response = requests.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps",
+                headers={
+                    "xi-api-key": api_key,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": model,
+                    "output_format": output_format,
+                },
+                timeout=(connect_timeout, read_timeout),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            audio_base64 = payload.get("audio_base64") or ""
+            alignment = payload.get("alignment") or {}
+            audio_bytes = base64.b64decode(audio_base64) if audio_base64 else b""
+            if not audio_bytes:
+                raise ServiceConfigurationError(
+                    "ElevenLabs with-timestamps response did not include audio.",
+                    code="TTS_RESPONSE_INVALID",
+                )
+            lipsync = lipsync_from_elevenlabs_alignment(text, alignment).as_dict()
+            return audio_bytes, lipsync
+        except (
+            requests.exceptions.SSLError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as exc:
+            last_exc = exc
+            if attempt == total_attempts - 1:
+                logger.warning(
+                    "tts_retry_exhausted provider=elevenlabs attempts=%d error=%s",
+                    total_attempts,
+                    type(exc).__name__,
+                )
+                raise
+            sleep_for = _TTS_RETRY_BACKOFFS_SEC[attempt]
+            logger.warning(
+                "tts_retry provider=elevenlabs attempt=%d/%d backoff=%.1f error=%s",
+                attempt + 1,
+                total_attempts,
+                sleep_for,
+                type(exc).__name__,
+            )
+            time.sleep(sleep_for)
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("unreachable")
 
 
 def _select_fish_reference_id(voice: str | None) -> str:
