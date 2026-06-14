@@ -9,5 +9,6 @@ declare module '@met4citizen/talkinghead' {
     constructor(node: HTMLElement, opt?: Record<string, unknown>)
     showAvatar(options: Record<string, unknown>): Promise<void>
     speakAudio(payload: Record<string, unknown>): void
+    speakMarker(callback: () => void): void
   }
 }

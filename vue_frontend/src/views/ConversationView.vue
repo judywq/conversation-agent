@@ -87,7 +87,12 @@ const recordedBlob = ref<Blob | null>(null)
 const recordedUrl = ref<string | null>(null)
 const autoSendRecordingAfterStop = ref(false)
 const currentAudio = ref<HTMLAudioElement | null>(null)
-const audioQueue = ref<string[]>([])
+
+type TurnAudioJob = { turn: Turn }
+
+const turnAudioQueue = ref<TurnAudioJob[]>([])
+const isProcessingTurnAudio = ref(false)
+let playbackAbortController: AbortController | null = null
 
 const canStart = computed(() => connected.value && !sessionId.value && !!topic.value.trim() && !!selectedCefrLevel.value)
 
@@ -133,12 +138,30 @@ function clearRecordingPreview() {
 
 function maybeFirePendingTermination() {
   if (!pendingTermination.value) return
+  if (isProcessingTurnAudio.value) return
+  if (turnAudioQueue.value.length > 0) return
   if (currentAudio.value) return
-  if (audioQueue.value.length > 0) return
   if (avatarSpeaking.value) return
   const finalize = pendingTermination.value
   pendingTermination.value = null
   finalize()
+}
+
+function stopPlainAudio() {
+  if (currentAudio.value) {
+    currentAudio.value.pause()
+    currentAudio.value.currentTime = 0
+    currentAudio.value = null
+  }
+}
+
+function stopAllAudioPlayback() {
+  playbackAbortController?.abort()
+  playbackAbortController = null
+  turnAudioQueue.value = []
+  stopPlainAudio()
+  avatarGridRef.value?.setIdleAll?.()
+  avatarSpeaking.value = false
 }
 
 function resetAvatars() {
@@ -177,88 +200,116 @@ function isAgentTurn(turn: Turn): boolean {
 async function playAgentTurnAudio(turn: Turn): Promise<boolean> {
   if (!turn.audio_url || !isLipSyncPayload(turn.lipsync)) return false
   if (!avatarsEnabled.value || !avatarWarmedUp.value) return false
-  avatarSpeaking.value = true
-  const ok = await avatarGridRef.value?.speak(turn.speaker, turn.audio_url, turn.lipsync)
-  if (!ok) {
-    avatarSpeaking.value = false
-    return false
-  }
-  const durationMs = turn.lipsync.wdurations.reduce((sum, value) => sum + value, 0)
-  window.setTimeout(() => {
-    avatarSpeaking.value = false
-    maybeFirePendingTermination()
-  }, Math.max(durationMs, 500))
-  return true
+  return (await avatarGridRef.value?.speak(turn.speaker, turn.audio_url, turn.lipsync)) ?? false
 }
 
-async function handleTurnAudio(turn: Turn) {
-  if (!turn.audio_url) return
-  if (isAgentTurn(turn) && avatarsEnabled.value) {
-    if (!avatarWarmedUp.value) {
-      enqueueAudio(turn.audio_url)
+function playPlainAudioAndWait(url: string, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve()
       return
     }
-    const played = await playAgentTurnAudio(turn)
-    if (!played) {
-      enqueueAudio(turn.audio_url)
-    }
-    return
-  }
-  enqueueAudio(turn.audio_url)
-}
 
-function playQueuedAudio() {
-  if (currentAudio.value || audioQueue.value.length === 0) {
-    maybeFirePendingTermination()
-    return
-  }
-  const nextUrl = audioQueue.value.shift()
-  if (!nextUrl) {
-    maybeFirePendingTermination()
-    return
-  }
-  const audio = new Audio(nextUrl)
-  currentAudio.value = audio
-  audio.onended = () => {
-    currentAudio.value = null
-    playQueuedAudio()
-  }
-  audio.onerror = () => {
-    currentAudio.value = null
-    playQueuedAudio()
-  }
-  audio.play().catch(() => {
-    currentAudio.value = null
-    playQueuedAudio()
+    const audio = new Audio(url)
+    currentAudio.value = audio
+
+    const finish = () => {
+      if (currentAudio.value === audio) {
+        currentAudio.value = null
+      }
+      resolve()
+    }
+
+    const onAbort = () => {
+      audio.pause()
+      audio.currentTime = 0
+      if (currentAudio.value === audio) {
+        currentAudio.value = null
+      }
+      resolve()
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+
+    audio.onended = () => {
+      signal.removeEventListener('abort', onAbort)
+      finish()
+    }
+    audio.onerror = () => {
+      signal.removeEventListener('abort', onAbort)
+      finish()
+    }
+    audio.play().catch(() => {
+      signal.removeEventListener('abort', onAbort)
+      finish()
+    })
   })
 }
 
-function enqueueAudio(url: string) {
-  if (!url) return
-  audioQueue.value.push(url)
-  playQueuedAudio()
+async function playTurnAudioAndWait(turn: Turn, signal: AbortSignal): Promise<void> {
+  if (!turn.audio_url || signal.aborted) return
+
+  if (
+    isAgentTurn(turn) &&
+    avatarsEnabled.value &&
+    avatarWarmedUp.value &&
+    isLipSyncPayload(turn.lipsync)
+  ) {
+    const played = await playAgentTurnAudio(turn)
+    if (!played && !signal.aborted) {
+      await playPlainAudioAndWait(turn.audio_url, signal)
+    }
+    return
+  }
+
+  await playPlainAudioAndWait(turn.audio_url, signal)
+}
+
+async function processTurnAudioQueue() {
+  if (isProcessingTurnAudio.value) return
+  isProcessingTurnAudio.value = true
+
+  while (turnAudioQueue.value.length > 0) {
+    const job = turnAudioQueue.value.shift()
+    if (!job) break
+
+    const abort = new AbortController()
+    playbackAbortController = abort
+    avatarSpeaking.value = true
+
+    await playTurnAudioAndWait(job.turn, abort.signal)
+
+    if (abort.signal.aborted) {
+      break
+    }
+  }
+
+  playbackAbortController = null
+  avatarSpeaking.value = false
+  isProcessingTurnAudio.value = false
+  maybeFirePendingTermination()
+
+  if (turnAudioQueue.value.length > 0) {
+    void processTurnAudioQueue()
+  }
+}
+
+function enqueueTurnAudio(turn: Turn) {
+  if (!turn.audio_url) return
+  turnAudioQueue.value.push({ turn })
+  void processTurnAudioQueue()
+}
+
+function handleTurnAudio(turn: Turn) {
+  enqueueTurnAudio(turn)
 }
 
 function playAudioNow(url: string) {
   if (!url) return
-  audioQueue.value = []
-  if (currentAudio.value) {
-    currentAudio.value.pause()
-    currentAudio.value.currentTime = 0
-    currentAudio.value = null
-  }
   const turn = [...turns.value].reverse().find((t) => t.audio_url === url)
-  if (turn && isAgentTurn(turn)) {
-    void playAgentTurnAudio(turn).then((played) => {
-      if (!played) {
-        audioQueue.value.push(url)
-        playQueuedAudio()
-      }
-    })
-    return
-  }
-  audioQueue.value.push(url)
-  playQueuedAudio()
+  if (!turn?.audio_url) return
+  stopAllAudioPlayback()
+  enqueueTurnAudio(turn)
 }
 
 function handleEvent(e: ConversationWsEvent) {
@@ -275,13 +326,8 @@ function handleEvent(e: ConversationWsEvent) {
     agentStatus.value = 'idle'
     turns.value = []
     participants.value = []
-    audioQueue.value = []
+    stopAllAudioPlayback()
     resetAvatars()
-    if (currentAudio.value) {
-      currentAudio.value.pause()
-      currentAudio.value.currentTime = 0
-      currentAudio.value = null
-    }
   }
   if (e.type === 'participants') {
     participants.value = e.participants ?? []
@@ -308,13 +354,8 @@ function handleEvent(e: ConversationWsEvent) {
       sessionId.value = null
     }
     const flushAudio = () => {
-      audioQueue.value = []
+      stopAllAudioPlayback()
       resetAvatars()
-      if (currentAudio.value) {
-        currentAudio.value.pause()
-        currentAudio.value.currentTime = 0
-        currentAudio.value = null
-      }
     }
 
     if (e.type === 'session_ended') {
@@ -323,7 +364,12 @@ function handleEvent(e: ConversationWsEvent) {
       applyEndedState()
     } else {
       // Natural max-turns termination: let the last audio finish before flipping UI state.
-      if (currentAudio.value || audioQueue.value.length > 0 || avatarSpeaking.value) {
+      if (
+        isProcessingTurnAudio.value ||
+        turnAudioQueue.value.length > 0 ||
+        currentAudio.value ||
+        avatarSpeaking.value
+      ) {
         pendingTermination.value = applyEndedState
       } else {
         applyEndedState()
@@ -599,13 +645,8 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleRecordShortcut)
   window.removeEventListener('pointerdown', handleConversationInteraction)
   clearRecordingPreview()
+  stopAllAudioPlayback()
   resetAvatars()
-  audioQueue.value = []
-  if (currentAudio.value) {
-    currentAudio.value.pause()
-    currentAudio.value.currentTime = 0
-    currentAudio.value = null
-  }
   ws.close()
 })
 </script>

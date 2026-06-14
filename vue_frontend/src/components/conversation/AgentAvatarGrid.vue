@@ -53,6 +53,12 @@ function disposeAll() {
   panelRefs.value = {}
 }
 
+function setIdleAll() {
+  for (const panel of Object.values(panelRefs.value)) {
+    panel?.setIdle()
+  }
+}
+
 async function ensureAllInitialized() {
   await Promise.all(
     Object.values(panelRefs.value).map((panel) => panel?.ensureInit?.() ?? Promise.resolve()),
@@ -63,6 +69,7 @@ defineExpose({
   speak,
   disposeAll,
   ensureAllInitialized,
+  setIdleAll,
 })
 </script>
 

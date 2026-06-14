@@ -89,14 +89,18 @@ export function useTalkingHead(stageRef: Ref<HTMLElement | null>) {
       const audioBuffer = await fetchAudioBuffer(audioUrl, instance.audioCtx)
       status.value = 'speaking'
 
-      instance.speakAudio({
-        audio: audioBuffer,
-        words: lipsync.words,
-        wtimes: lipsync.wtimes,
-        wdurations: lipsync.wdurations,
+      return await new Promise<boolean>((resolve) => {
+        instance.speakAudio({
+          audio: audioBuffer,
+          words: lipsync.words,
+          wtimes: lipsync.wtimes,
+          wdurations: lipsync.wdurations,
+        })
+        instance.speakMarker(() => {
+          status.value = 'ready'
+          resolve(true)
+        })
       })
-
-      return true
     } catch (error) {
       console.error('TalkingHead speak failed:', error)
       status.value = 'ready'
