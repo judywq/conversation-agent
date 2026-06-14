@@ -40,6 +40,8 @@ from backend.conversation.services.utterance_duplicates import (
 )
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
+MAX_AGENT_COUNT = 3
+MAX_MALE_AGENTS = 1
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +383,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         desired_count = agent_count
         if desired_count is None:
             desired_count = int(getattr(settings, "CONVERSATION_AGENT_COUNT", 3) or 3)
-        desired_count = max(1, min(5, int(desired_count)))
+        desired_count = max(1, min(MAX_AGENT_COUNT, int(desired_count)))
         session = ConversationSession.objects.create(user=user, topic=topic, agent_count=desired_count)
         ocean = user.userprofile.ocean if hasattr(user, "userprofile") else {}
         user_cefr_level = user.userprofile.cefr_level if hasattr(user, "userprofile") else ""
@@ -391,13 +393,17 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
         used_ids: set[str] = set()
         agent_rows: list[AgentProfile] = []
+        male_count = 0
         for idx, selected in enumerate(selected_prompts):
             base = _slugify_agent_id(selected.prompt.persona_name)
             candidate = base
             if candidate in used_ids:
                 candidate = f"{base}_{idx + 1}"
             used_ids.add(candidate)
-            voice_preset = pick_voice_preset_for_persona(selected.prompt.persona_name)
+            gender = "female" if male_count >= MAX_MALE_AGENTS else None
+            voice_preset = pick_voice_preset_for_persona(selected.prompt.persona_name, gender=gender)
+            if voice_preset.gender == "male":
+                male_count += 1
             agent_rows.append(
                 AgentProfile(
                     session=session,

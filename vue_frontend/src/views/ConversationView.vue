@@ -28,7 +28,8 @@ const cefrSamples = ref<CefrSample[]>([])
 const cefrSampleList = computed<CefrSample[]>(() => cefrSamples.value)
 const selectedCefrLevel = ref<string | null>(null)
 const isGeneratingCefr = ref(false)
-const agentCount = ref<number>(3)
+const MAX_AGENT_COUNT = 3
+const agentCount = ref<number>(MAX_AGENT_COUNT)
 
 type Participant = ConversationParticipant
 
@@ -557,7 +558,7 @@ onUnmounted(() => {
           </CardHeader>
           <CardContent class="space-y-2">
             <div class="text-sm text-muted-foreground">
-              Choose how many agent participants to include (1–5).
+              Choose how many agent participants to include (1–{{ MAX_AGENT_COUNT }}).
             </div>
             <div class="flex items-center gap-3">
               <div class="text-sm font-medium w-28">Agent count</div>
@@ -566,7 +567,7 @@ onUnmounted(() => {
                 class="h-9 rounded-md border bg-background px-3 text-sm"
                 :disabled="!!sessionId"
               >
-                <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                <option v-for="n in MAX_AGENT_COUNT" :key="n" :value="n">{{ n }}</option>
               </select>
             </div>
           </CardContent>
