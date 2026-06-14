@@ -16,7 +16,7 @@ Environment:
   SA_ANNOTATIONS_PATH  Optional path to SA_annotations.json when no argument is passed.
   COMPOSE_FILE          Docker compose file to use. Defaults to docker-compose.local.yml.
   DJANGO_SERVICE        Django service name. Defaults to django.
-  DRY_RUN=1             Parse the data without writing KnowledgeSnippet rows.
+  DRY_RUN=1             Parse the data without writing Exemplar rows.
   REFRESH_EMBEDDINGS=1  Generate missing embeddings after import. Requires
                         OPENAI_API_KEY unless EMBEDDING_PROVIDER=fake.
 
@@ -67,7 +67,7 @@ if [[ "${DRY_RUN:-}" == "1" || "${DRY_RUN:-}" == "true" ]]; then
 fi
 
 if [[ "${REFRESH_EMBEDDINGS:-}" == "1" || "${REFRESH_EMBEDDINGS:-}" == "true" ]]; then
-  echo "Generating missing KnowledgeSnippet embeddings..."
+  echo "Generating missing Exemplar embeddings..."
   docker compose -f "$COMPOSE_FILE" run --rm "$DJANGO_SERVICE" \
-    python manage.py refresh_knowledge_embeddings
+    python manage.py refresh_exemplar_embeddings
 fi

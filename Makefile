@@ -93,13 +93,13 @@ else
 	./scripts/init_knowledge.sh
 endif
 
-# Generate missing KnowledgeSnippet embeddings
+# Generate missing Exemplar embeddings
 init-embeddings-%:
-	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_knowledge_embeddings
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_exemplar_embeddings
 
-# Refresh stale KnowledgeSnippet embeddings after text/model changes
+# Refresh stale Exemplar embeddings after text/model changes
 refresh-embeddings-%:
-	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_knowledge_embeddings --stale
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py refresh_exemplar_embeddings --stale
 
 # Migrate, import local Speech Act knowledge, and generate embeddings
 init-rag-%:
@@ -119,3 +119,6 @@ pc:
 # Remove static volume
 rm-static-vol:
 	docker volume rm conversation_agent_production_django_static
+
+sync-news-%:
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py sync_miniflux_news --limit 100

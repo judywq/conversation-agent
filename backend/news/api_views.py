@@ -5,8 +5,17 @@ from rest_framework.views import APIView
 
 from .models import NewsArticle
 from .models import NewsClassification
+from .taxonomy import TAXONOMY_VERSION
 from .taxonomy import get_category
 from .taxonomy import get_subtopic
+from .taxonomy import serialize_taxonomy
+
+
+class NewsTaxonomyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"taxonomy_version": TAXONOMY_VERSION, "categories": serialize_taxonomy()})
 
 
 class ClassifiedArticleListView(APIView):

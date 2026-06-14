@@ -18,12 +18,12 @@ class EmbeddingResult:
     text_hash: str
 
 
-def build_knowledge_snippet_embedding_text(snippet: Any) -> str:
-    metadata = snippet.metadata or {}
+def build_exemplar_embedding_text(exemplar: Any) -> str:
+    metadata = exemplar.metadata or {}
     parts = [
-        ("Title", snippet.title),
-        ("Content", snippet.content),
-        ("Source", snippet.source_label),
+        ("Title", exemplar.title),
+        ("Content", exemplar.content),
+        ("Source", exemplar.source_label),
         ("SA_type", metadata.get("SA_type")),
         ("subtype", metadata.get("subtype")),
         ("previous_sentence", metadata.get("previous_sentence")),
@@ -132,15 +132,15 @@ def generate_embeddings(texts: list[str]) -> list[EmbeddingResult]:
     ]
 
 
-def snippet_embedding_is_stale(snippet: Any) -> bool:
+def exemplar_embedding_is_stale(exemplar: Any) -> bool:
     provider = _embedding_provider()
     expected_model = _expected_embedding_model(provider)
     expected_dimensions = _embedding_dimensions()
-    text = build_knowledge_snippet_embedding_text(snippet)
+    text = build_exemplar_embedding_text(exemplar)
     return (
-        snippet.embedding_text_hash != embedding_text_hash(text)
-        or snippet.embedding_model != expected_model
-        or snippet.embedding_dimensions != expected_dimensions
+        exemplar.embedding_text_hash != embedding_text_hash(text)
+        or exemplar.embedding_model != expected_model
+        or exemplar.embedding_dimensions != expected_dimensions
     )
 
 

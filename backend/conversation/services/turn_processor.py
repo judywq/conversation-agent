@@ -229,7 +229,13 @@ def process_agent_turn(
     utterance_tts: str = "",
     lipsync: dict | None = None,
 ) -> ProcessedTurn:
-    metadata = metadata_from_plan(facilitator_plan)
+    plan = _apply_name_target_fallback(
+        session,
+        utterance,
+        coerce_speech_act_plan(facilitator_plan),
+        _participants_name_map(session),
+    )
+    metadata = metadata_from_plan(plan)
     return append_turn(
         session,
         speaker=speaker,

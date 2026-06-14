@@ -88,6 +88,16 @@ class MinifluxClient:
             },
         )
 
+    def fetch_entry_content(self, entry_id: int, *, update_content: bool = True) -> str:
+        payload = self._get(
+            f"/v1/entries/{int(entry_id)}/fetch-content",
+            params={"update_content": str(update_content).lower()},
+        )
+        if not isinstance(payload, dict):
+            msg = "Unexpected Miniflux fetch-content response"
+            raise MinifluxRequestError(msg)
+        return str(payload.get("content") or "")
+
     def _get(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
         url = f"{self.base_url}{path}"
         try:

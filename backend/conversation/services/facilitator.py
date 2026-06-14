@@ -1,4 +1,5 @@
 import json
+import re
 
 from langchain_core.messages import SystemMessage
 
@@ -10,6 +11,22 @@ from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
+
+_FACILITATOR_CONTENT_REQUIREMENT_MAX_WORDS = 14
+
+
+def clamp_facilitator_content_requirement(text: str) -> str:
+    """Keep facilitator instructions to one sentence and fewer than 15 words."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+
+    parts = re.split(r"(?<=[.!?])\s+", cleaned, maxsplit=1)
+    first_sentence = parts[0].strip() if parts else cleaned
+    words = first_sentence.split()
+    if len(words) <= _FACILITATOR_CONTENT_REQUIREMENT_MAX_WORDS:
+        return first_sentence
+    return " ".join(words[:_FACILITATOR_CONTENT_REQUIREMENT_MAX_WORDS]).rstrip(".,!?")
 
 
 ALLOWED_TAXONOMY: dict[str, list[dict[str, str]]] = {
@@ -320,7 +337,9 @@ def coerce_speech_act_plan(payload: dict) -> dict:
     subtype = str(subtype) if subtype is not None else None
     target = payload.get("target")
     target = str(target) if target is not None else None
-    content_requirement = str(payload.get("content_requirement") or "")
+    content_requirement = clamp_facilitator_content_requirement(
+        str(payload.get("content_requirement") or ""),
+    )
     retrieval_requirement = str(
         payload.get("retrieval_requirement")
         or payload.get("retrieval need")

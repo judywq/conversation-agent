@@ -5,7 +5,7 @@ from django.test import override_settings
 
 from backend.conversation.admin import TurnRetrievalAdmin
 from backend.conversation.models import ConversationSession
-from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import Exemplar
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import TurnRetrieval
 from backend.conversation.models import UserMemory
@@ -36,7 +36,7 @@ MEMORY_RRF_K = 10
 MEMORY_KEYWORD_SCORE = 4.0
 MEMORY_RERANK_SCORE = 0.031746031746031744
 LABEL_FILTER_SCORE = 0.1
-TRACE_KNOWLEDGE_SNIPPET_ID = 123
+TRACE_EXEMPLAR_ID = 123
 
 
 def _embed_memory(memory: UserMemory) -> UserMemory:
@@ -57,8 +57,8 @@ def _embed_memory(memory: UserMemory) -> UserMemory:
 
 
 @pytest.mark.django_db
-def test_knowledge_snippet_string_uses_title() -> None:
-    snippet = KnowledgeSnippet.objects.create(
+def test_exemplar_string_uses_title() -> None:
+    snippet = Exemplar.objects.create(
         title="Course policy",
         content="Students may ask for examples during discussion.",
         source_uri="course://policy",
@@ -488,7 +488,7 @@ def test_mixed_sources_are_ranked_globally_before_top_k(user) -> None:
         speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
         utterance="recent three",
     )
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Local note",
         content="climate",
         source_uri="course://climate",
@@ -530,7 +530,7 @@ def test_mixed_sources_keep_strong_knowledge_result_with_global_top_k(user) -> N
         speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
         utterance="recent three",
     )
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Policy policy policy",
         content="policy policy policy policy policy",
         source_uri="course://policy",
@@ -555,7 +555,7 @@ def test_mixed_sources_keep_strong_knowledge_result_with_global_top_k(user) -> N
 @override_settings(EMBEDDING_PROVIDER="fake")
 def test_knowledge_source_returns_citation(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Seminar participation policy",
         content="Students should cite the course handbook when discussing attendance.",
         source_uri="course://handbook#participation",
@@ -583,7 +583,7 @@ def test_knowledge_source_returns_citation(user) -> None:
 @override_settings(EMBEDDING_PROVIDER="fake")
 def test_hybrid_knowledge_metadata_keeps_source_status_string(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Attendance handbook",
         content="Students should cite the course handbook when discussing attendance.",
         source_uri="course://handbook#attendance",
@@ -595,7 +595,7 @@ def test_hybrid_knowledge_metadata_keeps_source_status_string(user) -> None:
 
     assert context.source_statuses["knowledge"] == "success"
     assert isinstance(context.source_statuses["knowledge"], str)
-    assert context.items[0].metadata["knowledge_snippet_id"] is not None
+    assert context.items[0].metadata["exemplar_id"] is not None
     assert context.items[0].metadata["metadata"] == {"section": "attendance"}
     assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
     assert context.items[0].metadata["keyword_score"] > 0
@@ -615,7 +615,7 @@ def test_hybrid_knowledge_metadata_keeps_source_status_string(user) -> None:
 )
 def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="Attendance handbook",
         content="Students should cite the course handbook when discussing attendance.",
         source_uri="course://handbook#attendance",
@@ -656,7 +656,7 @@ def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
     assert context.source_statuses["knowledge"] == "success"
     assert len(context.items) == 1
     item = context.items[0]
-    assert item.metadata["knowledge_snippet_id"] == matching.id
+    assert item.metadata["exemplar_id"] == matching.id
     assert item.metadata["retrieval_channels"] == ["keyword", "vector"]
     assert item.metadata["keyword_score"] > 0
     assert item.metadata["keyword_rank"] == 1
@@ -671,7 +671,7 @@ def test_hybrid_duplicate_candidate_is_merged(user, monkeypatch) -> None:
 def test_vector_recall_ignores_stale_embedding_model_or_dimensions(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     query = "semantic-only-query"
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Wrong model",
         content="unrelated content",
         source_uri="course://wrong-model",
@@ -680,7 +680,7 @@ def test_vector_recall_ignores_stale_embedding_model_or_dimensions(user) -> None
         embedding_model="old-model",
         embedding_dimensions=1536,
     )
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Wrong dimensions",
         content="unrelated content",
         source_uri="course://wrong-dimensions",
@@ -689,7 +689,7 @@ def test_vector_recall_ignores_stale_embedding_model_or_dimensions(user) -> None
         embedding_model="fake",
         embedding_dimensions=512,
     )
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="Current embedding",
         content="unrelated content",
         source_uri="course://current",
@@ -709,7 +709,7 @@ def test_vector_recall_ignores_stale_embedding_model_or_dimensions(user) -> None
 
     assert context.source_statuses["knowledge"] == "success"
     assert len(context.items) == 1
-    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["exemplar_id"] == matching.id
     assert context.items[0].metadata["retrieval_channels"] == ["vector"]
     assert context.items[0].metadata["embedding_model"] == "fake"
 
@@ -721,7 +721,7 @@ def test_knowledge_source_reports_failed_when_vector_fails_without_keyword_hits(
     monkeypatch,
 ) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Semantic only",
         content="unrelated content",
         source_uri="course://semantic",
@@ -752,7 +752,7 @@ def test_knowledge_source_reports_failed_when_vector_fails_without_keyword_hits(
 @override_settings(EMBEDDING_PROVIDER="fake")
 def test_vector_failure_falls_back_to_keyword(user, monkeypatch) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="Attendance handbook",
         content="Students should cite the course handbook when discussing attendance.",
         source_uri="course://handbook#attendance",
@@ -778,7 +778,7 @@ def test_vector_failure_falls_back_to_keyword(user, monkeypatch) -> None:
 
     assert context.source_statuses["knowledge"] == "success"
     assert len(context.items) == 1
-    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["exemplar_id"] == matching.id
     assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
     assert context.items[0].metadata["keyword_rank"] == 1
     assert context.items[0].metadata["vector_status"] == "failed"
@@ -790,7 +790,7 @@ def test_vector_failure_falls_back_to_keyword(user, monkeypatch) -> None:
 @override_settings(VECTOR_RECALL_ENABLED=False)
 def test_knowledge_keyword_recall_matches_source_uri(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="Archived note",
         content="Students should check the syllabus.",
         source_uri="course://handbook#attendance",
@@ -808,7 +808,7 @@ def test_knowledge_keyword_recall_matches_source_uri(user) -> None:
 
     assert context.source_statuses["knowledge"] == "success"
     assert len(context.items) == 1
-    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["exemplar_id"] == matching.id
     assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
     assert context.items[0].metadata["vector_status"] == "skipped"
 
@@ -818,7 +818,7 @@ def test_knowledge_keyword_recall_matches_source_uri(user) -> None:
 def test_knowledge_source_excludes_speech_act_exemplars(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     query = "clarify point"
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -853,7 +853,7 @@ def test_knowledge_source_reports_no_results(user) -> None:
 @pytest.mark.django_db
 def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -869,7 +869,7 @@ def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -
             "import_key": "import-key-1",
         },
     )
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Inactive exemplar",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-2",
@@ -883,7 +883,7 @@ def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -
             "import_key": "import-key-2",
         },
     )
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Course policy",
         content="Could you clarify what you mean by that point?",
         source_uri="course://policy",
@@ -916,7 +916,7 @@ def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -
     assert item.excerpt == "Could you clarify what you mean by that point?"
     assert item.source_uri == "elfa-sa://CDIS01A.txt#import-key-1"
     assert item.source_label == "CDIS01A.txt"
-    assert item.metadata["knowledge_snippet_id"] == matching.id
+    assert item.metadata["exemplar_id"] == matching.id
     assert item.metadata["kind"] == "speech_act_exemplar"
     assert item.metadata["SA_type"] == "DIRECTIVES"
     assert item.metadata["subtype"] == "request_info"
@@ -941,7 +941,7 @@ def test_exemplar_source_returns_active_matching_snippet_with_provenance(user) -
 @pytest.mark.django_db
 def test_exemplar_rendered_context_marks_examples_as_style_guidance(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="ULECD040 DIRECTIVES/request_info #2",
         content="have you any data on how people use the services",
         source_uri="elfa-sa://ULECD040.txt#import-key-1",
@@ -979,7 +979,7 @@ def test_exemplar_rendered_context_marks_examples_as_style_guidance(user) -> Non
 @pytest.mark.django_db
 def test_exemplar_no_results_message_mentions_no_usable_examples(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Invite exemplar",
         content="Would anyone like to add something?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-3",
@@ -1013,7 +1013,7 @@ def test_exemplar_no_results_message_mentions_no_usable_examples(user) -> None:
 @pytest.mark.django_db
 def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -1051,7 +1051,7 @@ def test_exemplar_source_returns_same_label_when_query_misses(user) -> None:
 @pytest.mark.django_db
 def test_exemplar_source_returns_same_label_with_empty_query(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -1088,7 +1088,7 @@ def test_exemplar_source_returns_same_label_with_empty_query(user) -> None:
 def test_exemplar_hybrid_retrieval_keeps_label_filter(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     query = "semantic zqxclarification"
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Unrelated wording that only has an embedding match.",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -1105,7 +1105,7 @@ def test_exemplar_hybrid_retrieval_keeps_label_filter(user) -> None:
         embedding_model="fake",
         embedding_dimensions=1536,
     )
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/invite #13",
         content="semantic zqxclarification",
         source_uri="elfa-sa://CDIS01A.txt#import-key-2",
@@ -1135,7 +1135,7 @@ def test_exemplar_hybrid_retrieval_keeps_label_filter(user) -> None:
 
     assert context.source_statuses["exemplar"] == "success"
     assert len(context.items) == 1
-    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["exemplar_id"] == matching.id
     assert context.items[0].metadata["subtype"] == "request_info"
     assert context.items[0].metadata["retrieval_channels"] == ["vector"]
     assert context.items[0].metadata["vector_similarity"] is not None
@@ -1159,7 +1159,7 @@ def test_exemplar_vector_channel_can_be_disabled(user, monkeypatch) -> None:
         return fake_embedding(text)
 
     monkeypatch.setattr(retrieval_service, "generate_embedding", record_embedding)
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -1189,7 +1189,7 @@ def test_exemplar_vector_channel_can_be_disabled(user, monkeypatch) -> None:
 
     assert calls == []
     assert context.source_statuses["exemplar"] == "success"
-    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["exemplar_id"] == matching.id
     assert context.items[0].metadata["retrieval_channels"] == ["keyword"]
     assert context.items[0].metadata["vector_similarity"] is None
     assert context.items[0].metadata["vector_rank"] is None
@@ -1204,7 +1204,7 @@ def test_exemplar_vector_channel_can_be_disabled(user, monkeypatch) -> None:
 def test_exemplar_keyword_channel_can_be_disabled(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     query = "clarify point"
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -1233,7 +1233,7 @@ def test_exemplar_keyword_channel_can_be_disabled(user) -> None:
     )
 
     assert context.source_statuses["exemplar"] == "success"
-    assert context.items[0].metadata["knowledge_snippet_id"] == matching.id
+    assert context.items[0].metadata["exemplar_id"] == matching.id
     assert context.items[0].metadata["retrieval_channels"] == ["vector"]
     assert context.items[0].metadata["keyword_score"] is None
     assert context.items[0].metadata["keyword_rank"] is None
@@ -1245,7 +1245,7 @@ def test_exemplar_keyword_channel_can_be_disabled(user) -> None:
 def test_vector_semantic_exemplar_can_be_returned_with_label_filter(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     query = "semantic-only exemplar target"
-    matching = KnowledgeSnippet.objects.create(
+    matching = Exemplar.objects.create(
         title="ULECD040 DIRECTIVES/request_info #2",
         content="Text with no overlapping query terms.",
         source_uri="elfa-sa://ULECD040.txt#import-key-1",
@@ -1278,7 +1278,7 @@ def test_vector_semantic_exemplar_can_be_returned_with_label_filter(user) -> Non
     assert context.source_statuses["exemplar"] == "success"
     assert len(context.items) == 1
     item = context.items[0]
-    assert item.metadata["knowledge_snippet_id"] == matching.id
+    assert item.metadata["exemplar_id"] == matching.id
     assert item.metadata["retrieval_channels"] == ["vector"]
     assert item.metadata["keyword_score"] is None
     assert item.metadata["vector_similarity"] is not None
@@ -1293,7 +1293,7 @@ def test_vector_semantic_exemplar_can_be_returned_with_label_filter(user) -> Non
 def test_exemplar_source_excludes_non_exemplar_knowledge(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
     query = "clarify point"
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Course policy",
         content="Could you clarify what you mean by that point?",
         source_uri="course://policy",
@@ -1328,7 +1328,7 @@ def test_exemplar_source_excludes_non_exemplar_knowledge(user) -> None:
 @pytest.mark.django_db
 def test_exemplar_source_reports_no_results_when_labels_do_not_match(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="Invite exemplar",
         content="Would anyone like to add something?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-3",
@@ -1360,7 +1360,7 @@ def test_exemplar_source_reports_no_results_when_labels_do_not_match(user) -> No
 @pytest.mark.django_db
 def test_exemplar_source_requires_query_match_without_label_filter(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="school")
-    KnowledgeSnippet.objects.create(
+    Exemplar.objects.create(
         title="CDIS01A DIRECTIVES/request_info #12",
         content="Could you clarify what you mean by that point?",
         source_uri="elfa-sa://CDIS01A.txt#import-key-1",
@@ -1465,7 +1465,7 @@ def test_persist_turn_retrieval_stores_exemplar_trace_for_agent_turn(user) -> No
                 source_label="ULECD040.txt",
                 score=LABEL_FILTER_SCORE,
                 metadata={
-                    "knowledge_snippet_id": TRACE_KNOWLEDGE_SNIPPET_ID,
+                    "exemplar_id": TRACE_EXEMPLAR_ID,
                     "kind": "speech_act_exemplar",
                     "SA_type": "DIRECTIVES",
                     "subtype": "request_info",
@@ -1486,8 +1486,8 @@ def test_persist_turn_retrieval_stores_exemplar_trace_for_agent_turn(user) -> No
     assert trace.source_statuses == {"exemplar": "success"}
     assert trace.items[0]["source"] == "exemplar"
     assert (
-        trace.items[0]["metadata"]["knowledge_snippet_id"]
-        == TRACE_KNOWLEDGE_SNIPPET_ID
+        trace.items[0]["metadata"]["exemplar_id"]
+        == TRACE_EXEMPLAR_ID
     )
     assert trace.items[0]["metadata"]["SA_type"] == "DIRECTIVES"
     assert trace.items[0]["metadata"]["subtype"] == "request_info"
@@ -1506,7 +1506,7 @@ def test_persist_turn_retrieval_stores_hybrid_metadata(user) -> None:
         source="llm",
     )
     hybrid_metadata = {
-        "knowledge_snippet_id": TRACE_KNOWLEDGE_SNIPPET_ID,
+        "exemplar_id": TRACE_EXEMPLAR_ID,
         "metadata": {"section": "attendance"},
         "retrieval_channels": ["keyword", "vector"],
         "keyword_score": MEMORY_KEYWORD_SCORE,

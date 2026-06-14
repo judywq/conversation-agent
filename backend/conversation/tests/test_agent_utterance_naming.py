@@ -2,15 +2,17 @@ import pytest
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
-from backend.conversation.models import KnowledgeSnippet
+from backend.conversation.models import Exemplar
 from backend.conversation.models import TurnRecord
 from backend.conversation.services import agent as agent_service
 from backend.conversation.services.agent import _avoid_question_ending_when_not_request
 from backend.conversation.services.agent import _build_agent_retrieval_context
 from backend.conversation.services.agent import _enforce_directive_target_name
 from backend.conversation.services.agent import _limit_to_three_sentences
+from backend.conversation.services.agent import _normalize_directive_question_punctuation
 from backend.conversation.services.agent import generate_agent_utterance
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
+from backend.conversation.services.agent import resolve_agent_retrieval_sources
 from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.turn_processor import append_turn
 
@@ -63,6 +65,30 @@ def test_avoid_question_ending_keeps_request_like_directives():
 def test_limit_to_three_sentences_truncates():
     out = _limit_to_three_sentences("One. Two! Three? Four. Five.")
     assert out == "One. Two! Three?"
+
+
+def test_normalize_directive_question_punctuation_converts_named_period_to_question():
+    utterance = (
+        "Um, I take the school bus because it is easy and I can relax, "
+        "I mean sometimes I even think what if buses had fun screens for learning. "
+        "Do you like taking the school bus, Judy."
+    )
+    out = _normalize_directive_question_punctuation(
+        utterance,
+        speech_act_type="DIRECTIVES",
+        speech_act_subtype="request_info",
+        target_display_name="Judy",
+    )
+    assert out.endswith("Do you like taking the school bus, Judy?")
+
+
+def test_enforce_directive_target_name_appends_to_period_ended_interrogative():
+    out = _enforce_directive_target_name(
+        "Do you like taking the school bus.",
+        speech_act_type="DIRECTIVES",
+        target_display_name="Judy",
+    )
+    assert out.endswith(", Judy?")
 
 
 def _make_session_with_agent(user):
@@ -382,7 +408,7 @@ def test_generate_agent_utterance_injects_speech_act_exemplar_guidance(user, mon
         utterance="I am not sure what evidence you mean.",
         source="text",
     )
-    snippet = KnowledgeSnippet.objects.create(
+    snippet = Exemplar.objects.create(
         title="ULECD040 DIRECTIVES/request_info #2",
         content="have you any data on how people use the services",
         source_uri="elfa-sa://ULECD040.txt#import-key-1",
@@ -424,7 +450,7 @@ def test_generate_agent_utterance_injects_speech_act_exemplar_guidance(user, mon
 
     prompt = captured["system_prompt"]
     assert generated.retrieval_context.source_statuses["exemplar"] == "success"
-    assert generated.retrieval_context.items[0].metadata["knowledge_snippet_id"] == snippet.id
+    assert generated.retrieval_context.items[0].metadata["exemplar_id"] == snippet.id
     assert "have you any data on how people use the services" in prompt
     assert "Speech Act: DIRECTIVES/request_info" in prompt
     assert "Source file: ULECD040.txt" in prompt
@@ -580,3 +606,69 @@ def test_generate_agent_utterance_mixed_tags_display_tag_free_tts_only_valid(
     assert "[quietly]" in generated.utterance_tts
     assert "meta" not in generated.utterance_tts
     assert "agent_2" not in generated.utterance_tts
+
+
+@pytest.mark.django_db
+def test_resolve_agent_retrieval_sources_includes_news_only_for_assertives_inform(user):
+    session = ConversationSession.objects.create(
+        user=user,
+        topic="Topic",
+        discussion_article_ids=[101, 102],
+    )
+
+    inform_sources = resolve_agent_retrieval_sources(
+        {"type": "ASSERTIVES", "subtype": "inform"},
+        session=session,
+    )
+    opinion_sources = resolve_agent_retrieval_sources(
+        {"type": "ASSERTIVES", "subtype": "opinion"},
+        session=session,
+    )
+    directive_sources = resolve_agent_retrieval_sources(
+        {"type": "DIRECTIVES", "subtype": "request_info"},
+        session=session,
+    )
+
+    assert "news" in inform_sources
+    assert "news" not in opinion_sources
+    assert "news" not in directive_sources
+
+
+@pytest.mark.django_db
+def test_build_agent_retrieval_context_includes_news_for_assertives_inform(user, monkeypatch):
+    session, _agent = _make_session_with_agent(user)
+    session.discussion_article_ids = [201]
+    session.save(update_fields=["discussion_article_ids"])
+    captured = {}
+
+    def fake_retrieve(  # noqa: PLR0913
+        query,
+        *,
+        session,
+        user,
+        sources,
+        top_k,
+        speech_act_type,
+        speech_act_subtype,
+    ):
+        captured["sources"] = sources
+        return RetrievedContext(
+            query=query,
+            requested_sources=sorted(sources),
+            source_statuses={"news": "success"},
+            items=[],
+            rendered_context="Retrieved information:\n1. Source: news",
+        )
+
+    monkeypatch.setattr(agent_service, "retrieve", fake_retrieve)
+
+    _build_agent_retrieval_context(
+        session,
+        {
+            "type": "ASSERTIVES",
+            "subtype": "inform",
+            "retrieval_requirement": "none",
+        },
+    )
+
+    assert "news" in captured["sources"]

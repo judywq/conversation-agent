@@ -6,7 +6,57 @@ export interface CefrSample {
   audio_url?: string | null
 }
 
+export interface NewsSubtopic {
+  slug: string
+  name: string
+  keywords: string[]
+}
+
+export interface NewsCategory {
+  slug: string
+  name: string
+  description: string
+  subtopics: NewsSubtopic[]
+}
+
+export interface DiscussionArticleSummary {
+  id: number
+  title: string
+  summary: string
+  url: string
+  full_text_fetched: boolean
+}
+
+export interface DiscussionScenarioResult {
+  scenario: string
+  category: string
+  subtopic: string
+  category_name: string
+  subtopic_name: string
+  article_id: number | null
+  article_title: string
+  article_ids: number[]
+  articles: DiscussionArticleSummary[]
+}
+
 export class ConversationService {
+  static async fetchNewsTaxonomy(): Promise<{ taxonomy_version: string; categories: NewsCategory[] }> {
+    const res = await api.get<{ taxonomy_version: string; categories: NewsCategory[] }>('/news/taxonomy/')
+    return res.data
+  }
+
+  static async generateDiscussionScenario(
+    category: string,
+    subtopic: string,
+  ): Promise<DiscussionScenarioResult> {
+    const res = await api.post<DiscussionScenarioResult>(
+      '/conversation/discussion-scenario/',
+      { category, subtopic },
+      { timeout: 180000 },
+    )
+    return res.data
+  }
+
   static async speechToText(audio: Blob): Promise<string> {
     const form = new FormData()
     form.append('audio', audio, 'recording.webm')

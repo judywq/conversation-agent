@@ -1,0 +1,131 @@
+{% extends "conversation/base.html" %}
+
+{% block title %}Start a discussion{% endblock %}
+
+{% block content %}
+  <div class="topbar">
+    <div>
+      <h1>Start a discussion</h1>
+      <p class="muted">Choose a news topic area, then generate a scenario for your group conversation.</p>
+    </div>
+    <a class="button button-secondary" href="{% url 'conversation:discussion-logout' %}">Sign out</a>
+  </div>
+
+  <div class="card">
+    {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    {% if success_message %}
+      <div class="alert alert-success">{{ success_message }}</div>
+    {% endif %}
+    {% if request.GET.confirmed %}
+      <div class="alert alert-success">
+        Discussion scenario saved. Continue in the conversation app to choose your listening level and start talking.
+      </div>
+    {% endif %}
+
+    <form method="post" id="discussion-form">
+      {% csrf_token %}
+      <div class="field">
+        <label for="category">Major category</label>
+        <select name="category" id="category" required>
+          <option value="">Select a category</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="subtopic">Subtopic</label>
+        <select name="subtopic" id="subtopic" required disabled>
+          <option value="">Select a subtopic</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <button type="submit" name="action" value="generate" class="button-primary" id="generate-button">
+          Generate scenario
+        </button>
+        <p class="muted" id="generate-status" hidden>Fetching article content and generating scenario…</p>
+      </div>
+
+      <div class="field" style="margin-top: 1.5rem;">
+        <label for="scenario">Discussion scenario</label>
+        <div class="scenario-box">
+          <textarea name="scenario" id="scenario" placeholder="Generate a scenario to preview it here.">{{ scenario }}</textarea>
+          {% if article_count %}
+            <p class="muted" style="margin: 0.75rem 0 0;">
+              Based on {{ article_count }} article{{ article_count|pluralize }}:
+              {% if article_titles %}{{ article_titles|join:", " }}{% else %}{{ article_title }}{% endif %}
+            </p>
+          {% elif article_title %}
+            <p class="muted" style="margin: 0.75rem 0 0;">Inspired by recent news: {{ article_title }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" name="action" value="confirm" class="button-primary">Save and continue</button>
+        <a class="button button-secondary" href="{{ conversation_url }}">Open conversation app</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block extra_head %}
+  <script>
+    const taxonomy = {{ taxonomy_json|safe }};
+    const selectedCategory = "{{ selected_category|escapejs }}";
+    const selectedSubtopic = "{{ selected_subtopic|escapejs }}";
+
+    function populateCategories() {
+      const categorySelect = document.getElementById("category");
+      for (const category of taxonomy) {
+        const option = document.createElement("option");
+        option.value = category.slug;
+        option.textContent = category.name;
+        categorySelect.appendChild(option);
+      }
+      if (selectedCategory) {
+        categorySelect.value = selectedCategory;
+      }
+    }
+
+    function populateSubtopics(categorySlug) {
+      const subtopicSelect = document.getElementById("subtopic");
+      subtopicSelect.innerHTML = '<option value="">Select a subtopic</option>';
+      const category = taxonomy.find((item) => item.slug === categorySlug);
+      if (!category) {
+        subtopicSelect.disabled = true;
+        return;
+      }
+      for (const subtopic of category.subtopics) {
+        const option = document.createElement("option");
+        option.value = subtopic.slug;
+        option.textContent = subtopic.name;
+        subtopicSelect.appendChild(option);
+      }
+      subtopicSelect.disabled = false;
+      if (selectedSubtopic && categorySlug === selectedCategory) {
+        subtopicSelect.value = selectedSubtopic;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      populateCategories();
+      populateSubtopics(document.getElementById("category").value);
+      document.getElementById("category").addEventListener("change", (event) => {
+        populateSubtopics(event.target.value);
+      });
+      const form = document.getElementById("discussion-form");
+      const generateButton = document.getElementById("generate-button");
+      const generateStatus = document.getElementById("generate-status");
+      form.addEventListener("submit", (event) => {
+        const submitter = event.submitter;
+        if (!submitter || submitter.value !== "generate") {
+          return;
+        }
+        generateButton.disabled = true;
+        generateButton.textContent = "Working…";
+        generateStatus.hidden = false;
+      });
+    });
+  </script>
+{% endblock %}

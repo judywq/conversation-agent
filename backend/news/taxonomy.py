@@ -183,3 +183,18 @@ def get_subtopic(category_slug: str, subtopic_slug: str) -> NewsSubtopic:
             return subtopic
     msg = f"Unknown news subtopic: {category_slug}/{subtopic_slug}"
     raise ValueError(msg)
+
+
+def serialize_taxonomy() -> list[dict[str, object]]:
+    return [
+        {
+            "slug": category.slug,
+            "name": category.name,
+            "description": category.description,
+            "subtopics": [
+                {"slug": subtopic.slug, "name": subtopic.name}
+                for subtopic in category.subtopics
+            ],
+        }
+        for category in NEWS_TAXONOMY
+    ]

@@ -19,8 +19,7 @@ def sync_miniflux_news(limit: int | None = None) -> dict[str, int | bool]:
     }
 
 
-@shared_task()
-def classify_unclassified_news(limit: int | None = None) -> dict[str, int]:
+def classify_unclassified_articles(*, limit: int | None = None) -> int:
     successfully_classified_ids = NewsClassification.objects.filter(
         taxonomy_version=TAXONOMY_VERSION,
         status=NewsClassification.Status.SUCCEEDED,
@@ -28,8 +27,11 @@ def classify_unclassified_news(limit: int | None = None) -> dict[str, int]:
     articles = NewsArticle.objects.exclude(
         id__in=successfully_classified_ids,
     ).order_by("-published_at")[: limit or settings.NEWS_CLASSIFICATION_BATCH_SIZE]
-    count = 0
     for article in articles:
         classify_article(article)
-        count += 1
-    return {"classified_count": count}
+    return len(articles)
+
+
+@shared_task()
+def classify_unclassified_news(limit: int | None = None) -> dict[str, int]:
+    return {"classified_count": classify_unclassified_articles(limit=limit)}

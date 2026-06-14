@@ -9,7 +9,7 @@ from backend.conversation.admin_session_grouped import GroupBySessionChangeListM
 
 from .models import ConversationLLMPrompt
 from .models import ConversationSession
-from .models import KnowledgeSnippet
+from .models import Exemplar
 from .models import TurnRecord
 from .models import TurnEngineLog
 from .models import TurnRetrieval
@@ -263,8 +263,8 @@ class ConversationSessionAdmin(admin.ModelAdmin):
         return Truncator(obj.topic).chars(80, truncate="…")
 
 
-@admin.register(KnowledgeSnippet)
-class KnowledgeSnippetAdmin(admin.ModelAdmin):
+@admin.register(Exemplar)
+class ExemplarAdmin(admin.ModelAdmin):
     list_display = [
         "id",
         "title",
@@ -300,7 +300,7 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
         "metadata__subtype",
         "metadata__file_name",
     ]
-    actions = ["enable_selected_snippets", "disable_selected_snippets"]
+    actions = ["enable_selected_exemplars", "disable_selected_exemplars"]
     readonly_fields = ["created_at", "updated_at"]
     fieldsets = (
         (None, {"fields": ("title", "content", "is_active")}),
@@ -317,7 +317,7 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
         return Truncator(obj.content).chars(80, truncate="...")
 
     @admin.display(boolean=True, description="Embedding")
-    def has_embedding(self, obj: KnowledgeSnippet) -> bool:
+    def has_embedding(self, obj: Exemplar) -> bool:
         return obj.embedding is not None
 
     @admin.display(description="SA type")
@@ -332,15 +332,15 @@ class KnowledgeSnippetAdmin(admin.ModelAdmin):
     def metadata_file_name(self, obj):
         return self._metadata_value(obj, "file_name")
 
-    @admin.action(description="Enable selected snippets")
-    def enable_selected_snippets(self, request, queryset):
+    @admin.action(description="Enable selected exemplars")
+    def enable_selected_exemplars(self, request, queryset):
         updated = queryset.update(is_active=True)
-        self.message_user(request, f"Enabled {updated} snippet(s).")
+        self.message_user(request, f"Enabled {updated} exemplar(s).")
 
-    @admin.action(description="Disable selected snippets")
-    def disable_selected_snippets(self, request, queryset):
+    @admin.action(description="Disable selected exemplars")
+    def disable_selected_exemplars(self, request, queryset):
         updated = queryset.update(is_active=False)
-        self.message_user(request, f"Disabled {updated} snippet(s).")
+        self.message_user(request, f"Disabled {updated} exemplar(s).")
 
     def _metadata_value(self, obj, key):
         metadata = obj.metadata if isinstance(obj.metadata, dict) else {}

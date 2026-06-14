@@ -55,7 +55,7 @@ Then run:
 make init-knowledge-local
 ```
 
-This runs Django migrations and imports the annotations into `KnowledgeSnippet` records. To validate the file without writing database rows, run:
+This runs Django migrations and imports the annotations into `Exemplar` records. To validate the file without writing database rows, run:
 
 ```sh
 DRY_RUN=1 make init-knowledge-local
@@ -69,9 +69,9 @@ REFRESH_EMBEDDINGS=1 make init-knowledge-local
 
 ### Knowledge Embeddings
 
-Knowledge retrieval combines keyword matching with pgvector recall, then applies a deterministic reciprocal-rank rerank. Keyword and vector candidates are merged by `KnowledgeSnippet`, ranked by stable scores, and written to retrieval traces with `retrieval_channels` metadata such as `["keyword"]`, `["vector"]`, or `["keyword", "vector"]`.
+Knowledge retrieval combines keyword matching with pgvector recall, then applies a deterministic reciprocal-rank rerank. Keyword and vector candidates are merged by `Exemplar`, ranked by stable scores, and written to retrieval traces with `retrieval_channels` metadata such as `["keyword"]`, `["vector"]`, or `["keyword", "vector"]`.
 
-The local and production Postgres images are built from `pgvector/pgvector:pg16`, and migrations enable the pgvector extension plus the `KnowledgeSnippet.embedding` vector index.
+The local and production Postgres images are built from `pgvector/pgvector:pg16`, and migrations enable the pgvector extension plus the `Exemplar.embedding` vector index.
 
 Embedding settings:
 

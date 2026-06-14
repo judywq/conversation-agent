@@ -5,6 +5,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
+from backend.conversation.services.turn_processor import process_agent_turn
 
 
 @pytest.mark.django_db
@@ -195,4 +196,63 @@ def test_named_question_target_user_forces_user_next(user):
     assert decision.next_speaker_type == "user"
     assert decision.next_speaker_id == "user"
     assert decision.reason == "named_question_target_user"
+
+
+@pytest.mark.django_db
+def test_named_question_target_user_forces_user_next_when_period_ended(user):
+    user.name = "Judy"
+    user.save()
+    session = ConversationSession.objects.create(user=user, topic="t", turn_count=2)
+    AgentProfile.objects.create(
+        session=session,
+        agent_id="agent_1",
+        display_name="Jack",
+        personality={"persona_name": "Discussion Driver"},
+    )
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance=(
+            "Um, I take the school bus because it is easy and I can relax. "
+            "Do you like taking the school bus, Judy."
+        ),
+        metadata=None,
+        source="text",
+    )
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=None)
+    assert decision.next_speaker_type == "user"
+    assert decision.next_speaker_id == "user"
+    assert decision.reason == "named_question_target_user"
+
+
+@pytest.mark.django_db
+def test_agent_turn_name_target_fallback_routes_user_via_directive_metadata(user):
+    user.name = "Judy"
+    user.save()
+    session = ConversationSession.objects.create(user=user, topic="t", turn_count=1)
+    AgentProfile.objects.create(
+        session=session,
+        agent_id="agent_1",
+        display_name="Jack",
+        personality={"persona_name": "Discussion Driver"},
+    )
+    processed = process_agent_turn(
+        session,
+        speaker="agent_1",
+        utterance="Do you like taking the school bus, Judy.",
+        facilitator_plan={
+            "type": "DIRECTIVES",
+            "subtype": "request_info",
+            "target": "everyone",
+            "content_requirement": "Ask Judy about the school bus.",
+            "retrieval_requirement": "none",
+        },
+        source="text",
+    )
+    assert processed.turn.target == "user"
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=None)
+    assert decision.next_speaker_type == "user"
+    assert decision.next_speaker_id == "user"
+    assert decision.reason == "directive_target_user"
 

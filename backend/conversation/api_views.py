@@ -9,8 +9,12 @@ from rest_framework.views import APIView
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
+from backend.conversation.services.discussion_scenario import scenario_result_to_dict
+from backend.conversation.services.discussion_scenario import setup_discussion_context
 from backend.conversation.services.profile_audio import generate_cefr_topic_samples
 from backend.conversation.services.stt import transcribe_audio_file
+from backend.news.taxonomy import get_category
+from backend.news.taxonomy import get_subtopic
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,44 @@ class SpeechToTextView(APIView):
 
 class CefrTopicSamplesRequestSerializer(serializers.Serializer):
     topic = serializers.CharField(max_length=500)
+
+
+class DiscussionScenarioRequestSerializer(serializers.Serializer):
+    category = serializers.CharField(max_length=100)
+    subtopic = serializers.CharField(max_length=100)
+
+
+class DiscussionScenarioView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = DiscussionScenarioRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        category = serializer.validated_data["category"]
+        subtopic = serializer.validated_data["subtopic"]
+        try:
+            get_category(category)
+            get_subtopic(category, subtopic)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        result = setup_discussion_context(category=category, subtopic=subtopic)
+        if hasattr(request.user, "userprofile"):
+            profile = request.user.userprofile
+            profile.discussion_category = category
+            profile.discussion_subtopic = subtopic
+            profile.discussion_scenario = result.scenario
+            profile.discussion_article_id = result.article_id
+            profile.discussion_article_ids = result.article_ids
+            profile.save(
+                update_fields=[
+                    "discussion_category",
+                    "discussion_subtopic",
+                    "discussion_scenario",
+                    "discussion_article_id",
+                    "discussion_article_ids",
+                ],
+            )
+        return Response(scenario_result_to_dict(result))
 
 
 class CefrTopicSamplesView(APIView):

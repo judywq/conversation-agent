@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from typing import Literal
 
 from backend.conversation.models import AgentProfile
@@ -177,6 +178,39 @@ def _directive_target_override(session: ConversationSession) -> TurnDecision | N
     return None
 
 
+_INTERROGATIVE_START = re.compile(
+    r"^(?:do|does|did|can|could|would|will|what|how|why|where|when|who|"
+    r"is|are|was|were|have|has|had)\b",
+    re.IGNORECASE,
+)
+
+
+def _last_sentence(text: str) -> str:
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    cleaned = [part.strip() for part in parts if part.strip()]
+    return cleaned[-1] if cleaned else (text or "").strip()
+
+
+def _looks_interrogative(sentence: str) -> bool:
+    core = (sentence or "").strip().rstrip(".!?")
+    if not core:
+        return False
+    return bool(_INTERROGATIVE_START.match(core))
+
+
+def _named_addressee_in_question(text: str, name: str) -> bool:
+    nc = (name or "").strip().casefold()
+    if not nc:
+        return False
+    u = (text or "").casefold()
+    if f"{nc}?" in u or f"{nc}," in u:
+        return True
+    if f"{nc}." not in u:
+        return False
+    last = _last_sentence(text)
+    return last.casefold().endswith(f"{nc}.") and _looks_interrogative(last)
+
+
 def _named_question_target_override(session: ConversationSession) -> TurnDecision | None:
     """
     If the last real AGENT utterance contains a question explicitly addressed to a participant
@@ -193,7 +227,7 @@ def _named_question_target_override(session: ConversationSession) -> TurnDecisio
     if not last or last.speaker_type != TurnRecord.SPEAKER_TYPE_AGENT:
         return None
     text = (last.utterance or "").strip()
-    if "?" not in text:
+    if not text:
         return None
 
     # Build id -> display name map
@@ -204,28 +238,23 @@ def _named_question_target_override(session: ConversationSession) -> TurnDecisio
     for a in AgentProfile.objects.filter(session=session).only("agent_id", "display_name"):
         id_to_name[a.agent_id] = (a.display_name or a.agent_id).strip()
 
-    u = text.casefold()
-    # Prefer "name?" / "name," patterns.
     for pid, name in id_to_name.items():
-        n = (name or "").strip()
-        if not n:
+        if not _named_addressee_in_question(text, name):
             continue
-        nc = n.casefold()
-        if f"{nc}?" in u or f"{nc}," in u:
-            if pid == "user":
-                return TurnDecision(
-                    terminate=False,
-                    next_speaker_type="user",
-                    next_speaker_id="user",
-                    reason="named_question_target_user",
-                )
-            if AgentProfile.objects.filter(session=session, agent_id=pid).exists():
-                return TurnDecision(
-                    terminate=False,
-                    next_speaker_type="agent",
-                    next_speaker_id=pid,
-                    reason="named_question_target_agent",
-                )
+        if pid == "user":
+            return TurnDecision(
+                terminate=False,
+                next_speaker_type="user",
+                next_speaker_id="user",
+                reason="named_question_target_user",
+            )
+        if AgentProfile.objects.filter(session=session, agent_id=pid).exists():
+            return TurnDecision(
+                terminate=False,
+                next_speaker_type="agent",
+                next_speaker_id=pid,
+                reason="named_question_target_agent",
+            )
     return None
 
 

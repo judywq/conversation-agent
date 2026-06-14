@@ -69,7 +69,7 @@ Generate ONE instruction object for the next speaker.
 - Your instruction should consider Discussion history and continue the conversation naturally.
 - Prefer targeting the most relevant participant from the last turn when appropriate.
 - If the history is empty (no prior turns), ask a simple opening question aligned with the topic.
-- Keep "content_requirement" to at most TWO sentences. Be concise and actionable.
+- Keep "content_requirement" to exactly ONE sentence and fewer than 15 words. Be concise and actionable.
 
 # Speech-act distribution (soft guidance)
 - Corpus targets describe typical proportions of SA types (and ASSERTIVES/DIRECTIVES subtypes). Prefer choices that move this session's running distribution toward those proportions, using `sa_session_summary` (especially `steering_hint`) as a guide.
@@ -84,7 +84,7 @@ If {next_speaker_type} is "agent":
   - The instruction MUST tell the speaker to greet everyone and briefly introduce the topic.
   - Prefer: speech_act.type="EXPRESSIVES" subtype="greet_welcome", target="everyone".
 - If {is_ending} == true:
-  - The instruction MUST tell the speaker to quickly wrap up the conversation (1-2 sentences),
+  - The instruction MUST tell the speaker to quickly wrap up the conversation,
     optionally thanking everyone and inviting the user to end or continue later.
   - Prefer: speech_act.type="DECLARATIONS" subtype="close_session" or "EXPRESSIVES" subtype="thank".
 
@@ -97,7 +97,7 @@ If {next_speaker_type} is "agent":
     "type": "<type>",
     "subtype": "<subtype>"
   },
-  "content_requirement": "<instruction>",
+  "content_requirement": "<one-sentence instruction, fewer than 15 words>",
   "retrieval need": "<memory | none>"
 }
 
@@ -108,10 +108,11 @@ If {next_speaker_type} is "agent":
 - Choose a clear target:
   - a specific participant (for responses, questions, challenges)
   - "everyone" (for general contributions)
-- If the instruction includes a question/request addressed to a specific participant by NAME, set `target` to that participant id using {participants_map}.
+- If the instruction includes a question/request addressed to a specific participant by NAME, set `target` to that participant id using {participants_map}, and use speech_act.type="DIRECTIVES" with a request-like subtype (request_info, request_confirm, request_action, request_permission, or invite).
 - decide whether to retrieve information:
   - "memory" for past discussion reference
   - "none" otherwise
+- `content_requirement` must be one sentence only and fewer than 15 words.
 - Ensure the instruction fits the speaker's role and keeps the discussion progressing.
 - Avoid repetition.
 

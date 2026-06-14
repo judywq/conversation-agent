@@ -5,6 +5,7 @@ volumes:
   production_django_media: {}
   production_django_static: {}
   production_redis_data: {}
+  production_miniflux_postgres_data: {}
 
 
 services:
@@ -62,6 +63,35 @@ services:
     volumes:
       - production_redis_data:/data
 
+  miniflux-db:
+    image: docker.io/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: miniflux
+      POSTGRES_PASSWORD: miniflux_pw
+      POSTGRES_DB: miniflux
+    volumes:
+      - production_miniflux_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniflux -d miniflux"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  miniflux:
+    image: docker.io/miniflux/miniflux:2.2.1
+    restart: unless-stopped
+    depends_on:
+      miniflux-db:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_URL: postgres://miniflux:miniflux_pw@miniflux-db:5432/miniflux?sslmode=disable
+      RUN_MIGRATIONS: "1"
+      CREATE_ADMIN: "1"
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin_pw
 
   celeryworker:
     <<: *django

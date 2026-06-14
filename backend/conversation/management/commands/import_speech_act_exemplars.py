@@ -8,7 +8,7 @@ from backend.conversation.services import speech_act_exemplars
 
 
 class Command(BaseCommand):
-    help = "Import Speech Act annotation JSON into KnowledgeSnippet exemplars."
+    help = "Import Speech Act annotation JSON into Exemplar records."
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("path")

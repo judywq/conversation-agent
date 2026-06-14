@@ -41,7 +41,7 @@ Content requirement:
 
 # Retrieved information (RAG)
 
-Retrieved context (may contain web, session, memory, or knowledge snippets; may also report that no usable retrieval was found):
+Retrieved context (may contain web, session, memory, knowledge, news, or exemplars; may also report that no usable retrieval was found):
 {retrieved_context}
 
 # Generation Guidelines
@@ -54,8 +54,9 @@ Retrieved context (may contain web, session, memory, or knowledge snippets; may 
 - Speech Act examples in retrieved context are style and intent guidance only.
 - Do not cite Speech Act examples as evidence, repeat their metadata, or mention source files, snippet IDs, labels, or retrieval internals in the final utterance.
 - If retrieved context says no usable information was found, continue from the discussion history without pretending you retrieved evidence.
-- For ASSERTIVES / EXPRESSIVES / COMMISSIVES / DECLARATIONS: prefer ending with a statement (period) most of the time.
-- Directives should use a question ending.
+- For ASSERTIVES / EXPRESSIVES / COMMISSIVES / DECLARATIONS only: prefer ending with a statement (period) most of the time.
+- When speech_act_type is DIRECTIVES and speech_act_subtype is request-like (request_info, request_confirm, request_action, request_permission, invite), the utterance MUST end with "?" and must NOT end with ".".
+- If you address someone by name in a request-like DIRECTIVE question, end with ", {target_display_name}?" (e.g. "Do you like taking the school bus, Judy?").
 - If the dominant speech act type is DIRECTIVES and the target_display_name is not empty, address the target by name naturally (e.g., "{target_display_name}, ...").
 - When you address a specific person, use their name naturally (from the discussion history / target_display_name), but do NOT overuse it:
   - Use their name at most once in the utterance unless it would sound unnatural without repeating.
