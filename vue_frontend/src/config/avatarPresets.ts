@@ -5,23 +5,24 @@ export type AvatarPreset = {
   body: AvatarBody
 }
 
-const TALKING_HEAD_AVATARS =
-  'https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars'
+const AVATAR_BASE = '/avatars'
 
 export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
-  { url: `${TALKING_HEAD_AVATARS}/brunette.glb`, body: 'F' },
-  { url: `${TALKING_HEAD_AVATARS}/mpfb.glb`, body: 'F' },
-  { url: `${TALKING_HEAD_AVATARS}/brunette-t.glb`, body: 'F' },
-  { url: `${TALKING_HEAD_AVATARS}/avaturn.glb`, body: 'F' },
-  // { url: `${TALKING_HEAD_AVATARS}/vroid.glb`, body: 'F' }, // Loading error for vroid.glb: THREE.GLTFLoader: setMeshoptDecoder must be called before loading compressed files
+  { url: `${AVATAR_BASE}/brunette.glb`, body: 'F' },
+  // { url: `${AVATAR_BASE}/brunette-t.glb`, body: 'F' },
+  { url: `${AVATAR_BASE}/mpfb.glb`, body: 'F' },
+  // { url: `${AVATAR_BASE}/avatarsdk.glb`, body: 'F' },
+  { url: `${AVATAR_BASE}/avaturn.glb`, body: 'F' },
+  // { url: `${AVATAR_BASE}/vroid.glb`, body: 'F' }, // Loading error for vroid.glb: THREE.GLTFLoader: setMeshoptDecoder must be called before loading compressed files
 ]
 
 export const MALE_AVATAR_PRESETS: AvatarPreset[] = [
-  { url: `${TALKING_HEAD_AVATARS}/avatarsdk.glb`, body: 'M' },
-  // { url: `${TALKING_HEAD_AVATARS}/vroid.glb`, body: 'M' },
-  { url: `${TALKING_HEAD_AVATARS}/brunette.glb`, body: 'M' },
-  { url: `${TALKING_HEAD_AVATARS}/mpfb.glb`, body: 'M' },
-  { url: `${TALKING_HEAD_AVATARS}/avaturn.glb`, body: 'M' },
+  // { url: `${AVATAR_BASE}/brunette.glb`, body: 'M' },
+  // { url: `${AVATAR_BASE}/brunette-t.glb`, body: 'M' },
+  // { url: `${AVATAR_BASE}/mpfb.glb`, body: 'M' },
+  { url: `${AVATAR_BASE}/avatarsdk.glb`, body: 'M' },
+  // { url: `${AVATAR_BASE}/avaturn.glb`, body: 'M' },
+  // { url: `${AVATAR_BASE}/vroid.glb`, body: 'M' },
 ]
 
 export function normalizeAvatarBody(gender?: string | null): AvatarBody {
