@@ -12,6 +12,7 @@ from django.core.files.storage import default_storage
 from openai import OpenAI
 
 from backend.conversation.exceptions import ServiceConfigurationError
+from backend.utils.urls import absolute_media_url
 from backend.conversation.services.lipsync import (
     LipSyncData,
     audio_duration_ms,
@@ -106,10 +107,7 @@ class TtsResult:
 def _store_audio_bytes(audio_bytes: bytes, audio_format: str) -> str:
     file_name = f"audio/{uuid4().hex}.{audio_format}"
     path = default_storage.save(file_name, ContentFile(audio_bytes))
-    domain = settings.DOMAIN_NAME
-    if not domain.startswith("http"):
-        domain = f"http://{domain}"
-    return f"{domain}{settings.MEDIA_URL}{path}"
+    return absolute_media_url(path)
 
 
 def synthesize_speech(

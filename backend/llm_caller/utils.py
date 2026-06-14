@@ -20,6 +20,8 @@ from langchain_openai import ChatOpenAI
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from PIL import Image
 
+from backend.utils.urls import absolute_media_url
+
 from .fake_llms import get_fake_llm_model
 
 logger = logging.getLogger(__name__)
@@ -316,12 +318,7 @@ def generate_image_with_gemini(  # noqa: C901, PLR0913, PLR0912
                     ContentFile(img_buffer.read()),
                 )
 
-                # Get the full URL for the image
-                domain = settings.DOMAIN_NAME
-                # Ensure domain has protocol
-                if not domain.startswith("http"):
-                    domain = f"http://{domain}"
-                full_url = f"{domain}/media/{path}"
+                full_url = absolute_media_url(path)
                 logger.info("Generated image: %s (full URL: %s)", path, full_url)
                 return full_url
 

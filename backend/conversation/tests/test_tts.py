@@ -10,6 +10,7 @@ from backend.conversation.services.tts import synthesize_speech_with_lipsync
 
 
 @override_settings(
+    DEBUG=True,
     TTS_PROVIDER="fish",
     FISH_API_KEY="fish-test-key",
     FISH_TTS_MODEL="s2-pro",
@@ -85,6 +86,7 @@ def test_synthesize_speech_treats_non_openai_voice_as_fish_reference_id() -> Non
 
 
 @override_settings(
+    DEBUG=True,
     TTS_PROVIDER="elevenlabs",
     ELEVENLABS_API_KEY="eleven-test-key",
     ELEVENLABS_MODEL_ID="eleven_v3",
@@ -173,6 +175,7 @@ def test_synthesize_speech_elevenlabs_falls_back_to_default_voice_id() -> None:
 
 
 @override_settings(
+    DEBUG=True,
     TTS_PROVIDER="openai",
     OPENAI_TTS_VOICE="alloy",
     OPENAI_TTS_MODEL="gpt-4o-mini-tts",

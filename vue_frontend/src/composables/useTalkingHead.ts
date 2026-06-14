@@ -1,5 +1,6 @@
 import { ref, shallowRef, type Ref } from 'vue'
 import { TalkingHead } from '@met4citizen/talkinghead'
+import { LipsyncEn } from '@met4citizen/talkinghead/modules/lipsync-en.mjs'
 import type { AvatarBody } from '@/config/avatarPresets'
 import type { LipSyncPayload } from '@/types/lipsync'
 
@@ -41,7 +42,7 @@ export function useTalkingHead(stageRef: Ref<HTMLElement | null>) {
 
       try {
         const instance = new TalkingHead(stage, {
-          lipsyncModules: ['en'],
+          lipsyncModules: [],
           mixerGainSpeech: 2.2,
           cameraView: 'upper',
           cameraDistance: 0.05,
@@ -50,6 +51,7 @@ export function useTalkingHead(stageRef: Ref<HTMLElement | null>) {
           cameraZoomEnable: false,
           cameraPanEnable: false,
         })
+        instance.lipsync.en = new LipsyncEn()
 
         await instance.showAvatar({
           url,
