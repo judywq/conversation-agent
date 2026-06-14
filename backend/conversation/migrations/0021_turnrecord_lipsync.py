@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("conversation", "0017_turnrecord_utterance_tts"),
+        ("conversation", "0020_rename_knowledgesnippet_exemplar"),
     ]
 
     operations = [
