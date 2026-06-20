@@ -4,7 +4,7 @@ from backend.users.api.serializers import CustomUserDetailsSerializer
 
 
 @pytest.mark.django_db
-def test_profile_completed_updates_when_all_ocean_traits_present(user):
+def test_profile_completed_requires_ocean_and_cefr(user):
     serializer = CustomUserDetailsSerializer(
         instance=user,
         data={
@@ -16,6 +16,17 @@ def test_profile_completed_updates_when_all_ocean_traits_present(user):
                 "neuroticism": "low",
             },
         },
+        partial=True,
+    )
+    assert serializer.is_valid(), serializer.errors
+    serializer.save()
+
+    user.refresh_from_db()
+    assert user.userprofile.profile_completed is False
+
+    serializer = CustomUserDetailsSerializer(
+        instance=user,
+        data={"cefr_level": "B1"},
         partial=True,
     )
     assert serializer.is_valid(), serializer.errors

@@ -41,6 +41,7 @@ def test_agent_persona_template_substitutes_major():
         agent_name="agent_1",
         agent_display_name="Alex",
         proficiency_level="B2",
+        proficiency_guidance="Default proficiency: CEFR level B2.",
         major="Computer Science",
         topic="climate",
         history="[]",

@@ -34,6 +34,8 @@ from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
+from backend.conversation.services.user_proficiency import resolve_user_proficiency
+from backend.conversation.services.user_proficiency import update_proficiency_from_session
 from backend.conversation.services.utterance_duplicates import DuplicateDetectionResult
 from backend.conversation.services.utterance_duplicates import (
     apply_duplicate_detection_to_turn,
@@ -171,8 +173,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if profile_gate["profile_completed"] is not True:
                 await self.send_json({"type": "error", "message": "Complete your profile before starting a conversation."})
                 return
-            if str(profile_gate["cefr_sample_topic"] or "").strip() != topic.strip():
-                await self.send_json({"type": "error", "message": "Choose a CEFR listening level for this topic before starting."})
+            if not profile_gate["cefr_level"]:
+                await self.send_json({"type": "error", "message": "Choose your English level on your profile before starting."})
                 return
             discussion = await self._discussion_context_for_topic(topic)
             try:
@@ -300,6 +302,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_json({"type": "paused"})
                 return
             if session.terminate:
+                await self._finalize_session(self.session_id)
                 await self.send_json({"type": "terminated", "reason": "terminate_flag"})
                 return
 
@@ -333,6 +336,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             )
 
             if decision.terminate:
+                await self._finalize_session(self.session_id)
                 await self.send_json({"type": "terminated", "reason": decision.reason})
                 return
 
@@ -456,7 +460,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         agent_count: int | None = None,
         discussion: dict | None = None,
     ) -> ConversationSession:
-        user = self.scope["user"]
+        user_model = get_user_model()
+        user = user_model.objects.select_related("userprofile").get(pk=self.scope["user"].pk)
         desired_count = agent_count
         if desired_count is None:
             desired_count = int(getattr(settings, "CONVERSATION_AGENT_COUNT", 3) or 3)
@@ -478,9 +483,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             discussion_article_ids=discussion_article_ids,
         )
         ocean = user.userprofile.ocean if hasattr(user, "userprofile") else {}
-        user_cefr_level = user.userprofile.cefr_level if hasattr(user, "userprofile") else ""
+        proficiency = resolve_user_proficiency(user=user)
         user_major = user.userprofile.major if hasattr(user, "userprofile") else ""
-        agent_cefr_level = normalize_user_cefr_level(user_cefr_level)
+        agent_cefr_level = proficiency["cefr_level"] or normalize_user_cefr_level(
+            user.userprofile.cefr_level if hasattr(user, "userprofile") else "",
+        )
+        proficiency_guidance = proficiency["proficiency_guidance"]
         selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
         used_ids: set[str] = set()
         agent_rows: list[AgentProfile] = []
@@ -513,6 +521,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     traits={
                         "style": selected.prompt.persona_name.lower().replace(" ", "_"),
                         "proficiency_level": agent_cefr_level,
+                        "proficiency_guidance": proficiency_guidance,
+                        "user_reference_utterance": proficiency["reference_utterance"],
                         "complementary_score": selected.complementary_score,
                     },
                 ),
@@ -559,16 +569,27 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     def _get_profile_gate_state(self) -> dict:
         user = self.scope["user"]
         if not getattr(user, "is_authenticated", False):
-            return {"profile_completed": False, "cefr_sample_topic": ""}
+            return {"profile_completed": False, "cefr_level": ""}
         user_model = get_user_model()
         user = user_model.objects.select_related("userprofile").get(pk=user.pk)
         profile = getattr(user, "userprofile", None)
         if profile is None:
-            return {"profile_completed": False, "cefr_sample_topic": ""}
+            return {"profile_completed": False, "cefr_level": ""}
         return {
             "profile_completed": bool(profile.profile_completed),
-            "cefr_sample_topic": profile.cefr_sample_topic,
+            "cefr_level": (profile.cefr_level or "").strip(),
         }
+
+    @database_sync_to_async
+    def _finalize_session(self, session_id: int) -> None:
+        session = (
+            ConversationSession.objects.filter(id=session_id)
+            .select_related("user__userprofile")
+            .first()
+        )
+        if session is None:
+            return
+        update_proficiency_from_session(session)
 
     @database_sync_to_async
     def _get_session(self, session_id: int) -> ConversationSession | None:
@@ -622,8 +643,15 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _mark_terminate(self, session_id: int) -> None:
-        session = ConversationSession.objects.get(id=session_id)
+        session = (
+            ConversationSession.objects.filter(id=session_id)
+            .select_related("user__userprofile")
+            .first()
+        )
+        if session is None:
+            return
         mark_terminate(session)
+        update_proficiency_from_session(session)
 
     @database_sync_to_async
     def _set_paused(self, session_id: int, *, paused: bool) -> None:

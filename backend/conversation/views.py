@@ -122,15 +122,11 @@ class DiscussionSetupView(LoginRequiredMixin, TemplateView):
             profile.discussion_category = category
             profile.discussion_subtopic = subtopic
             profile.discussion_scenario = scenario
-            profile.cefr_sample_topic = ""
-            profile.cefr_sample_choices = []
             profile.save(
                 update_fields=[
                     "discussion_category",
                     "discussion_subtopic",
                     "discussion_scenario",
-                    "cefr_sample_topic",
-                    "cefr_sample_choices",
                 ],
             )
             return redirect(f"{reverse('conversation:discussion-setup')}?confirmed=1")

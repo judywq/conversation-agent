@@ -26,11 +26,22 @@ def _profile_memory_specs(user: Any) -> list[tuple[str, str]]:
     preferred_name = (profile.preferred_name or "").strip()
     major = (profile.major or "").strip()
     cefr_level = (profile.cefr_level or "").strip().upper()
+    reference_utterance = (getattr(profile, "proficiency_reference_utterance", "") or "").strip()
     if preferred_name:
         specs.append(("preferred_name", f"The user prefers to be called {preferred_name}."))
     if major:
         specs.append(("major", f"The user's major is {major}."))
-    if cefr_level:
+    if reference_utterance:
+        specs.append(
+            (
+                "proficiency_reference_utterance",
+                (
+                    "The user's English speaking level is best represented by this reference "
+                    f'utterance: "{reference_utterance}"'
+                ),
+            ),
+        )
+    elif cefr_level:
         specs.append(("cefr_level", f"The user's current CEFR level is {cefr_level}."))
     return specs
 

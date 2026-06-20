@@ -501,6 +501,7 @@ def seed_user_from_userprofile(user: Any, *, store: BaseStore | None = None) -> 
     preferred_name = (getattr(profile_model, "preferred_name", "") or "").strip()
     major = (getattr(profile_model, "major", "") or "").strip()
     cefr_level = (getattr(profile_model, "cefr_level", "") or "").strip().upper()
+    reference_utterance = (getattr(profile_model, "proficiency_reference_utterance", "") or "").strip()
     profile = UserPersonalProfile(
         preferred_name=preferred_name or None,
         major=major or None,
@@ -530,7 +531,20 @@ def seed_user_from_userprofile(user: Any, *, store: BaseStore | None = None) -> 
                 metadata={"field": "major", "value": major},
             ),
         )
-    if cefr_level:
+    if reference_utterance:
+        rows.append(
+            SpeakerMemoryRow(
+                memory_type="learning_goal",
+                content=(
+                    "The user's English speaking level is best represented by this reference "
+                    f'utterance: "{reference_utterance}"'
+                ),
+                speaker="user",
+                source_label="profile_sync",
+                metadata={"field": "proficiency_reference_utterance", "value": reference_utterance},
+            ),
+        )
+    elif cefr_level:
         rows.append(
             SpeakerMemoryRow(
                 memory_type="learning_goal",

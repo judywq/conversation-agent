@@ -33,19 +33,56 @@
         </div>
 
         <div class="rounded-md border p-4 space-y-2">
-          <div class="text-sm font-medium">Current proficiency selection</div>
+          <div class="text-sm font-medium">English proficiency</div>
           <div class="text-sm text-muted-foreground">
-            Latest selected CEFR level:
-            <span class="font-medium text-foreground">{{ authStore.user?.cefr_level || 'Not set yet' }}</span>
+            Initial CEFR level:
+            <span class="font-medium text-foreground">{{ selectedCefrLevel || authStore.user?.cefr_level || 'Not set yet' }}</span>
           </div>
-          <div class="text-sm text-muted-foreground">
-            Choose a fresh CEFR listening sample for each new conversation topic before you start.
+          <div v-if="authStore.user?.proficiency_reference_utterance" class="text-sm text-muted-foreground">
+            After your first discussion, agents match this sample of your speech instead of a CEFR label.
           </div>
           <div class="text-sm">
             Profile status:
             <span class="font-medium">{{ authStore.user?.profile_completed ? 'Complete' : 'Incomplete' }}</span>
           </div>
         </div>
+
+        <Card class="border">
+          <CardHeader>
+            <CardTitle class="text-base">Choose your English level</CardTitle>
+            <CardDescription>
+              Listen to the samples below and pick the level you can comfortably follow. This sets your default
+              until your first discussion session updates it from your own speech.
+            </CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            <Button
+              variant="outline"
+              :disabled="isGeneratingCefr"
+              @click="generateCefrSamples"
+            >
+              {{ isGeneratingCefr ? 'Generating samples…' : 'Generate listening samples' }}
+            </Button>
+            <div v-if="cefrSampleList.length === 0" class="text-sm text-muted-foreground">
+              Generate samples to choose your starting level.
+            </div>
+            <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-md border p-3">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="font-medium w-5 text-center">{{ idx + 1 }}</div>
+                  <div class="font-medium">{{ sample.level }}</div>
+                  <audio v-if="sample.audio_url" :src="sample.audio_url" controls class="h-8 max-w-[180px]" />
+                </div>
+                <Button
+                  :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
+                  @click="selectedCefrLevel = sample.level"
+                >
+                  {{ selectedCefrLevel === sample.level ? 'Selected' : 'Choose' }}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <div class="space-y-2">
           <div class="text-sm font-medium">Personality self-evaluation</div>
@@ -87,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -99,6 +136,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast/use-toast'
+import {
+  ConversationService,
+  PROFILE_ONBOARDING_CEFR_TOPIC,
+  type CefrSample,
+} from '@/services/conversationService'
 import { AuthService } from '@/services/authService'
 import { useAuthStore } from '@/stores/auth'
 
@@ -163,6 +205,10 @@ const oceanModel = reactive<Record<OceanTraitKey, string>>({
 
 const preferredName = ref(authStore.user?.preferred_name ?? '')
 const major = ref(authStore.user?.major ?? '')
+const cefrSamples = ref<CefrSample[]>(authStore.user?.cefr_sample_choices ?? [])
+const cefrSampleList = computed(() => cefrSamples.value)
+const selectedCefrLevel = ref<string | null>(authStore.user?.cefr_level ?? null)
+const isGeneratingCefr = ref(false)
 
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
@@ -178,6 +224,40 @@ watch(
   },
 )
 
+watch(
+  () => authStore.user,
+  (user) => {
+    if (!user) return
+    preferredName.value = user.preferred_name ?? ''
+    major.value = user.major ?? ''
+    selectedCefrLevel.value = user.cefr_level ?? null
+    cefrSamples.value = user.cefr_sample_choices ?? []
+  },
+)
+
+async function generateCefrSamples() {
+  isGeneratingCefr.value = true
+  selectedCefrLevel.value = null
+  try {
+    const result = await ConversationService.generateCefrSamples(PROFILE_ONBOARDING_CEFR_TOPIC)
+    cefrSamples.value = result.samples
+    toast({
+      title: 'Samples ready',
+      description: 'Listen and choose the level you are comfortable with, then save your profile.',
+    })
+  } catch (err: unknown) {
+    toast({
+      title: 'Sample generation failed',
+      description: err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: string }).message)
+        : 'Could not generate CEFR listening samples.',
+      variant: 'destructive',
+    })
+  } finally {
+    isGeneratingCefr.value = false
+  }
+}
+
 async function handleSave() {
   isSubmitting.value = true
   generalError.value = null
@@ -187,10 +267,22 @@ async function handleSave() {
       const v = oceanModel[key]
       if (v && v !== OCEAN_UNSET) oceanPayload[key] = v
     }
+    if (!selectedCefrLevel.value) {
+      generalError.value = 'Choose a CEFR listening level before saving.'
+      toast({
+        title: 'English level required',
+        description: generalError.value,
+        variant: 'destructive',
+      })
+      return
+    }
     const payload = {
       ocean: oceanPayload,
       preferred_name: preferredName.value,
       major: major.value,
+      cefr_level: selectedCefrLevel.value,
+      cefr_sample_topic: PROFILE_ONBOARDING_CEFR_TOPIC,
+      cefr_sample_choices: cefrSamples.value,
     }
     const user = await AuthService.updateUser(payload)
     authStore.user = user

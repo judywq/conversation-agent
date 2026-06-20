@@ -10,6 +10,23 @@ from backend.users.models import UserProfile
 
 UserModel = get_user_model()
 
+REQUIRED_OCEAN_TRAITS = frozenset(
+    {
+        "openness",
+        "conscientiousness",
+        "extraversion",
+        "agreeableness",
+        "neuroticism",
+    },
+)
+
+
+def recompute_profile_completed(profile: UserProfile) -> bool:
+    ocean = profile.ocean if isinstance(profile.ocean, dict) else {}
+    ocean_complete = REQUIRED_OCEAN_TRAITS.issubset(set(ocean.keys()))
+    cefr_complete = bool((profile.cefr_level or "").strip())
+    return ocean_complete and cefr_complete
+
 
 class UserProfileTextField(serializers.CharField):
     """Reads/writes a `UserProfile` string field while serializer instance is a User."""
@@ -85,6 +102,13 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         allow_null=True,
     )
     cefr_sample_choices = UserProfileJSONField(profile_attr="cefr_sample_choices", required=False)
+    proficiency_reference_utterance = UserProfileTextField(
+        profile_attr="proficiency_reference_utterance",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        read_only=True,
+    )
     preferred_name = UserProfileTextField(
         profile_attr="preferred_name",
         required=False,
@@ -140,6 +164,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "profile_completed",
             "cefr_sample_topic",
             "cefr_sample_choices",
+            "proficiency_reference_utterance",
             "preferred_name",
             "major",
             "discussion_category",
@@ -194,15 +219,8 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             if discussion_scenario is not serializers.empty:
                 user.userprofile.discussion_scenario = (discussion_scenario or "").strip()
                 update_fields.append("discussion_scenario")
-            if ocean is not serializers.empty:
-                required_traits = {
-                    "openness",
-                    "conscientiousness",
-                    "extraversion",
-                    "agreeableness",
-                    "neuroticism",
-                }
-                user.userprofile.profile_completed = required_traits.issubset(set((ocean or {}).keys()))
+            if ocean is not serializers.empty or cefr_level is not serializers.empty:
+                user.userprofile.profile_completed = recompute_profile_completed(user.userprofile)
                 update_fields.append("profile_completed")
             if update_fields:
                 user.userprofile.save(update_fields=update_fields)

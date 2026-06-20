@@ -55,6 +55,11 @@ class UserProfile(models.Model):
         blank=True,
         help_text="Latest generated CEFR listening samples for the selected topic.",
     )
+    proficiency_reference_utterance = models.TextField(
+        blank=True,
+        default="",
+        help_text="Longest user utterance from a completed session; used to calibrate agent language level.",
+    )
 
     preferred_name = models.CharField(
         max_length=80,

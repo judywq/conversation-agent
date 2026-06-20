@@ -9,6 +9,7 @@ export interface User {
   ocean?: Record<string, string>;
   cefr_level?: string | null;
   profile_completed?: boolean;
+  proficiency_reference_utterance?: string | null;
   cefr_sample_topic?: string | null;
   cefr_sample_choices?: Array<{
     level: string;

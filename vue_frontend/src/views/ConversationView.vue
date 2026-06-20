@@ -13,10 +13,8 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast/use-toast'
 import { clearAudioBufferCache } from '@/composables/useTalkingHead'
-import { AuthService } from '@/services/authService'
 import {
   ConversationService,
-  type CefrSample,
   type DiscussionScenarioResult,
   type NewsCategory,
 } from '@/services/conversationService'
@@ -41,10 +39,6 @@ const selectedCategory = ref('')
 const selectedSubtopic = ref('')
 const isGeneratingScenario = ref(false)
 const scenarioArticles = ref<DiscussionScenarioResult['articles']>([])
-const cefrSamples = ref<CefrSample[]>([])
-const cefrSampleList = computed<CefrSample[]>(() => cefrSamples.value)
-const selectedCefrLevel = ref<string | null>(null)
-const isGeneratingCefr = ref(false)
 const MAX_AGENT_COUNT = 3
 const agentCount = ref<number>(MAX_AGENT_COUNT)
 
@@ -94,7 +88,7 @@ const turnAudioQueue = ref<TurnAudioJob[]>([])
 const isProcessingTurnAudio = ref(false)
 let playbackAbortController: AbortController | null = null
 
-const canStart = computed(() => connected.value && !sessionId.value && !!topic.value.trim() && !!selectedCefrLevel.value)
+const canStart = computed(() => connected.value && !sessionId.value && !!topic.value.trim() && !!authStore.user?.profile_completed)
 
 const availableSubtopics = computed(() => {
   const category = taxonomy.value.find((item) => item.slug === selectedCategory.value)
@@ -107,11 +101,6 @@ const canGenerateScenario = computed(
 
 watch(selectedCategory, () => {
   selectedSubtopic.value = ''
-})
-
-watch(topic, () => {
-  cefrSamples.value = []
-  selectedCefrLevel.value = null
 })
 
 function nextLocalTurnIndex(): number {
@@ -344,8 +333,9 @@ function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'resumed') {
     isPaused.value = false
   }
-  if (e.type === 'session_ended' || e.type === 'terminated') {
-    const applyEndedState = () => {
+    if (e.type === 'session_ended' || e.type === 'terminated') {
+      void authStore.fetchUser().catch(() => {})
+      const applyEndedState = () => {
       isEnded.value = true
       isPaused.value = false
       needUserTurn.value = false
@@ -401,24 +391,9 @@ function handleEvent(e: ConversationWsEvent) {
 }
 
 function startSession() {
-  if (!selectedCefrLevel.value) return
+  if (!authStore.user?.profile_completed) return
   warmupAvatars()
-  AuthService.updateUser({
-    cefr_level: selectedCefrLevel.value,
-    cefr_sample_topic: topic.value.trim(),
-  })
-    .then((user) => {
-      authStore.user = user
-      authStore.saveState()
-      ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
-    })
-    .catch((err: any) => {
-      toast({
-        title: 'Unable to start',
-        description: err?.message ?? 'Please confirm a CEFR listening level first.',
-        variant: 'destructive',
-      })
-    })
+  ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
 }
 
 function volunteer() {
@@ -528,29 +503,6 @@ function redoRecording() {
   micState.value = 'idle'
 }
 
-async function generateCefrSamples() {
-  const trimmedTopic = topic.value.trim()
-  if (!trimmedTopic) return
-  isGeneratingCefr.value = true
-  selectedCefrLevel.value = null
-  try {
-    const result = await ConversationService.generateCefrSamples(trimmedTopic)
-    cefrSamples.value = result.samples
-    toast({
-      title: 'CEFR samples ready',
-      description: 'Listen to the samples and choose the level you are comfortable with.',
-    })
-  } catch (err: any) {
-    toast({
-      title: 'Sample generation failed',
-      description: err?.message ?? 'Could not generate CEFR listening samples.',
-      variant: 'destructive',
-    })
-  } finally {
-    isGeneratingCefr.value = false
-  }
-}
-
 function toggleRecordingFromKeyboard() {
   if (micState.value === 'recording') {
     autoSendRecordingAfterStop.value = true
@@ -607,8 +559,6 @@ async function generateDiscussionScenario() {
     )
     topic.value = result.scenario
     scenarioArticles.value = result.articles
-    cefrSamples.value = []
-    selectedCefrLevel.value = null
     await authStore.fetchUser()
     const description =
       result.knowledge_source === 'web'
@@ -719,16 +669,9 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div class="flex-1 space-y-2">
-            <div class="text-sm font-medium">Discussion scenario</div>
-            <Textarea v-model="topic" placeholder="Generate a scenario or enter your own topic…" class="min-h-[80px]" />
-          </div>
-          <div class="flex gap-2">
-            <Button :disabled="!connected || !!sessionId || !topic.trim() || isGeneratingCefr || !authStore.user?.profile_completed" variant="outline" @click="generateCefrSamples">
-              {{ isGeneratingCefr ? 'Generating...' : 'Generate CEFR samples' }}
-            </Button>
-          </div>
+        <div class="space-y-2">
+          <div class="text-sm font-medium">Discussion scenario</div>
+          <Textarea v-model="topic" placeholder="Generate a scenario or enter your own topic…" class="min-h-[80px]" />
         </div>
 
         <div class="text-sm text-muted-foreground">
@@ -736,7 +679,6 @@ onUnmounted(() => {
           <span v-if="isEnded">Ended</span>
           <span v-else-if="isPaused">Paused</span>
           <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
-          <span v-else-if="!selectedCefrLevel">Generate and choose a CEFR sample</span>
           <span v-else-if="agentStatus === 'searching_online'">{{ activeAgentName || 'Agent' }} is checking online…</span>
           <span v-else-if="agentStatus === 'thinking'">{{ activeAgentName || 'Agent' }} is thinking…</span>
           <span v-else-if="needFirstTurnChoice">Choose who speaks first</span>
@@ -761,34 +703,6 @@ onUnmounted(() => {
               >
                 <option v-for="n in MAX_AGENT_COUNT" :key="n" :value="n">{{ n }}</option>
               </select>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card class="border">
-          <CardHeader>
-            <CardTitle class="text-base">Listen and choose your level</CardTitle>
-          </CardHeader>
-          <CardContent class="space-y-3">
-            <div class="text-sm text-muted-foreground">
-              After entering a topic, generate six topic-based samples and choose the one you can comfortably follow.
-            </div>
-            <div v-if="cefrSampleList.length === 0" class="text-sm text-muted-foreground">
-              No CEFR samples generated for this topic yet.
-            </div>
-            <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-md border p-3">
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-3">
-                  <div class="font-medium w-5 text-center">{{ idx + 1 }}</div>
-                  <audio v-if="sample.audio_url" :src="sample.audio_url" controls class="h-8 max-w-[180px]" />
-                </div>
-                <Button
-                  :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
-                  @click="selectedCefrLevel = sample.level"
-                >
-                  {{ selectedCefrLevel === sample.level ? 'Selected' : 'Choose' }}
-                </Button>
-              </div>
             </div>
           </CardContent>
         </Card>

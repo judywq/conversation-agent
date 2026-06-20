@@ -217,6 +217,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         "ocean",
         "cefr_level",
         "profile_completed",
+        "proficiency_reference_utterance",
         "cefr_sample_topic",
         "cefr_sample_choices",
     ]

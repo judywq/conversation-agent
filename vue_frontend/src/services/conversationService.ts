@@ -42,6 +42,8 @@ export interface DiscussionScenarioResult {
   web_context_fetched: boolean
 }
 
+export const PROFILE_ONBOARDING_CEFR_TOPIC = 'University life and learning English'
+
 export class ConversationService {
   static async fetchNewsTaxonomy(): Promise<{ taxonomy_version: string; categories: NewsCategory[] }> {
     const res = await api.get<{ taxonomy_version: string; categories: NewsCategory[] }>('/news/taxonomy/')

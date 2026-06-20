@@ -20,6 +20,7 @@ from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import map_retrieval_sources
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.web_search import build_web_search_query
+from backend.conversation.services.user_proficiency import resolve_user_proficiency
 
 _AGENT_RETRIEVAL_TOP_K = 5
 _MAX_QUESTIONS_PER_UTTERANCE = 2
@@ -317,6 +318,17 @@ def _build_agent_retrieval_context(
     )
 
 
+def _agent_proficiency_guidance(session: ConversationSession, agent: AgentProfile) -> str:
+    proficiency = resolve_user_proficiency(user=session.user)
+    if proficiency["reference_utterance"]:
+        return proficiency["proficiency_guidance"]
+    guidance = str((agent.traits or {}).get("proficiency_guidance") or "").strip()
+    if guidance:
+        return guidance
+    level = str((agent.traits or {}).get("proficiency_level") or proficiency["cefr_level"] or "B2")
+    return f"Default proficiency: CEFR level {level}."
+
+
 def generate_agent_utterance(
     session: ConversationSession,
     *,
@@ -359,7 +371,7 @@ def generate_agent_utterance_with_retrieval(
         template,
         agent_name=agent.agent_id,
         agent_display_name=(agent.display_name or agent.agent_id),
-        proficiency_level=str((agent.traits or {}).get("proficiency_level") or "B2"),
+        proficiency_guidance=_agent_proficiency_guidance(session, agent),
         major=str((agent.personality or {}).get("major") or ""),
         topic=session.topic,
         history=history,
