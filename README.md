@@ -1,4 +1,4 @@
-# Conversation Agent Starter
+﻿# Conversation Agent Starter
 
 Reusable infrastructure (auth, LLM configuration/calls, and a Vue UI) for building a new project.
 
@@ -122,6 +122,25 @@ make refresh-embeddings-local
 Use `--dry-run` to count matching snippets without writing vectors, and `--limit N` to process a bounded batch.
 
 If the embedding provider, query embedding generation, or pgvector recall is unavailable, retrieval falls back to keyword matches. A keyword hit still returns the knowledge source as `success`; only vector-only searches with no keyword candidates report vector recall failure.
+
+
+### Speaker Profiles (LangMem)
+
+Structured user, agent, and user-agent relationship profiles are stored in LangGraph's PostgresStore (separate store tables in the same Postgres database). This complements the existing UserMemory episodic RAG system.
+
+One-time store setup:
+
+``sh
+make setup-speaker-profiles-local
+``
+
+Inspect profiles for a user:
+
+``sh
+docker compose -f docker-compose.local.yml run --rm django python manage.py dump_speaker_profiles <user_id>
+``
+
+The module lives in ackend/conversation/services/speaker_profiles.py. Phase 1 exposes read/seed/extract APIs only; conversation prompt wiring comes later.
 
 ### User Long-Term Memory
 

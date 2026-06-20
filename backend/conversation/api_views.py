@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
+from backend.conversation.services.discussion_scenario import DISCUSSION_PROFILE_FIELDS
+from backend.conversation.services.discussion_scenario import apply_discussion_result_to_profile
 from backend.conversation.services.discussion_scenario import scenario_result_to_dict
 from backend.conversation.services.discussion_scenario import setup_discussion_context
 from backend.conversation.services.profile_audio import generate_cefr_topic_samples
@@ -54,23 +56,18 @@ class DiscussionScenarioView(APIView):
             get_subtopic(category, subtopic)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
-        result = setup_discussion_context(category=category, subtopic=subtopic)
+        cefr_level = None
+        if hasattr(request.user, "userprofile"):
+            cefr_level = request.user.userprofile.cefr_level
+        result = setup_discussion_context(
+            category=category,
+            subtopic=subtopic,
+            cefr_level=cefr_level,
+        )
         if hasattr(request.user, "userprofile"):
             profile = request.user.userprofile
-            profile.discussion_category = category
-            profile.discussion_subtopic = subtopic
-            profile.discussion_scenario = result.scenario
-            profile.discussion_article_id = result.article_id
-            profile.discussion_article_ids = result.article_ids
-            profile.save(
-                update_fields=[
-                    "discussion_category",
-                    "discussion_subtopic",
-                    "discussion_scenario",
-                    "discussion_article_id",
-                    "discussion_article_ids",
-                ],
-            )
+            apply_discussion_result_to_profile(profile, result)
+            profile.save(update_fields=list(DISCUSSION_PROFILE_FIELDS))
         return Response(scenario_result_to_dict(result))
 
 

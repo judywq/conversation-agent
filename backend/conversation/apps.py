@@ -7,4 +7,6 @@ class ConversationConfig(AppConfig):
 
     def ready(self) -> None:
         import backend.conversation.admin
+        import backend.conversation.langmem_admin  # noqa: F401
+        import backend.conversation.langmem_signals  # noqa: F401
         import backend.conversation.user_memory_signals  # noqa: F401

@@ -251,9 +251,13 @@ class SessionNewsChunk(TimestampedBase):
         "news.NewsArticle",
         on_delete=models.CASCADE,
         related_name="session_chunks",
+        null=True,
+        blank=True,
     )
     chunk_index = models.PositiveIntegerField(default=0)
     content = models.TextField()
+    source_title = models.CharField(max_length=255, blank=True, default="")
+    source_uri = models.CharField(max_length=1000, blank=True, default="")
     embedding = VectorField(dimensions=1536, null=True, blank=True)
     embedding_model = models.CharField(max_length=100, null=True, blank=True, default="")
     embedding_dimensions = models.PositiveIntegerField(null=True, blank=True)
@@ -266,6 +270,12 @@ class SessionNewsChunk(TimestampedBase):
             models.UniqueConstraint(
                 fields=("session", "news_article", "chunk_index"),
                 name="unique_session_news_chunk",
+                condition=models.Q(news_article__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=("session", "chunk_index"),
+                name="unique_session_web_chunk",
+                condition=models.Q(news_article__isnull=True),
             ),
         ]
         indexes = [
@@ -357,6 +367,20 @@ class UserMemory(TimestampedBase):
 
     def __str__(self) -> str:
         return f"UserMemory({self.user_id}, {self.memory_type}, {self.id})"
+
+
+class LangMemMemory(models.Model):
+    """
+    Admin-only facade. LangMem rows live in LangGraph PostgresStore, not Django tables.
+    """
+
+    class Meta:
+        managed = False
+        verbose_name = "LangMem memory"
+        verbose_name_plural = "LangMem memories"
+
+    def __str__(self) -> str:
+        return "LangMem memory"
 
 
 class TurnRetrieval(TimestampedBase):

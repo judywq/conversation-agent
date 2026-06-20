@@ -97,6 +97,11 @@ class UserProfile(models.Model):
         blank=True,
         help_text="News article PKs selected for the pending discussion knowledge base.",
     )
+    discussion_web_context = models.TextField(
+        blank=True,
+        default="",
+        help_text="Web search background text for discussion when no news articles are available.",
+    )
 
     def __str__(self) -> str:
         return f"{self.user.name} ({self.user.email})"

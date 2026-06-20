@@ -37,6 +37,9 @@ export interface DiscussionScenarioResult {
   article_title: string
   article_ids: number[]
   articles: DiscussionArticleSummary[]
+  web_context: string
+  knowledge_source: 'articles' | 'web' | 'none'
+  web_context_fetched: boolean
 }
 
 export class ConversationService {

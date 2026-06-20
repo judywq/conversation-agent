@@ -1,4 +1,4 @@
-# ruff: noqa: ERA001, E501
+﻿# ruff: noqa: ERA001, E501
 """Base settings to build other settings files upon."""
 
 import ssl
@@ -63,6 +63,11 @@ USER_MEMORY_EXTRACTION_ENABLED = env.bool(
     "USER_MEMORY_EXTRACTION_ENABLED",
     default=True,
 )
+
+# LangMem speaker profiles (user / agent / relationship)
+SPEAKER_PROFILES_ENABLED = env.bool("SPEAKER_PROFILES_ENABLED", default=True)
+LANGMEM_ENABLED = env.bool("LANGMEM_ENABLED", default=True)
+LANGMEM_PROFILE_EXTRACTION_ENABLED = env.bool("LANGMEM_PROFILE_EXTRACTION_ENABLED", default=True)
 WEB_SEARCH_PROVIDER = env.str("WEB_SEARCH_PROVIDER", default="openai")
 TAVILY_API = env.str("TAVILY_API", default="")
 

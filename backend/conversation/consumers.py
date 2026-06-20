@@ -15,7 +15,9 @@ from backend.conversation.models import TurnEngineLog
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
 from backend.conversation.services.agent import resolve_agent_retrieval_sources
+from backend.conversation.services.cefr_levels import normalize_user_cefr_level
 from backend.conversation.services.session_news_chunks import materialize_session_news_knowledge
+from backend.conversation.services.session_news_chunks import materialize_session_web_knowledge
 from backend.conversation.services.agent_selection import (
     select_complementary_agent_personas,
 )
@@ -170,11 +172,22 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if str(profile_gate["cefr_sample_topic"] or "").strip() != topic.strip():
                 await self.send_json({"type": "error", "message": "Choose a CEFR listening level for this topic before starting."})
                 return
-            session = await self._create_session(
-                topic=topic,
-                agent_count=agent_count,
-                discussion=await self._discussion_context_for_topic(topic),
-            )
+            discussion = await self._discussion_context_for_topic(topic)
+            try:
+                session = await self._create_session(
+                    topic=topic,
+                    agent_count=agent_count,
+                    discussion=discussion,
+                )
+            except Exception as exc:
+                logger.exception("start_session_failed topic=%s", topic[:120])
+                await self.send_json(
+                    {
+                        "type": "error",
+                        "message": f"Could not start session: {exc}",
+                    },
+                )
+                return
             self.session_id = session.id
             await self.send_json(
                 {
@@ -187,6 +200,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             # First-turn logic: ask whether the user wants to speak first.
             self.first_turn_choice = None
             await self.send_json({"type": "need_first_turn_choice"})
+            asyncio.create_task(self._materialize_session_knowledge(session.id, discussion))
             return
 
         if msg_type == "first_turn_choice":
@@ -351,10 +365,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         **plan,
                         "_agent_persona_name": persona,
                     }
-                    if "web" in resolve_agent_retrieval_sources(
+                    retrieval_sources = await self._resolve_agent_retrieval_sources(
+                        session.id,
                         plan_for_retrieval,
-                        session=session,
-                    ):
+                    )
+                    if "web" in retrieval_sources:
                         await self.send_json({
                             "type": "agent_status",
                             "status": "searching_online",
@@ -375,13 +390,36 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         context={},
                         correlation_id=self._correlation_id,
                     )
-                    raise
+                    logger.exception(
+                        "append_agent_llm_turn_failed session_id=%s agent_id=%s",
+                        session.id,
+                        decision.next_speaker_id,
+                    )
+                    await self.send_json(
+                        {
+                            "type": "error",
+                            "message": f"Agent turn failed: {e}",
+                        },
+                    )
+                    await self.send_json({"type": "agent_status", "status": "finished"})
+                    return
                 session_after = await self._get_session(self.session_id)
                 if session_after is None or session_after.paused or session_after.terminate:
                     return
                 await self.send_json({"type": "turn", "turn": await self._turn_to_dict(turn)})
                 await self.send_json({"type": "agent_status", "status": "finished"})
                 continue
+
+    @database_sync_to_async
+    def _resolve_agent_retrieval_sources(
+        self,
+        session_id: int,
+        facilitator_plan: dict,
+    ) -> set[str]:
+        session = ConversationSession.objects.filter(id=session_id).first()
+        if session is None:
+            return set()
+        return resolve_agent_retrieval_sources(facilitator_plan, session=session)
 
     @database_sync_to_async
     def _discussion_context_for_topic(self, topic: str) -> dict:
@@ -405,6 +443,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             "scenario": scenario,
             "news_article_id": profile.discussion_article_id,
             "discussion_article_ids": article_ids,
+            "discussion_web_context": str(getattr(profile, "discussion_web_context", "") or ""),
         }
 
     @database_sync_to_async
@@ -436,13 +475,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             news_article_id=news_article_id if news_article_id else None,
             discussion_article_ids=discussion_article_ids,
         )
-        if discussion_article_ids:
-            materialize_session_news_knowledge(session, discussion_article_ids)
         ocean = user.userprofile.ocean if hasattr(user, "userprofile") else {}
         user_cefr_level = user.userprofile.cefr_level if hasattr(user, "userprofile") else ""
         user_major = user.userprofile.major if hasattr(user, "userprofile") else ""
-        # Agents should match the user's selected level (no longer forced higher).
-        agent_cefr_level = str(user_cefr_level or "").upper().strip() or "B2"
+        agent_cefr_level = normalize_user_cefr_level(user_cefr_level)
         selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
         used_ids: set[str] = set()
         agent_rows: list[AgentProfile] = []
@@ -477,6 +513,41 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             )
         AgentProfile.objects.bulk_create(agent_rows)
         return session
+
+    @database_sync_to_async
+    def _materialize_session_knowledge_sync(
+        self,
+        session_id: int,
+        discussion: dict,
+    ) -> None:
+        session = ConversationSession.objects.filter(id=session_id).first()
+        if session is None:
+            return
+        discussion_article_ids = list(discussion.get("discussion_article_ids") or [])
+        news_article_id = discussion.get("news_article_id")
+        if not discussion_article_ids and news_article_id:
+            discussion_article_ids = [int(news_article_id)]
+        try:
+            if discussion_article_ids:
+                materialize_session_news_knowledge(session, discussion_article_ids)
+                return
+            web_context = str(discussion.get("discussion_web_context") or "").strip()
+            if web_context:
+                materialize_session_web_knowledge(session, web_context)
+        except Exception:
+            logger.exception(
+                "session_knowledge_materialize_failed session_id=%s article_ids=%s has_web=%s",
+                session_id,
+                discussion_article_ids,
+                bool(discussion.get("discussion_web_context")),
+            )
+
+    async def _materialize_session_knowledge(
+        self,
+        session_id: int,
+        discussion: dict,
+    ) -> None:
+        await self._materialize_session_knowledge_sync(session_id, discussion)
 
     @database_sync_to_async
     def _get_profile_gate_state(self) -> dict:
@@ -608,9 +679,15 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
         elif session.turn_count == 0:
             agents = list(AgentProfile.objects.filter(session=session))
+            if not agents:
+                msg = "Session has no agent profiles configured."
+                raise ValueError(msg)
             agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
         else:
             agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
+            if not agents:
+                msg = "Session has no agent profiles configured."
+                raise ValueError(msg)
             agent = agents[int(session.turn_count) % len(agents)]
         plan = build_facilitator_plan(session, agent=agent)
         return agent.agent_id, plan
@@ -681,9 +758,15 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         elif session.turn_count == 0:
             # First agent turn (when user didn't speak first): pick highest leadership.
             agents = list(AgentProfile.objects.filter(session=session))
+            if not agents:
+                msg = "Session has no agent profiles configured."
+                raise ValueError(msg)
             agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
         else:
             agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
+            if not agents:
+                msg = "Session has no agent profiles configured."
+                raise ValueError(msg)
             agent = agents[int(session.turn_count) % len(agents)]
         agent_id = agent.agent_id
 

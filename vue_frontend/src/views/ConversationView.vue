@@ -314,7 +314,11 @@ function sendTextTurn() {
 function chooseFirstTurn(speakFirst: boolean) {
   ws.send({ type: 'first_turn_choice', speak_first: speakFirst })
   needFirstTurnChoice.value = false
-  if (speakFirst) needUserTurn.value = true
+  if (speakFirst) {
+    needUserTurn.value = true
+  } else {
+    agentStatus.value = 'thinking'
+  }
 }
 
 async function startRecording() {
@@ -466,9 +470,13 @@ async function generateDiscussionScenario() {
     cefrSamples.value = []
     selectedCefrLevel.value = null
     await authStore.fetchUser()
+    const description =
+      result.knowledge_source === 'web'
+        ? 'Scenario generated from subtopic; background fetched from web.'
+        : `Generated from ${result.article_ids.length} article(s).`
     toast({
       title: 'Scenario ready',
-      description: `Generated from ${result.article_ids.length} article(s).`,
+      description,
     })
   } catch (error: any) {
     toast({

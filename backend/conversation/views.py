@@ -11,6 +11,8 @@ from django.urls import reverse
 from django.urls import reverse_lazy
 from django.views.generic import TemplateView
 
+from backend.conversation.services.discussion_scenario import DISCUSSION_PROFILE_FIELDS
+from backend.conversation.services.discussion_scenario import apply_discussion_result_to_profile
 from backend.conversation.services.discussion_scenario import generate_discussion_scenario
 from backend.news.taxonomy import get_category
 from backend.news.taxonomy import get_subtopic
@@ -64,8 +66,13 @@ class DiscussionSetupView(LoginRequiredMixin, TemplateView):
             )
 
         if action == "generate":
+            cefr_level = getattr(profile, "cefr_level", "") or None
             try:
-                result = generate_discussion_scenario(category=category, subtopic=subtopic)
+                result = generate_discussion_scenario(
+                    category=category,
+                    subtopic=subtopic,
+                    cefr_level=cefr_level,
+                )
             except Exception as exc:  # noqa: BLE001
                 return self.render_to_response(
                     self.get_context_data(
@@ -74,21 +81,22 @@ class DiscussionSetupView(LoginRequiredMixin, TemplateView):
                         selected_subtopic=subtopic,
                     ),
                 )
-            profile.discussion_category = category
-            profile.discussion_subtopic = subtopic
-            profile.discussion_scenario = result.scenario
-            profile.discussion_article_id = result.article_id
-            profile.discussion_article_ids = result.article_ids
-            profile.save(
-                update_fields=[
-                    "discussion_category",
-                    "discussion_subtopic",
-                    "discussion_scenario",
-                    "discussion_article_id",
-                    "discussion_article_ids",
-                ],
-            )
+            apply_discussion_result_to_profile(profile, result)
+            profile.save(update_fields=list(DISCUSSION_PROFILE_FIELDS))
             article_titles = [article.title for article in result.articles if article.title]
+            if result.knowledge_source == "web":
+                success_message = (
+                    "Scenario generated from the subtopic. "
+                    "Web background was fetched for discussion retrieval. "
+                    "Review the scenario, then continue to the conversation."
+                )
+            else:
+                success_message = (
+                    "Scenario generated from "
+                    f"{len(result.article_ids)} article(s). "
+                    "Article full text was fetched for discussion retrieval. "
+                    "Review the scenario, then continue to the conversation."
+                )
             return self.render_to_response(
                 self.get_context_data(
                     selected_category=category,
@@ -97,12 +105,7 @@ class DiscussionSetupView(LoginRequiredMixin, TemplateView):
                     article_title=result.article_title,
                     article_count=len(result.article_ids),
                     article_titles=article_titles,
-                    success_message=(
-                        "Scenario generated from "
-                        f"{len(result.article_ids)} article(s). "
-                        "Article full text was fetched for discussion retrieval. "
-                        "Review the scenario, then continue to the conversation."
-                    ),
+                    success_message=success_message,
                 ),
             )
 

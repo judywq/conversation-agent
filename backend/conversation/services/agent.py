@@ -6,6 +6,7 @@ from langchain_core.messages import SystemMessage
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
+from backend.conversation.models import SessionNewsChunk
 from backend.conversation.prompts import load_agent_persona_prompts
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.audio_tags import filter_to_valid_audio_tags
@@ -258,8 +259,8 @@ def _should_retrieve_session_news(
     facilitator_plan: dict,
     session: ConversationSession,
 ) -> bool:
-    article_ids = session.discussion_article_ids or []
-    if not article_ids:
+    has_chunks = SessionNewsChunk.objects.filter(session=session).exists()
+    if not has_chunks:
         return False
     sa_type = str(facilitator_plan.get("type") or "").upper()
     sa_subtype = str(facilitator_plan.get("subtype") or "").lower()
@@ -277,7 +278,7 @@ def resolve_agent_retrieval_sources(
 
     Always include Speech Act exemplars from the knowledge corpus. Fact Checker
     ASSERTIVES turns also get web search regardless of facilitator retrieval_need.
-    Session news is retrieved only on ASSERTIVES/inform turns when article IDs exist.
+    Session news is retrieved only on ASSERTIVES/inform turns when session news chunks exist.
     """
     sources = set(map_retrieval_sources(facilitator_plan.get("retrieval_requirement")))
     sources.add("exemplar")
@@ -303,6 +304,7 @@ def _build_agent_retrieval_context(
         agent=agent,
     )
 
+    agent_slug = agent.agent_id if agent is not None else None
     return retrieve(
         retrieval_query,
         session=session,
@@ -311,6 +313,7 @@ def _build_agent_retrieval_context(
         top_k=_AGENT_RETRIEVAL_TOP_K,
         speech_act_type=str(facilitator_plan.get("type") or ""),
         speech_act_subtype=str(facilitator_plan.get("subtype") or ""),
+        agent_slug=agent_slug,
     )
 
 
@@ -343,6 +346,7 @@ def generate_agent_utterance_with_retrieval(
     retrieval_context = _build_agent_retrieval_context(
         session,
         retrieval_plan,
+        agent=agent,
     )
 
     persona_templates = load_agent_persona_prompts()

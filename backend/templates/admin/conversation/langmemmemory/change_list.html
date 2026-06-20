@@ -1,0 +1,126 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=app_label %}">{{ app_label|capfirst }}</a>
+    &rsaquo; {{ title }}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <h1>{{ title }}</h1>
+    <p class="help">
+      {% translate "Read-only view of LangMem speaker profile rows stored in LangGraph PostgresStore." %}
+      {% translate "Legacy UserMemory records remain under Conversation → User memories." %}
+    </p>
+
+    <form method="get" id="langmem-filter-form" style="margin-bottom: 1.5em;">
+      <fieldset class="module aligned">
+        <legend>{% translate "Filters" %}</legend>
+        <div class="form-row">
+          <label for="id_user_id">{% translate "User ID" %}</label>
+          <input type="text" name="user_id" id="id_user_id" value="{{ filters.user_id }}">
+        </div>
+        <div class="form-row">
+          <label for="id_memory_type">{% translate "Memory type" %}</label>
+          <select name="memory_type" id="id_memory_type">
+            <option value="">{% translate "All" %}</option>
+            {% for value in memory_types %}
+              <option value="{{ value }}"{% if filters.memory_type == value %} selected{% endif %}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="id_namespace_kind">{% translate "Namespace" %}</label>
+          <select name="namespace_kind" id="id_namespace_kind">
+            <option value="">{% translate "All" %}</option>
+            {% for value in namespace_kinds %}
+              <option value="{{ value }}"{% if filters.namespace_kind == value %} selected{% endif %}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="id_agent_slug">{% translate "Role" %}</label>
+          <input type="text" name="agent_slug" id="id_agent_slug" value="{{ filters.agent_slug }}" placeholder="idea_explorer">
+        </div>
+        <div class="form-row">
+          <label for="id_q">{% translate "Search" %}</label>
+          <input type="text" name="q" id="id_q" value="{{ filters.q }}" size="40">
+        </div>
+        <div class="submit-row">
+          <input type="submit" value="{% translate 'Filter' %}" class="default">
+          <a href="{% url 'admin:conversation_langmemmemory_changelist' %}">{% translate "Clear filters" %}</a>
+        </div>
+      </fieldset>
+    </form>
+
+    {% if error_message %}
+      <p class="errornote">{{ error_message }}</p>
+    {% endif %}
+
+    <p>
+      <strong>{{ total_count }}</strong>
+      {% blocktranslate count counter=total_count %}memory row{% plural %}memory rows{% endblocktranslate %}
+    </p>
+
+    <div class="results">
+      <table id="result_list">
+        <thead>
+          <tr>
+            <th scope="col">{% translate "User" %}</th>
+            <th scope="col">{% translate "Namespace" %}</th>
+            <th scope="col">{% translate "Speaker" %}</th>
+            <th scope="col">{% translate "Role" %}</th>
+            <th scope="col">{% translate "Type" %}</th>
+            <th scope="col">{% translate "Content" %}</th>
+            <th scope="col">{% translate "Confidence" %}</th>
+            <th scope="col">{% translate "Source" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in display_rows %}
+            {% with entry=row.entry %}
+            <tr class="{% cycle 'row1' 'row2' %}">
+              <td>{{ row.user_html|safe }}</td>
+              <td>{{ entry.namespace_kind }}</td>
+              <td>{{ row.speaker_display }}</td>
+              <td>{{ row.role }}</td>
+              <td>{{ entry.memory_type }}</td>
+              <td>
+                <a href="{% url 'admin:conversation_langmemmemory_detail' entry.entry_id %}">
+                  {{ entry.content|truncatechars:100 }}
+                </a>
+              </td>
+              <td>{{ entry.confidence }}</td>
+              <td>{{ entry.source_label }}</td>
+            </tr>
+            {% endwith %}
+          {% empty %}
+            <tr>
+              <td colspan="8">{% translate "No LangMem memories found." %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+      <p class="paginator">
+        {% if page_obj.has_previous %}
+          <a href="?p={{ page_obj.previous_page_number }}{% if filters.user_id %}&user_id={{ filters.user_id }}{% endif %}{% if filters.memory_type %}&memory_type={{ filters.memory_type }}{% endif %}{% if filters.namespace_kind %}&namespace_kind={{ filters.namespace_kind }}{% endif %}{% if filters.agent_slug %}&agent_slug={{ filters.agent_slug }}{% endif %}{% if filters.q %}&q={{ filters.q }}{% endif %}">{% translate "Previous" %}</a>
+        {% endif %}
+        <span class="this-page">
+          {% blocktranslate with page=page_obj.number total=page_obj.paginator.num_pages %}
+            Page {{ page }} of {{ total }}
+          {% endblocktranslate %}
+        </span>
+        {% if page_obj.has_next %}
+          <a href="?p={{ page_obj.next_page_number }}{% if filters.user_id %}&user_id={{ filters.user_id }}{% endif %}{% if filters.memory_type %}&memory_type={{ filters.memory_type }}{% endif %}{% if filters.namespace_kind %}&namespace_kind={{ filters.namespace_kind }}{% endif %}{% if filters.agent_slug %}&agent_slug={{ filters.agent_slug }}{% endif %}{% if filters.q %}&q={{ filters.q }}{% endif %}">{% translate "Next" %}</a>
+        {% endif %}
+      </p>
+    {% endif %}
+  </div>
+{% endblock %}

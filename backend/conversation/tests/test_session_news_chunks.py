@@ -5,6 +5,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import SessionNewsChunk
 from backend.conversation.services.session_news_chunks import chunk_article_text
 from backend.conversation.services.session_news_chunks import materialize_session_news_knowledge
+from backend.conversation.services.session_news_chunks import materialize_session_web_knowledge
 from backend.news.models import NewsArticle
 
 
@@ -36,3 +37,17 @@ def test_materialize_session_news_knowledge_creates_chunks(user):
     assert count >= 2
     assert SessionNewsChunk.objects.filter(session=session, news_article=article).count() == count
     assert all(chunk.embedding for chunk in SessionNewsChunk.objects.filter(session=session))
+
+
+@pytest.mark.django_db
+def test_materialize_session_web_knowledge_creates_chunks_without_article(user):
+    session = ConversationSession.objects.create(user=user, topic="Topic")
+    web_context = " ".join(f"background{i}" for i in range(700))
+
+    count = materialize_session_web_knowledge(session, web_context)
+
+    assert count >= 2
+    chunks = SessionNewsChunk.objects.filter(session=session, news_article__isnull=True)
+    assert chunks.count() == count
+    assert chunks.first().source_title == "Web search"
+    assert all(chunk.embedding for chunk in chunks)

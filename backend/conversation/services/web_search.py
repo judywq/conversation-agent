@@ -309,6 +309,36 @@ def _fetch_via_tavily(query: str) -> str:
     return "\n".join(lines).strip() or "(Web search returned no usable snippets.)"
 
 
+def build_scenario_knowledge_query(
+    *,
+    category_name: str,
+    subtopic_name: str,
+    scenario: str,
+) -> str:
+    return "\n".join(
+        [
+            f"Topic: {category_name} / {subtopic_name}",
+            f"Discussion scenario: {scenario.strip()}",
+            "Find recent factual background useful for an English classroom debate.",
+        ],
+    )
+
+
+def web_search_context_is_usable(text: str) -> bool:
+    content = (text or "").strip()
+    if not content:
+        return False
+    failure_prefixes = (
+        "(Web search is disabled",
+        "(Web search failed",
+        "(Web search returned no usable",
+        "(No search query could be built",
+        "(Tavily API key is not configured",
+        "(OpenAI API key is not configured",
+    )
+    return not any(content.startswith(prefix) for prefix in failure_prefixes)
+
+
 def fetch_web_search_context(query: str) -> str:
     """
     Run a web search via the configured provider and normalize the response for prompt injection.

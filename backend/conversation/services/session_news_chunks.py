@@ -125,3 +125,48 @@ def materialize_session_news_knowledge(
     chunks = build_session_news_chunks(session, article_ids)
     embed_session_news_chunks(chunks)
     return len(chunks)
+
+
+WEB_KNOWLEDGE_SOURCE_TITLE = "Web search"
+
+
+def build_session_web_chunks(
+    session: ConversationSession,
+    web_context: str,
+    *,
+    source_title: str = WEB_KNOWLEDGE_SOURCE_TITLE,
+) -> list[SessionNewsChunk]:
+    text = (web_context or "").strip()
+    SessionNewsChunk.objects.filter(session=session).delete()
+    if not text:
+        return []
+
+    rows = [
+        SessionNewsChunk(
+            session=session,
+            news_article=None,
+            chunk_index=index,
+            content=content,
+            source_title=source_title,
+        )
+        for index, content in enumerate(chunk_article_text(text))
+    ]
+    if not rows:
+        return []
+
+    created = SessionNewsChunk.objects.bulk_create(rows)
+    logger.info(
+        "session_web_chunks_created session_id=%s chunk_count=%d",
+        session.id,
+        len(created),
+    )
+    return created
+
+
+def materialize_session_web_knowledge(
+    session: ConversationSession,
+    web_context: str,
+) -> int:
+    chunks = build_session_web_chunks(session, web_context)
+    embed_session_news_chunks(chunks)
+    return len(chunks)

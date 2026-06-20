@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 from allauth.account.decorators import secure_admin_login
 from allauth.account.models import EmailAddress
@@ -11,6 +13,7 @@ from django.http import HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from .forms import AdminUserRegistrationForm
@@ -58,6 +61,33 @@ class UserAdmin(auth_admin.UserAdmin):
         "date_joined",
     ]
     search_fields = ["name", "email"]
+
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(super().get_readonly_fields(request, obj))
+        if obj is not None:
+            readonly.append("langmem_memories_preview")
+        return readonly
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = list(super().get_fieldsets(request, obj))
+        if obj is not None:
+            fieldsets = [
+                *fieldsets,
+                (_("LangMem memories"), {"fields": ("langmem_memories_preview",)}),
+            ]
+        return fieldsets
+
+    @admin.display(description="LangMem memories")
+    def langmem_memories_preview(self, obj):
+        from backend.conversation.services.speaker_profiles import dump_all_profiles
+
+        try:
+            payload = dump_all_profiles(obj)
+            rendered = json.dumps(payload, ensure_ascii=False, indent=2)
+        except Exception as exc:  # noqa: BLE001
+            return str(exc)
+        return format_html('<pre style="white-space: pre-wrap;">{}</pre>', rendered)
 
     @admin.display(
         description="Demo Account",

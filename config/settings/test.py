@@ -1,4 +1,4 @@
-"""
+﻿"""
 With these settings, tests run faster.
 """
 
@@ -37,3 +37,6 @@ MEDIA_URL = "http://media.testserver"
 # Your stuff...
 # ------------------------------------------------------------------------------
 USER_MEMORY_EXTRACTION_ENABLED = False
+SPEAKER_PROFILES_ENABLED = True
+LANGMEM_PROFILE_EXTRACTION_ENABLED = False
+

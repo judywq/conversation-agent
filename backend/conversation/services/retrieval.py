@@ -19,6 +19,8 @@ from backend.conversation.models import TurnRetrieval
 from backend.conversation.models import UserMemory
 from backend.conversation.services.embeddings import build_user_memory_embedding_text
 from backend.conversation.services.embeddings import generate_embedding
+from backend.conversation.services.speaker_memories import langmem_enabled
+from backend.conversation.services.speaker_memories import search_user_memories
 from backend.conversation.services.web_search import fetch_web_search_context
 
 User = get_user_model()
@@ -538,12 +540,12 @@ def _merge_knowledge_candidates(
 
 def _session_news_chunks(session: ConversationSession) -> Any:
     article_ids = session.discussion_article_ids or []
-    if not article_ids:
-        return SessionNewsChunk.objects.none()
-    return SessionNewsChunk.objects.filter(
-        session=session,
-        news_article_id__in=article_ids,
-    ).select_related("news_article")
+    queryset = SessionNewsChunk.objects.filter(session=session)
+    if article_ids:
+        queryset = queryset.filter(news_article_id__in=article_ids)
+    else:
+        queryset = queryset.filter(news_article__isnull=True)
+    return queryset.select_related("news_article")
 
 
 def _keyword_news_candidates(
@@ -562,8 +564,8 @@ def _keyword_news_candidates(
         score = _score_text(
             terms,
             chunk.content,
-            article.title if article else "",
-            article.url if article else "",
+            article.title if article else chunk.source_title,
+            article.url if article else chunk.source_uri,
         )
         if score <= 0:
             continue
@@ -702,6 +704,95 @@ def _retrieve_session(
     return items, SOURCE_SUCCESS
 
 
+
+
+def _retrieve_langmem(
+    query: str,
+    *,
+    user: User,
+    agent_slug: str | None = None,
+    top_k: int,
+) -> tuple[list[RetrievedItem], str]:
+    if not langmem_enabled():
+        return [], SOURCE_SKIPPED
+    if not _tokenize(query):
+        return [], SOURCE_NO_RESULTS
+    try:
+        hits = search_user_memories(user, query, agent_slug=agent_slug, top_k=top_k)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("LangMem retrieval failed: %s", exc)
+        return [], SOURCE_FAILED
+    if not hits:
+        return [], SOURCE_NO_RESULTS
+    items: list[RetrievedItem] = []
+    for row, score, namespace in hits:
+        items.append(
+            RetrievedItem(
+                source="memory",
+                title=row.memory_type,
+                excerpt=_excerpt(row.content),
+                source_label=row.source_label or "langmem",
+                score=float(score),
+                metadata={
+                    "langmem": True,
+                    "namespace": "/".join(namespace),
+                    "memory_type": row.memory_type,
+                    "confidence": row.confidence,
+                    "speaker": row.speaker,
+                    "metadata": row.metadata,
+                },
+            ),
+        )
+    return items, SOURCE_SUCCESS
+
+
+def _merge_memory_items_langmem_first(
+    langmem_items: list[RetrievedItem],
+    legacy_items: list[RetrievedItem],
+    *,
+    top_k: int,
+) -> list[RetrievedItem]:
+    merged: list[RetrievedItem] = []
+    seen: set[str] = set()
+    for item in [*langmem_items, *legacy_items]:
+        key = " ".join((item.title or "", item.excerpt or "").casefold().split())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+        if len(merged) >= top_k:
+            break
+    return merged
+
+
+def _retrieve_combined_memory(
+    query: str,
+    *,
+    user: User,
+    agent_slug: str | None = None,
+    top_k: int,
+) -> tuple[list[RetrievedItem], str]:
+    langmem_items, langmem_status = _retrieve_langmem(
+        query,
+        user=user,
+        agent_slug=agent_slug,
+        top_k=top_k,
+    )
+    legacy_enabled = getattr(settings, "USER_MEMORY_EXTRACTION_ENABLED", True)
+    if not legacy_enabled:
+        return langmem_items, langmem_status
+
+    legacy_items, legacy_status = _retrieve_memory(query, user=user, top_k=top_k)
+    merged = _merge_memory_items_langmem_first(langmem_items, legacy_items, top_k=top_k)
+    if merged:
+        return merged, SOURCE_SUCCESS
+    if langmem_status == SOURCE_FAILED or legacy_status == SOURCE_FAILED:
+        return [], SOURCE_FAILED
+    if langmem_status == SOURCE_NO_RESULTS and legacy_status == SOURCE_NO_RESULTS:
+        return [], SOURCE_NO_RESULTS
+    return [], langmem_status if langmem_status != SOURCE_SKIPPED else legacy_status
+
+
 def _retrieve_memory(
     query: str,
     *,
@@ -812,10 +903,14 @@ def _retrieve_news(
         items.append(
             RetrievedItem(
                 source="news",
-                title=article.title if article else f"News chunk {chunk.chunk_index}",
+                title=(
+                    article.title
+                    if article
+                    else (chunk.source_title or f"News chunk {chunk.chunk_index}")
+                ),
                 excerpt=_excerpt(chunk.content),
-                source_uri=article.url if article else "",
-                source_label=article.feed_title if article else "",
+                source_uri=article.url if article else chunk.source_uri,
+                source_label=article.feed_title if article else chunk.source_title,
                 score=global_score,
                 metadata={
                     "session_news_chunk_id": chunk.id,
@@ -1012,6 +1107,7 @@ def retrieve(  # noqa: C901, PLR0913
     top_k: int = 5,
     speech_act_type: str = "",
     speech_act_subtype: str = "",
+    agent_slug: str | None = None,
 ) -> RetrievedContext:
     requested_sources = sorted(sources)
     source_statuses: dict[str, str] = {}
@@ -1040,7 +1136,12 @@ def retrieve(  # noqa: C901, PLR0913
             if session.user_id != getattr(user, "id", None):
                 found, status = [], SOURCE_SKIPPED
             else:
-                found, status = _retrieve_memory(query, user=user, top_k=top_k)
+                found, status = _retrieve_combined_memory(
+                    query,
+                    user=user,
+                    agent_slug=agent_slug,
+                    top_k=top_k,
+                )
         elif source == "session":
             if session.user_id != getattr(user, "id", None):
                 found, status = [], SOURCE_SKIPPED

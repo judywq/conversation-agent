@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=app_label %}">{{ app_label|capfirst }}</a>
+    &rsaquo; <a href="{{ changelist_url }}">{% translate "LangMem memories" %}</a>
+    &rsaquo; {{ title }}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <h1>{{ title }}</h1>
+    <p><a href="{{ changelist_url }}">&larr; {% translate "Back to list" %}</a></p>
+
+    <fieldset class="module aligned">
+      <div class="form-row">
+        <label>{% translate "User" %}</label>
+        <div class="readonly">{{ user_link|safe }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Namespace" %}</label>
+        <div class="readonly">{{ entry.namespace_path }} ({{ entry.namespace_kind }})</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Speaker" %}</label>
+        <div class="readonly">{{ speaker_display }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Role" %}</label>
+        <div class="readonly">{{ role }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Store key" %}</label>
+        <div class="readonly"><code>{{ entry.store_key }}</code></div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Memory type" %}</label>
+        <div class="readonly">{{ entry.memory_type }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Confidence" %}</label>
+        <div class="readonly">{{ entry.confidence }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Source label" %}</label>
+        <div class="readonly">{{ entry.source_label }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Content" %}</label>
+        <div class="readonly">{{ entry.content }}</div>
+      </div>
+      <div class="form-row">
+        <label>{% translate "Metadata" %}</label>
+        <div class="readonly"><pre style="white-space: pre-wrap;">{{ entry_json }}</pre></div>
+      </div>
+    </fieldset>
+  </div>
+{% endblock %}

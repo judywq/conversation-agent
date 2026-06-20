@@ -65,3 +65,37 @@ def test_retrieve_news_returns_only_current_session_chunks(user):
     assert context.items
     assert all(item.source == "news" for item in context.items)
     assert "AI tutors" in context.items[0].excerpt
+
+
+@pytest.mark.django_db
+def test_retrieve_news_returns_web_sourced_session_chunks(user):
+    session = ConversationSession.objects.create(
+        user=user,
+        topic="AI tutors",
+        discussion_article_ids=[],
+    )
+    chunk = SessionNewsChunk.objects.create(
+        session=session,
+        news_article=None,
+        chunk_index=0,
+        content="Students discuss whether AI tutors should replace teachers on campus.",
+        source_title="Web search",
+    )
+    result = generate_embedding(chunk.content)
+    chunk.embedding = result.vector
+    chunk.embedding_model = result.model
+    chunk.embedding_dimensions = result.dimensions
+    chunk.embedding_text_hash = result.text_hash
+    chunk.save()
+
+    context = retrieve(
+        "AI tutors on campus",
+        session=session,
+        user=user,
+        sources={"news"},
+        top_k=3,
+    )
+
+    assert context.items
+    assert context.items[0].title == "Web search"
+    assert "AI tutors" in context.items[0].excerpt

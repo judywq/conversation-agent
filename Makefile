@@ -1,4 +1,4 @@
-# Replace the % with the desired environment, e.g. `make run-local` for local environment
+﻿# Replace the % with the desired environment, e.g. `make run-local` for local environment
 # or `make run-production` for production environment
 
 # Show configs
@@ -122,3 +122,8 @@ rm-static-vol:
 
 sync-news-%:
 	docker compose -f docker-compose.$*.yml run --rm django python manage.py sync_miniflux_news --limit 100
+
+# One-time LangMem PostgresStore table setup for speaker profiles
+setup-speaker-profiles-%:
+	docker compose -f docker-compose.$*.yml run --rm django python manage.py setup_langmem_store
+
