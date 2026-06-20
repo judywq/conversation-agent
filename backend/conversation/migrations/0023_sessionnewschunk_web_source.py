@@ -6,7 +6,7 @@ from django.db import models
 class Migration(migrations.Migration):
     dependencies = [
         ("news", "0002_remove_newsclassification_is_suitable"),
-        ("conversation", "0020_rename_knowledgesnippet_exemplar"),
+        ("conversation", "0022_alter_exemplar_options"),
     ]
 
     operations = [
