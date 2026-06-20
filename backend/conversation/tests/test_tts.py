@@ -6,9 +6,11 @@ from django.test import override_settings
 
 from backend.conversation.exceptions import ServiceConfigurationError
 from backend.conversation.services.tts import synthesize_speech
+from backend.conversation.services.tts import synthesize_speech_with_lipsync
 
 
 @override_settings(
+    DEBUG=True,
     TTS_PROVIDER="fish",
     FISH_API_KEY="fish-test-key",
     FISH_TTS_MODEL="s2-pro",
@@ -84,6 +86,7 @@ def test_synthesize_speech_treats_non_openai_voice_as_fish_reference_id() -> Non
 
 
 @override_settings(
+    DEBUG=True,
     TTS_PROVIDER="elevenlabs",
     ELEVENLABS_API_KEY="eleven-test-key",
     ELEVENLABS_MODEL_ID="eleven_v3",
@@ -169,3 +172,30 @@ def test_synthesize_speech_elevenlabs_falls_back_to_default_voice_id() -> None:
         mock_client.text_to_speech.convert.call_args.kwargs["voice_id"]
         == "BIvP0GN1cAtSRTxNHnWS"
     )
+
+
+@override_settings(
+    DEBUG=True,
+    TTS_PROVIDER="openai",
+    OPENAI_TTS_VOICE="alloy",
+    OPENAI_TTS_MODEL="gpt-4o-mini-tts",
+    DOMAIN_NAME="example.test",
+    MEDIA_URL="/media/",
+)
+def test_synthesize_speech_with_lipsync_openai_returns_proportional_timings() -> None:
+    mock_response = Mock()
+    mock_response.read.return_value = b"\x00" * 32000
+
+    with (
+        patch("backend.conversation.services.tts.OpenAI") as openai_cls,
+        patch("backend.conversation.services.tts.default_storage.save", return_value="audio/test.mp3"),
+        patch("backend.conversation.services.tts.audio_duration_ms", return_value=2000),
+    ):
+        openai_cls.return_value.audio.speech.create.return_value = mock_response
+        result = synthesize_speech_with_lipsync(text="Hello world", voice="alloy")
+
+    assert result.audio_url == "http://example.test/media/audio/test.mp3"
+    assert result.lipsync["words"] == ["Hello", "world"]
+    assert result.lipsync["wtimes"] == [0, 1000]
+    assert result.lipsync["wdurations"] == [1000, 1000]
+
