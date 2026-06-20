@@ -21,6 +21,11 @@ const routes = [
         },
       },
       {
+        path: 'debug/avatars',
+        name: 'avatar-debug',
+        component: () => import('@/views/AvatarDebugView.vue'),
+      },
+      {
         path: 'app/conversation',
         name: 'conversation',
         component: () => import('@/views/ConversationView.vue'),

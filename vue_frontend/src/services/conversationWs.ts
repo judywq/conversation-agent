@@ -1,23 +1,39 @@
+import type { LipSyncPayload } from '@/types/lipsync'
+
+export type ConversationParticipant = {
+  id: string
+  name: string
+  type: 'user' | 'agent'
+  persona_name?: string
+  gender?: string
+  voice_title?: string
+  avatar_body?: string
+}
+
+export type ConversationTurn = {
+  speaker: string
+  speaker_display_name?: string
+  speaker_type: string
+  utterance: string
+  turn_index: number
+  subturn_index?: number
+  audio_url?: string | null
+  lipsync?: LipSyncPayload | null
+}
+
 export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
   | { type: 'session_started'; session_id: number; topic: string }
   | {
       type: 'participants'
-      participants: Array<{
-        id: string
-        name: string
-        type: 'user' | 'agent'
-        persona_name?: string
-        gender?: string
-        voice_title?: string
-      }>
+      participants: ConversationParticipant[]
     }
   | { type: 'need_first_turn_choice' }
   | { type: 'paused' }
   | { type: 'resumed' }
   | { type: 'session_ended' }
   | { type: 'need_user_turn'; reason: string }
-  | { type: 'turn'; turn: any }
+  | { type: 'turn'; turn: ConversationTurn }
   | { type: 'agent_status'; status: 'thinking' | 'finished' | 'searching_online'; agent_display_name?: string }
   | { type: 'terminated'; reason: string }
   | { type: 'error'; message: string }

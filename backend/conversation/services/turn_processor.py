@@ -227,6 +227,7 @@ def process_agent_turn(
     source: str | None = None,
     audio_url: str | None = None,
     utterance_tts: str = "",
+    lipsync: dict | None = None,
 ) -> ProcessedTurn:
     plan = _apply_name_target_fallback(
         session,
@@ -244,6 +245,7 @@ def process_agent_turn(
         source=source,
         audio_url=audio_url,
         utterance_tts=utterance_tts,
+        lipsync=lipsync,
     )
 
 
@@ -257,6 +259,7 @@ def append_turn(
     source: str | None = None,
     audio_url: str | None = None,
     utterance_tts: str = "",
+    lipsync: dict | None = None,
 ) -> ProcessedTurn:
     metadata = metadata or TurnMetadata(
         type="",
@@ -297,6 +300,7 @@ def append_turn(
         subturn_index=subturn_index,
         source=source,
         audio_url=audio_url,
+        lipsync=lipsync,
     )
 
     _increment_speech_act_counters(session, metadata)

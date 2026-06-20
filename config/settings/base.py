@@ -443,7 +443,8 @@ REST_FRAMEWORK = {
 }
 
 # django-cors-headers - https://github.com/adamchainz/django-cors-headers#setup
-CORS_URLS_REGEX = r"^/api/.*$"
+# Include /media/ so the Vue dev server can fetch TTS audio into Web Audio (TalkingHead lip-sync).
+CORS_URLS_REGEX = r"^(/api/|/media/).*$"
 CORS_ALLOW_CREDENTIALS = True
 
 # By Default swagger ui is available only to admin user(s). You can change permission classes to change that
