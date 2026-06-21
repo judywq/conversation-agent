@@ -80,7 +80,7 @@ const turnDisplayList = computed((): TurnDisplayItem[] => {
       turn,
       number: index + 1,
       showTranscript: turn.speaker_type === 'user',
-      isCurrent: liveSpeakingTurnKey.value === key || manualReplayTurnKey.value === key,
+      isCurrent: liveSpeakingTurnKey.value === key,
       userTurnPrompt: false,
       statusHint: '',
     }
@@ -139,13 +139,26 @@ function currentTurnSpeakerLabel(item: TurnDisplayItem): string {
   return item.turn.speaker_display_name || item.turn.speaker
 }
 
-function canShowReplayControls(item: TurnDisplayItem): boolean {
+function canShowTurnAudioControls(item: TurnDisplayItem): boolean {
   if (!item.turn?.audio_url) return false
-  if (liveSpeakingTurnKey.value === item.key || manualReplayTurnKey.value === item.key) return false
+  if (liveSpeakingTurnKey.value === item.key) return false
   if (item.turn.speaker_type === 'agent') {
     return completedAgentPlaybackKeys.value.includes(item.key)
   }
   return true
+}
+
+function canShowReplayButton(item: TurnDisplayItem): boolean {
+  if (!canShowTurnAudioControls(item)) return false
+  if (manualReplayTurnKey.value === item.key && manualReplayActive.value && !manualReplayPaused.value) {
+    return false
+  }
+  return true
+}
+
+function canShowPauseButton(item: TurnDisplayItem): boolean {
+  if (!canShowTurnAudioControls(item)) return false
+  return manualReplayTurnKey.value === item.key && manualReplayActive.value && !manualReplayPaused.value
 }
 const agentStatus = ref<'idle' | 'thinking' | 'finished' | 'searching_online'>('idle')
 const activeAgentName = ref('')
@@ -281,26 +294,12 @@ function stopManualTurnAudio() {
   manualReplayActive.value = false
 }
 
-function canPauseTurnAudio(key: string): boolean {
-  if (manualReplayTurnKey.value !== key || manualReplayPaused.value || !manualReplayActive.value) {
-    return false
-  }
-  if (currentAudio.value && !currentAudio.value.paused) return true
-  return avatarSpeaking.value
-}
-
 function pauseTurnAudioManual() {
-  if (!manualReplayTurnKey.value || manualReplayPaused.value) return
+  if (!manualReplayTurnKey.value || manualReplayPaused.value || !manualReplayActive.value) return
   if (currentAudio.value && !currentAudio.value.paused) {
     currentAudio.value.pause()
     manualReplayPaused.value = true
-    return
   }
-  manualReplayAbortController?.abort()
-  avatarGridRef.value?.setIdleAll?.()
-  avatarSpeaking.value = false
-  manualReplayPaused.value = true
-  manualReplayActive.value = false
 }
 
 async function playTurnAudioManual(turn: Turn, key: string) {
@@ -322,15 +321,18 @@ async function playTurnAudioManual(turn: Turn, key: string) {
 
   const abort = new AbortController()
   manualReplayAbortController = abort
-  avatarSpeaking.value = true
 
-  await playTurnAudioAndWait(turn, abort.signal)
+  // Manual replay uses plain audio so pause/resume works reliably (avatar lip-sync has no pause).
+  await playPlainAudioAndWait(turn.audio_url, abort.signal)
 
-  avatarSpeaking.value = false
   manualReplayAbortController = null
 
-  if (abort.signal.aborted || manualReplayPaused.value) {
+  if (abort.signal.aborted) {
     manualReplayActive.value = false
+    return
+  }
+
+  if (manualReplayPaused.value) {
     return
   }
 
@@ -1073,14 +1075,22 @@ onUnmounted(() => {
                   <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
                     {{ item.turn.utterance }}
                   </div>
-                  <div v-if="canShowReplayControls(item)" class="flex flex-wrap gap-2 pt-1">
-                    <Button variant="outline" size="sm" @click="playTurnAudioManual(item.turn!, item.key)">
+                  <div
+                    v-if="canShowTurnAudioControls(item)"
+                    class="flex flex-wrap gap-2 pt-1"
+                  >
+                    <Button
+                      v-if="canShowReplayButton(item)"
+                      variant="outline"
+                      size="sm"
+                      @click="playTurnAudioManual(item.turn!, item.key)"
+                    >
                       Replay
                     </Button>
                     <Button
+                      v-if="canShowPauseButton(item)"
                       variant="outline"
                       size="sm"
-                      :disabled="!canPauseTurnAudio(item.key)"
                       @click="pauseTurnAudioManual"
                     >
                       Pause
@@ -1183,14 +1193,22 @@ onUnmounted(() => {
               <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
                 {{ item.turn.utterance }}
               </div>
-              <div v-if="canShowReplayControls(item)" class="flex flex-wrap gap-2 pt-1">
-                <Button variant="outline" size="sm" @click="playTurnAudioManual(item.turn!, item.key)">
+              <div
+                v-if="canShowTurnAudioControls(item)"
+                class="flex flex-wrap gap-2 pt-1"
+              >
+                <Button
+                  v-if="canShowReplayButton(item)"
+                  variant="outline"
+                  size="sm"
+                  @click="playTurnAudioManual(item.turn!, item.key)"
+                >
                   Replay
                 </Button>
                 <Button
+                  v-if="canShowPauseButton(item)"
                   variant="outline"
                   size="sm"
-                  :disabled="!canPauseTurnAudio(item.key)"
                   @click="pauseTurnAudioManual"
                 >
                   Pause

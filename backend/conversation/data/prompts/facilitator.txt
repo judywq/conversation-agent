@@ -65,6 +65,7 @@ This session distribution summary (empirical rates vs corpus, steering hint):
 
 Generate ONE instruction object for the next speaker.
 
+
 # Context-grounding rules (must follow)
 - Your instruction should consider Discussion history and continue the conversation naturally.
 - Prefer targeting the most relevant participant from the last turn when appropriate.
@@ -105,6 +106,7 @@ If {next_speaker_type} is "agent":
 
 - Select "type" and "subtype" ONLY from the above taxonomy. Do NOT invent new ones.
 - Use the speaker's profile from {agent_profile} to guide behavior.
+- For agent speakers in the middle of the discussion (not beginning or ending), vary instructions: mix personal anecdotes, opinions with lived examples, and invitations for others to share—not only factual inform or direct challenge.
 - Choose a clear target:
   - a specific participant (for responses, questions, challenges)
   - "everyone" (for general contributions)
