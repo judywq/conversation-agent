@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -49,7 +49,72 @@ const participants = ref<Participant[]>([])
 type Turn = ConversationTurn
 
 const turns = ref<Turn[]>([])
-const turnList = computed<Turn[]>(() => turns.value)
+type TurnDisplayItem = {
+  key: string
+  turn: Turn | null
+  number: number
+  showTranscript: boolean
+  isCurrent: boolean
+  userTurnPrompt: boolean
+  statusHint: string
+}
+
+const turnDisplayList = computed((): TurnDisplayItem[] => {
+  const items: TurnDisplayItem[] = turns.value.map((turn, index) => ({
+    key: `${turn.turn_index}.${turn.subturn_index ?? 0}`,
+    turn,
+    number: index + 1,
+    showTranscript: turn.speaker_type === 'user',
+    isCurrent: false,
+    userTurnPrompt: false,
+    statusHint: '',
+  }))
+
+  const userTurnActive = needUserTurn.value && !needFirstTurnChoice.value && !isPaused.value
+  const partnerTurnActive =
+    !!sessionId.value &&
+    !userTurnActive &&
+    (agentStatus.value === 'thinking' || agentStatus.value === 'searching_online')
+
+  if (userTurnActive) {
+    items.push({
+      key: 'current-turn',
+      turn: null,
+      number: items.length + 1,
+      showTranscript: false,
+      isCurrent: true,
+      userTurnPrompt: true,
+      statusHint: '',
+    })
+  } else if (partnerTurnActive) {
+    items.push({
+      key: 'current-turn',
+      turn: null,
+      number: items.length + 1,
+      showTranscript: false,
+      isCurrent: true,
+      userTurnPrompt: false,
+      statusHint: agentStatus.value === 'searching_online' ? 'Checking online…' : 'Thinking…',
+    })
+  }
+
+  return items
+})
+
+const hasCurrentTurnHighlight = computed(() => turnDisplayList.value.some((item) => item.isCurrent))
+
+function turnItemClass(isCurrent: boolean): string {
+  return isCurrent
+    ? 'rounded-md border border-emerald-300 bg-emerald-50/50 px-3 py-2 space-y-1 text-sm'
+    : 'border rounded-md p-3 space-y-1'
+}
+
+function currentTurnSpeakerLabel(item: TurnDisplayItem): string {
+  if (item.userTurnPrompt) return 'You'
+  if (item.isCurrent && item.statusHint) return activeAgentName.value || 'A partner'
+  if (!item.turn) return ''
+  return item.turn.speaker_display_name || item.turn.speaker
+}
 const agentStatus = ref<'idle' | 'thinking' | 'finished' | 'searching_online'>('idle')
 const activeAgentName = ref('')
 const avatarsEnabled = ref(true)
@@ -57,6 +122,12 @@ const avatarWarmedUp = ref(false)
 const avatarGridRef = ref<InstanceType<typeof AgentAvatarGrid> | null>(null)
 const avatarSpeaking = ref(false)
 const agentParticipants = computed(() => participants.value.filter((p) => p.type === 'agent'))
+
+function participantRoleLabel(type: Participant['type']): string {
+  if (type === 'agent') return 'Discussion partner'
+  if (type === 'user') return 'You'
+  return type
+}
 const activeSpeakerId = computed(() => {
   if (agentStatus.value === 'thinking' || agentStatus.value === 'searching_online') {
     const match = participants.value.find(
@@ -144,13 +215,88 @@ function stopPlainAudio() {
   }
 }
 
+let manualReplayAbortController: AbortController | null = null
+const manualReplayTurnKey = ref<string | null>(null)
+const manualReplayPaused = ref(false)
+const manualReplayActive = ref(false)
+
+function stopManualTurnAudio() {
+  manualReplayAbortController?.abort()
+  manualReplayAbortController = null
+  if (currentAudio.value) {
+    currentAudio.value.pause()
+    currentAudio.value.currentTime = 0
+    currentAudio.value = null
+  }
+  avatarGridRef.value?.setIdleAll?.()
+  manualReplayTurnKey.value = null
+  manualReplayPaused.value = false
+  manualReplayActive.value = false
+}
+
+function canPauseTurnAudio(key: string): boolean {
+  if (manualReplayTurnKey.value !== key || manualReplayPaused.value || !manualReplayActive.value) {
+    return false
+  }
+  if (currentAudio.value && !currentAudio.value.paused) return true
+  return avatarSpeaking.value
+}
+
+function pauseTurnAudioManual() {
+  if (!manualReplayTurnKey.value || manualReplayPaused.value) return
+  if (currentAudio.value && !currentAudio.value.paused) {
+    currentAudio.value.pause()
+    manualReplayPaused.value = true
+    return
+  }
+  manualReplayAbortController?.abort()
+  avatarGridRef.value?.setIdleAll?.()
+  avatarSpeaking.value = false
+  manualReplayPaused.value = true
+  manualReplayActive.value = false
+}
+
+async function playTurnAudioManual(turn: Turn, key: string) {
+  if (!turn.audio_url) return
+
+  if (manualReplayTurnKey.value === key && manualReplayPaused.value && currentAudio.value) {
+    manualReplayPaused.value = false
+    manualReplayActive.value = true
+    await currentAudio.value.play()
+    return
+  }
+
+  stopAllAudioPlayback()
+  stopManualTurnAudio()
+
+  manualReplayTurnKey.value = key
+  manualReplayPaused.value = false
+  manualReplayActive.value = true
+
+  const abort = new AbortController()
+  manualReplayAbortController = abort
+  avatarSpeaking.value = true
+
+  await playTurnAudioAndWait(turn, abort.signal)
+
+  avatarSpeaking.value = false
+  manualReplayAbortController = null
+
+  if (abort.signal.aborted || manualReplayPaused.value) {
+    manualReplayActive.value = false
+    return
+  }
+
+  manualReplayTurnKey.value = null
+  manualReplayActive.value = false
+}
+
 function stopAllAudioPlayback() {
   playbackAbortController?.abort()
   playbackAbortController = null
   turnAudioQueue.value = []
-  stopPlainAudio()
+  stopManualTurnAudio()
   avatarGridRef.value?.setIdleAll?.()
-  avatarSpeaking.value = false
 }
 
 function resetAvatars() {
@@ -290,6 +436,7 @@ function enqueueTurnAudio(turn: Turn) {
 }
 
 function handleTurnAudio(turn: Turn) {
+  stopManualTurnAudio()
   enqueueTurnAudio(turn)
 }
 
@@ -297,8 +444,8 @@ function playAudioNow(url: string) {
   if (!url) return
   const turn = [...turns.value].reverse().find((t) => t.audio_url === url)
   if (!turn?.audio_url) return
-  stopAllAudioPlayback()
-  enqueueTurnAudio(turn)
+  const key = `${turn.turn_index}.${turn.subturn_index ?? 0}`
+  void playTurnAudioManual(turn, key)
 }
 
 function handleEvent(e: ConversationWsEvent) {
@@ -542,7 +689,7 @@ async function loadTaxonomy() {
     taxonomy.value = payload.categories
   } catch (error: any) {
     toast({
-      title: 'Could not load news topics',
+      title: 'Could not load topics',
       description: error?.message || 'Please refresh and try again.',
       variant: 'destructive',
     })
@@ -560,13 +707,9 @@ async function generateDiscussionScenario() {
     topic.value = result.scenario
     scenarioArticles.value = result.articles
     await authStore.fetchUser()
-    const description =
-      result.knowledge_source === 'web'
-        ? 'Scenario generated from subtopic; background fetched from web.'
-        : `Generated from ${result.article_ids.length} article(s).`
     toast({
       title: 'Scenario ready',
-      description,
+      description: 'You can edit the text below before you start.',
     })
   } catch (error: any) {
     toast({
@@ -614,6 +757,9 @@ onUnmounted(() => {
     <Card>
       <CardHeader>
         <CardTitle>Conversation</CardTitle>
+        <CardDescription>
+          Choose a topic, set up your discussion group, then start speaking with your partners.
+        </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="grid gap-4 sm:grid-cols-2">
@@ -629,6 +775,9 @@ onUnmounted(() => {
                 </SelectItem>
               </SelectContent>
             </Select>
+            <p class="text-xs text-muted-foreground">
+              Choose the general subject you want to discuss today.
+            </p>
           </div>
           <div class="space-y-2">
             <div class="text-sm font-medium">Subtopic</div>
@@ -649,10 +798,18 @@ onUnmounted(() => {
                 </SelectItem>
               </SelectContent>
             </Select>
+            <p class="text-xs text-muted-foreground">
+              Pick a specific focus within that subject.
+            </p>
           </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="space-y-2">
+          <div class="text-sm font-medium">Build your scenario</div>
+          <p class="text-xs text-muted-foreground">
+            Get a suggested prompt for your topic, or write your own in the box below.
+          </p>
+          <div class="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             :disabled="!canGenerateScenario"
@@ -661,41 +818,29 @@ onUnmounted(() => {
             {{ isGeneratingScenario ? 'Generating scenario…' : 'Generate scenario' }}
           </Button>
           <p v-if="isGeneratingScenario" class="text-sm text-muted-foreground">
-            Fetching article content and generating scenario…
+            Preparing your scenario…
           </p>
-          <p v-else-if="scenarioArticles.length" class="text-sm text-muted-foreground">
-            Based on {{ scenarioArticles.length }} article{{ scenarioArticles.length === 1 ? '' : 's' }}:
-            {{ scenarioArticles.map((article) => article.title).join(', ') }}
+          <p v-else-if="topic.trim() && scenarioArticles.length" class="text-sm text-muted-foreground">
+            Scenario ready—you can edit it below before you start.
           </p>
+          </div>
         </div>
 
         <div class="space-y-2">
           <div class="text-sm font-medium">Discussion scenario</div>
-          <Textarea v-model="topic" placeholder="Generate a scenario or enter your own topic…" class="min-h-[80px]" />
-        </div>
-
-        <div class="text-sm text-muted-foreground">
-          Status:
-          <span v-if="isEnded">Ended</span>
-          <span v-else-if="isPaused">Paused</span>
-          <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
-          <span v-else-if="agentStatus === 'searching_online'">{{ activeAgentName || 'Agent' }} is checking online…</span>
-          <span v-else-if="agentStatus === 'thinking'">{{ activeAgentName || 'Agent' }} is thinking…</span>
-          <span v-else-if="needFirstTurnChoice">Choose who speaks first</span>
-          <span v-else-if="needUserTurn">Your turn</span>
-          <span v-else>Idle</span>
+          <Textarea v-model="topic" placeholder="Enter what you would like to discuss…" class="min-h-[80px]" />
         </div>
 
         <Card class="border">
           <CardHeader>
-            <CardTitle class="text-base">Agents</CardTitle>
+            <CardTitle class="text-base">Discussion partners</CardTitle>
+            <CardDescription>
+              Classmates who join you in the discussion.
+            </CardDescription>
           </CardHeader>
           <CardContent class="space-y-2">
-            <div class="text-sm text-muted-foreground">
-              Choose how many agent participants to include (1–{{ MAX_AGENT_COUNT }}).
-            </div>
             <div class="flex items-center gap-3">
-              <div class="text-sm font-medium w-28">Agent count</div>
+              <div class="text-sm font-medium w-36 shrink-0">Number of partners</div>
               <select
                 v-model.number="agentCount"
                 class="h-9 rounded-md border bg-background px-3 text-sm"
@@ -704,20 +849,28 @@ onUnmounted(() => {
                 <option v-for="n in MAX_AGENT_COUNT" :key="n" :value="n">{{ n }}</option>
               </select>
             </div>
+            <p class="text-xs text-muted-foreground">
+              Choose how many partners join you (1–{{ MAX_AGENT_COUNT }}). More partners means a larger group discussion.
+            </p>
+            <div v-if="!sessionId" class="pt-2">
+              <Button :disabled="!canStart" @click="startSession">Start</Button>
+            </div>
           </CardContent>
         </Card>
 
-        <Card v-if="needFirstTurnChoice" class="border">
-          <CardHeader>
-            <CardTitle class="text-base">Who speaks first?</CardTitle>
-          </CardHeader>
-          <CardContent class="flex flex-col gap-2 sm:flex-row">
-            <Button @click="chooseFirstTurn(true)">I’ll speak first</Button>
-            <Button variant="outline" @click="chooseFirstTurn(false)">Let an agent start</Button>
-          </CardContent>
-        </Card>
+        <template v-if="sessionId">
+        <div class="text-sm text-muted-foreground">
+          Status:
+          <span v-if="isEnded">Ended</span>
+          <span v-else-if="isPaused">Paused</span>
+          <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
+          <span v-else-if="agentStatus === 'searching_online' || agentStatus === 'thinking'">Waiting…</span>
+          <span v-else-if="needFirstTurnChoice">Choose who speaks first</span>
+          <span v-else-if="needUserTurn">Your turn</span>
+          <span v-else>Idle</span>
+        </div>
 
-        <Card v-if="sessionId && participants.length > 0" class="border">
+        <Card v-if="participants.length > 0" class="border">
           <CardHeader>
             <CardTitle class="text-base">Speakers</CardTitle>
           </CardHeader>
@@ -735,8 +888,21 @@ onUnmounted(() => {
                   · {{ p.gender }}
                 </span>
               </div>
-              <div class="text-xs text-muted-foreground">{{ p.type }}</div>
+              <div class="text-xs text-muted-foreground">{{ participantRoleLabel(p.type) }}</div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card v-if="needFirstTurnChoice" class="border">
+          <CardHeader>
+            <CardTitle class="text-base">Who speaks first?</CardTitle>
+            <CardDescription>
+              Decide whether you open the discussion or let one of your partners begin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent class="flex flex-col gap-2 sm:flex-row">
+            <Button @click="chooseFirstTurn(true)">I’ll speak first</Button>
+            <Button variant="outline" @click="chooseFirstTurn(false)">Let a partner start</Button>
           </CardContent>
         </Card>
 
@@ -750,7 +916,7 @@ onUnmounted(() => {
             {{ avatarsEnabled ? 'Avatars On' : 'Avatars Off' }}
           </Button>
           <span v-if="sessionId && avatarsEnabled && !avatarWarmedUp" class="text-xs text-muted-foreground">
-            Click anywhere to load 3D avatars
+            Click anywhere to show your partners
           </span>
         </div>
 
@@ -772,40 +938,47 @@ onUnmounted(() => {
                 <CardTitle>Turns</CardTitle>
               </CardHeader>
               <CardContent class="space-y-3">
-                <div v-if="turnList.length === 0" class="text-sm text-muted-foreground">No turns yet.</div>
                 <div
-                  v-for="t in turnList"
-                  :key="`${t.turn_index}.${t.subturn_index ?? 0}`"
-                  class="border rounded-md p-3 space-y-1"
+                  v-if="turnDisplayList.length === 0 && !hasCurrentTurnHighlight"
+                  class="text-sm text-muted-foreground"
                 >
-                  <div class="text-xs text-muted-foreground">
-                    #{{ t.turn_index }} ·
-                    <span class="font-medium text-foreground">{{ t.speaker_display_name || t.speaker }}</span>
-                  </div>
-                  <div class="whitespace-pre-wrap text-sm">{{ t.utterance }}</div>
-                  <div v-if="t.audio_url" class="pt-1">
-                    <Button variant="outline" size="sm" @click="playAudioNow(t.audio_url!)">
-                      Play audio
-                    </Button>
-                  </div>
+                  No turns yet.
                 </div>
                 <div
-                  v-if="agentStatus === 'searching_online' || agentStatus === 'thinking'"
-                  class="border border-dashed rounded-md p-3 space-y-1 opacity-70 italic"
+                  v-for="item in turnDisplayList"
+                  :key="item.key"
+                  :class="turnItemClass(item.isCurrent)"
                 >
                   <div class="text-xs text-muted-foreground">
-                    <span v-if="agentStatus === 'searching_online'">
-                      {{ activeAgentName || 'Agent' }} is checking online…
-                    </span>
-                    <span v-else>
-                      {{ activeAgentName || 'Agent' }} is thinking…
-                    </span>
+                    Turn {{ item.number }} ·
+                    <span class="font-medium text-foreground">{{ currentTurnSpeakerLabel(item) }}</span>
+                  </div>
+                  <template v-if="item.userTurnPrompt">
+                    <div class="font-medium">Your turn to speak</div>
+                    <div class="text-muted-foreground">Use mic or text to respond.</div>
+                  </template>
+                  <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
+                  <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
+                    {{ item.turn.utterance }}
+                  </div>
+                  <div v-if="item.turn?.audio_url" class="flex flex-wrap gap-2 pt-1">
+                    <Button variant="outline" size="sm" @click="playTurnAudioManual(item.turn!, item.key)">
+                      Replay
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      :disabled="!canPauseTurnAudio(item.key)"
+                      @click="pauseTurnAudioManual"
+                    >
+                      Pause
+                    </Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Card class="border">
                 <CardHeader>
                   <CardTitle class="text-base">Speak (microphone)</CardTitle>
@@ -830,7 +1003,7 @@ onUnmounted(() => {
                     </Button>
                   </div>
                   <div class="text-xs text-muted-foreground">
-                    Press
+                    You may also press
                     <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
                     to start or stop recording.
                   </div>
@@ -857,31 +1030,10 @@ onUnmounted(() => {
                   </Button>
                 </CardContent>
               </Card>
-
-              <Card class="border">
-                <CardHeader>
-                  <CardTitle class="text-base">Turn</CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-2">
-                  <div
-                    v-if="needUserTurn && !needFirstTurnChoice && !isPaused"
-                    class="rounded-md border border-emerald-300 bg-emerald-50/50 px-3 py-2 text-sm"
-                  >
-                    <div class="font-medium">Your turn to speak</div>
-                    <div class="text-muted-foreground">Use mic or text to respond.</div>
-                  </div>
-                  <div v-else class="text-sm text-muted-foreground">Waiting…</div>
-                </CardContent>
-              </Card>
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2 border-t">
-              <Button :disabled="!canStart" @click="startSession">Start</Button>
-              <Button variant="outline" :disabled="!sessionId" @click="volunteer">Request to speak</Button>
-              <Button variant="outline" :disabled="!sessionId" @click="pauseOrResume">
-                {{ isPaused ? 'Resume' : 'Pause' }}
-              </Button>
-              <Button variant="destructive" :disabled="!sessionId" @click="stopConversation">
+              <Button variant="destructive" @click="stopConversation">
                 Stop
               </Button>
             </div>
@@ -894,40 +1046,47 @@ onUnmounted(() => {
             <CardTitle>Turns</CardTitle>
           </CardHeader>
           <CardContent class="space-y-3">
-            <div v-if="turnList.length === 0" class="text-sm text-muted-foreground">No turns yet.</div>
             <div
-              v-for="t in turnList"
-              :key="`${t.turn_index}.${t.subturn_index ?? 0}`"
-              class="border rounded-md p-3 space-y-1"
+              v-if="turnDisplayList.length === 0 && !hasCurrentTurnHighlight"
+              class="text-sm text-muted-foreground"
             >
-              <div class="text-xs text-muted-foreground">
-                #{{ t.turn_index }} ·
-                <span class="font-medium text-foreground">{{ t.speaker_display_name || t.speaker }}</span>
-              </div>
-              <div class="whitespace-pre-wrap text-sm">{{ t.utterance }}</div>
-              <div v-if="t.audio_url" class="pt-1">
-                <Button variant="outline" size="sm" @click="playAudioNow(t.audio_url!)">
-                  Play audio
-                </Button>
-              </div>
+              No turns yet.
             </div>
             <div
-              v-if="agentStatus === 'searching_online' || agentStatus === 'thinking'"
-              class="border border-dashed rounded-md p-3 space-y-1 opacity-70 italic"
+              v-for="item in turnDisplayList"
+              :key="item.key"
+              :class="turnItemClass(item.isCurrent)"
             >
               <div class="text-xs text-muted-foreground">
-                <span v-if="agentStatus === 'searching_online'">
-                  {{ activeAgentName || 'Agent' }} is checking online…
-                </span>
-                <span v-else>
-                  {{ activeAgentName || 'Agent' }} is thinking…
-                </span>
+                Turn {{ item.number }} ·
+                <span class="font-medium text-foreground">{{ currentTurnSpeakerLabel(item) }}</span>
+              </div>
+              <template v-if="item.userTurnPrompt">
+                <div class="font-medium">Your turn to speak</div>
+                <div class="text-muted-foreground">Use mic or text to respond.</div>
+              </template>
+              <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
+              <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
+                {{ item.turn.utterance }}
+              </div>
+              <div v-if="item.turn?.audio_url" class="flex flex-wrap gap-2 pt-1">
+                <Button variant="outline" size="sm" @click="playTurnAudioManual(item.turn!, item.key)">
+                  Replay
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  :disabled="!canPauseTurnAudio(item.key)"
+                  @click="pauseTurnAudioManual"
+                >
+                  Pause
+                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Card class="border">
             <CardHeader>
               <CardTitle class="text-base">Speak (microphone)</CardTitle>
@@ -952,9 +1111,9 @@ onUnmounted(() => {
                 </Button>
               </div>
               <div class="text-xs text-muted-foreground">
-                Press
+                You may also press
                 <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
-                to start recording, then press again to stop and send.
+                to start or stop recording.
               </div>
 
               <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
@@ -979,34 +1138,14 @@ onUnmounted(() => {
               </Button>
             </CardContent>
           </Card>
-
-          <Card class="border">
-            <CardHeader>
-              <CardTitle class="text-base">Turn</CardTitle>
-            </CardHeader>
-            <CardContent class="space-y-2">
-              <div
-                v-if="needUserTurn && !needFirstTurnChoice && !isPaused"
-                class="rounded-md border border-emerald-300 bg-emerald-50/50 px-3 py-2 text-sm"
-              >
-                <div class="font-medium">Your turn to speak</div>
-                <div class="text-muted-foreground">Use mic or text to respond.</div>
-              </div>
-              <div v-else class="text-sm text-muted-foreground">Waiting…</div>
-            </CardContent>
-          </Card>
         </div>
 
         <div class="flex flex-wrap gap-2 pt-2 border-t">
-          <Button :disabled="!canStart" @click="startSession">Start</Button>
-          <Button variant="outline" :disabled="!sessionId" @click="volunteer">Request to speak</Button>
-          <Button variant="outline" :disabled="!sessionId" @click="pauseOrResume">
-            {{ isPaused ? 'Resume' : 'Pause' }}
-          </Button>
-          <Button variant="destructive" :disabled="!sessionId" @click="stopConversation">
+          <Button variant="destructive" @click="stopConversation">
             Stop
           </Button>
         </div>
+        </template>
         </template>
       </CardContent>
     </Card>

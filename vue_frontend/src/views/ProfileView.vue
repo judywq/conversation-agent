@@ -26,7 +26,7 @@
           <div class="space-y-1">
             <h2 class="text-base font-semibold">About you</h2>
             <p class="text-sm text-muted-foreground">
-              Your name, study background, and personality—used to personalize agents in discussions.
+              Your name, study background, and personality help your discussion partners get to know you.
             </p>
           </div>
 
@@ -39,7 +39,7 @@
                 class="w-full"
               />
               <div class="text-xs text-muted-foreground">
-                This name will be used by agents when they speak to you.
+                Partners will use this name when they speak with you.
               </div>
             </div>
 
@@ -51,7 +51,7 @@
                 class="w-full"
               />
               <div class="text-xs text-muted-foreground">
-                Agents will be your classmates from the same major by default.
+                Your partners will be classmates from the same major.
               </div>
             </div>
           </div>
@@ -60,7 +60,7 @@
             <div class="space-y-1">
               <h3 class="text-sm font-semibold">Personality self-evaluation</h3>
               <p class="text-xs text-muted-foreground">
-                OCEAN traits help match you with complementary agent personas in group discussions.
+                These traits help shape who joins your group discussions.
               </p>
             </div>
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -89,8 +89,7 @@
           <div class="space-y-1">
             <h2 class="text-base font-semibold">English proficiency</h2>
             <p class="text-sm text-muted-foreground">
-              Listen to the samples and pick the level you can comfortably follow. After your first
-              discussion, agents may calibrate from your speech instead of this CEFR label.
+              Listen to the samples and choose the level that feels comfortable for you.
             </p>
           </div>
 
@@ -106,7 +105,7 @@
             v-if="authStore.user?.proficiency_reference_utterance"
             class="text-sm text-muted-foreground"
           >
-            Agents now match a sample of your speech from a previous discussion.
+            Your partners adapt to how you speak in discussions.
           </p>
 
           <Button

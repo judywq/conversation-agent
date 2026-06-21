@@ -20,10 +20,14 @@ const { status, errorMessage, init, speak, setIdle, dispose } = useTalkingHead(s
 const preset = computed(() => avatarPresetForAgent(props.gender, props.index))
 
 const statusLabel = computed(() => {
+  if (props.agentStatus === 'searching_online' && props.active) {
+    return 'Checking online…'
+  }
+  if (props.agentStatus === 'thinking' && props.active) {
+    return 'Thinking…'
+  }
   if (status.value === 'loading') return 'Loading avatar…'
   if (status.value === 'error') return 'Avatar unavailable'
-  if (props.agentStatus === 'searching_online' && props.active) return 'Checking online…'
-  if (props.agentStatus === 'thinking' && props.active) return 'Thinking…'
   if (status.value === 'speaking') return 'Speaking…'
   if (status.value === 'ready') return 'Ready'
   if (props.warmedUp) return 'Loading avatar…'

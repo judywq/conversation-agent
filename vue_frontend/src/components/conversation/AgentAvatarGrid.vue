@@ -75,7 +75,7 @@ defineExpose({
 
 <template>
   <div class="space-y-3" aria-live="polite">
-    <div class="text-sm font-medium">Agent avatars</div>
+    <div class="text-sm font-medium">Discussion partners</div>
     <div class="grid gap-3" :class="gridClass">
       <AgentAvatarPanel
         v-for="(agent, index) in agents"
