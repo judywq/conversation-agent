@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { defaultAuthenticatedRoute } from '@/lib/authNavigation'
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,7 +45,7 @@ const onSubmit = form.handleSubmit(async (values) => {
     if (authStore.isAuthenticated) {
       const redirectPath = typeof route.query.redirect === 'string'
         ? route.query.redirect
-        : { name: 'dashboard' };
+        : defaultAuthenticatedRoute();
       router.push(redirectPath);
     }
   } catch (err: any) {

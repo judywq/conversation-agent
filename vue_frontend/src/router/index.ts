@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { defaultAuthenticatedRoute, isStaffUser } from '@/lib/authNavigation'
 import { useAuthStore } from '@/stores/auth'
 import HomeView from '@/views/HomeView.vue'
 
@@ -18,6 +19,7 @@ const routes = [
         component: () => import('@/views/DashboardView.vue'),
         meta: {
           requiresAuth: true,
+          requiresStaff: true,
         },
       },
       {
@@ -123,6 +125,7 @@ router.beforeEach(async (to, from) => {
 
   // Check if the route requires guest access
   const requiresGuest = to.matched.some((record) => record.meta.requiresGuest)
+  const requiresStaff = to.matched.some((record) => record.meta.requiresStaff)
 
   // If the route requires authentication and user is not authenticated
   if (requiresAuth && !authStore.isAuthenticated) {
@@ -133,12 +136,17 @@ router.beforeEach(async (to, from) => {
     }
   }
 
+  if (authStore.isAuthenticated && to.name === 'home') {
+    return defaultAuthenticatedRoute()
+  }
+
+  if (requiresStaff && authStore.isAuthenticated && !isStaffUser(authStore.user)) {
+    return defaultAuthenticatedRoute()
+  }
+
   // If the route requires guest access and user is authenticated
   if (requiresGuest && authStore.isAuthenticated) {
-    // Redirect to dashboard
-    return {
-      name: 'dashboard',
-    }
+    return defaultAuthenticatedRoute()
   }
 
   // --- NEW LOGIC: Force password change if required ---

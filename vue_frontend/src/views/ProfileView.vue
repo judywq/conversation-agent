@@ -2,9 +2,9 @@
   <div class="container mx-auto py-8 px-4">
     <Card class="w-full mx-auto sm:max-w-2xl">
       <CardHeader>
-        <CardTitle class="text-2xl">Profile</CardTitle>
+        <CardTitle class="text-2xl">My Profile</CardTitle>
         <CardDescription>
-          Configure your language-learning profile for the conversation system.
+          Set up your language-learning profile before starting conversations.
         </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">

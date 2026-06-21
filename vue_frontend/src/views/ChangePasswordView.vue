@@ -99,6 +99,7 @@ import {
 } from '@/components/ui/form'
 import { useToast } from '@/components/ui/toast/use-toast'
 import { changePasswordFormSchema } from '@/lib/validations'
+import { defaultAuthenticatedRoute } from '@/lib/authNavigation'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
@@ -131,7 +132,7 @@ const handleSubmit = form.handleSubmit(async (values) => {
       description: 'Your password has been changed successfully.',
     })
     setTimeout(() => {
-      router.push({ name: 'dashboard' })
+      router.push(defaultAuthenticatedRoute())
     }, 3000)
   } catch (err: any) {
     if (err.fieldErrors) {

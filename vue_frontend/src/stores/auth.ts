@@ -16,6 +16,7 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isLoggedIn: (state) => state.isAuthenticated && state.user !== null,
+    isStaff: (state) => Boolean(state.user?.is_staff),
     currentUser: (state) => state.user,
     isLoading: (state) => state.loading,
     hasError: (state) => state.error !== null

@@ -87,6 +87,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     """
 
     must_change_password = serializers.SerializerMethodField()
+    is_staff = serializers.BooleanField(read_only=True)
     ocean = UserProfileJSONField(profile_attr="ocean", required=False)
     cefr_level = UserProfileTextField(
         profile_attr="cefr_level",
@@ -159,6 +160,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "pk",
             *extra_fields,
             "must_change_password",
+            "is_staff",
             "ocean",
             "cefr_level",
             "profile_completed",

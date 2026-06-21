@@ -10,8 +10,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { CircleUser, Menu, Search, Users } from 'lucide-vue-next'
+import { CircleUser, Menu } from 'lucide-vue-next'
 
+import { defaultAuthenticatedRoute, isStaffUser } from '@/lib/authNavigation'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
@@ -19,14 +20,26 @@ const router = useRouter()
 const authStore = useAuthStore()
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const username = computed(() => authStore.user?.username || '')
+const showStaffNav = computed(() => isStaffUser(authStore.user))
+const homeRoute = computed(() =>
+  isAuthenticated.value ? defaultAuthenticatedRoute() : { name: 'home' as const },
+)
+
+const menuItems = computed(() => {
+  const items: Array<{ label: string; name: string }> = []
+  if (showStaffNav.value) {
+    items.push({ label: 'Dashboard', name: 'dashboard' })
+  }
+  items.push(
+    { label: 'My Profile', name: 'profile' },
+    { label: 'Conversation', name: 'conversation' },
+  )
+  return items
+})
+
 const logout = () => {
   authStore.logout(router)
 }
-const menuItems: Array<{ label: string; name: string }> = [
-  { label: 'Dashboard', name: 'dashboard' },
-  { label: 'Conversation', name: 'conversation' },
-  { label: 'Profile', name: 'profile' },
-]
 const isSheetOpen = ref(false)
 </script>
 
@@ -35,22 +48,23 @@ const isSheetOpen = ref(false)
     class="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 z-50"
   >
     <nav
-      class="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6"
+      class="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:flex-nowrap md:items-center md:gap-6 md:text-sm lg:gap-8"
     >
-      <router-link :to="{ name: 'home' }" class="items-center text-xl font-semibold"> ConvAgent </router-link>
+      <router-link :to="homeRoute" class="shrink-0 items-center text-xl font-semibold whitespace-nowrap"> ConvAgent </router-link>
       <router-link
         v-for="item in menuItems"
         :key="item.label"
         :to="{ name: item.name }"
-        class="text-muted-foreground transition-colors hover:text-foreground"
+        class="shrink-0 whitespace-nowrap px-1 text-muted-foreground transition-colors hover:text-foreground"
         :class="{ 'text-primary': $route.name === item.name }"
       >
         <span>{{ item.label }}</span>
       </router-link>
       <a
+        v-if="showStaffNav"
         href="/admin"
         target="_blank"
-        class="text-muted-foreground transition-colors hover:text-foreground"
+        class="shrink-0 whitespace-nowrap px-1 text-muted-foreground transition-colors hover:text-foreground"
       >
         <span>Admin</span>
       </a>
@@ -65,7 +79,7 @@ const isSheetOpen = ref(false)
       <SheetContent side="left">
         <SheetDescription className="hidden">Menu</SheetDescription>
         <SheetTitle><router-link
-            :to="{ name: 'home' }"
+            :to="homeRoute"
             class="items-center text-2xl font-semibold"
             @click="isSheetOpen = false"
           >
@@ -81,6 +95,7 @@ const isSheetOpen = ref(false)
             <span>{{ item.label }}</span>
           </router-link>
           <a
+            v-if="showStaffNav"
             href="/admin"
             target="_blank"
             class="text-muted-foreground transition-colors hover:text-foreground"

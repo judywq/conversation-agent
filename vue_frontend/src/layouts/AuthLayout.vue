@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Footer from '@/components/Footer.vue';
+import { defaultAuthenticatedRoute } from '@/lib/authNavigation';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import { onMounted } from 'vue';
@@ -10,7 +11,7 @@ const router = useRouter();
 // Redirect authenticated users away from auth routes
 onMounted(() => {
   if (authStore.isAuthenticated) {
-    router.push({ name: 'dashboard' });
+    router.push(defaultAuthenticatedRoute());
   }
 });
 </script>

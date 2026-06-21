@@ -37,6 +37,14 @@ def test_profile_completed_requires_ocean_and_cefr(user):
 
 
 @pytest.mark.django_db
+def test_is_staff_exposed_in_serializer(user):
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    serializer = CustomUserDetailsSerializer(instance=user)
+    assert serializer.data["is_staff"] is True
+
+
+@pytest.mark.django_db
 def test_major_round_trips_through_serializer(user):
     serializer = CustomUserDetailsSerializer(
         instance=user,
