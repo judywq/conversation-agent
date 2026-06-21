@@ -57,12 +57,15 @@ class DiscussionScenarioView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         cefr_level = None
+        reference_utterance = None
         if hasattr(request.user, "userprofile"):
             cefr_level = request.user.userprofile.cefr_level
+            reference_utterance = request.user.userprofile.proficiency_reference_utterance
         result = setup_discussion_context(
             category=category,
             subtopic=subtopic,
             cefr_level=cefr_level,
+            reference_utterance=reference_utterance,
         )
         if hasattr(request.user, "userprofile"):
             profile = request.user.userprofile

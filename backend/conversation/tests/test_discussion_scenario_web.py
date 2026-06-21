@@ -4,6 +4,7 @@ import pytest
 
 from backend.conversation.services.cefr_levels import normalize_user_cefr_level
 from backend.conversation.services.discussion_scenario import setup_discussion_context
+from backend.conversation.services.discussion_scenario import build_discussion_scenario_proficiency_guidance
 from backend.conversation.services.discussion_scenario import generate_scenario_with_llm
 
 
@@ -42,10 +43,63 @@ def test_generate_scenario_with_llm_subtopic_mode_includes_cefr(monkeypatch):
         cefr_level="A2",
     )
 
-    assert "User proficiency (CEFR): A2" in captured["prompt"]
+    assert "User proficiency: A2" in captured["prompt"]
+    assert "beginner learners" in captured["prompt"]
     assert "No news articles are available" in captured["prompt"]
     assert result.knowledge_source == "none"
     assert result.scenario.endswith("?")
+
+
+@pytest.mark.django_db
+def test_generate_scenario_with_llm_uses_reference_utterance_when_present(monkeypatch):
+    captured = {}
+
+    class FakeLLM:
+        def invoke(self, messages):
+            captured["prompt"] = messages[0].content
+            return type(
+                "Result",
+                (),
+                {"content": json.dumps({"scenario": "Should schools use AI tutors?"})},
+            )()
+
+    monkeypatch.setattr(
+        "backend.conversation.services.discussion_scenario.get_default_chat_llm",
+        lambda: FakeLLM(),
+    )
+
+    utterance = "I think AI tutors could help students who need extra practice."
+    result = generate_scenario_with_llm(
+        category="technology-ai",
+        subtopic="ai-teachers",
+        articles=[],
+        cefr_level="C1",
+        reference_utterance=utterance,
+    )
+
+    assert "User proficiency sample" in captured["prompt"]
+    assert utterance in captured["prompt"]
+    assert "User proficiency: C1" not in captured["prompt"]
+    assert result.scenario.endswith("?")
+
+
+def test_build_discussion_scenario_proficiency_guidance_prefers_reference():
+    guidance = build_discussion_scenario_proficiency_guidance(
+        cefr_level="B1",
+        reference_utterance="I think the policy is quite complicated.",
+    )
+    assert "User proficiency sample" in guidance
+    assert "complicated" in guidance
+    assert "User proficiency: B1" not in guidance
+
+
+def test_build_discussion_scenario_proficiency_guidance_uses_cefr_without_reference():
+    guidance = build_discussion_scenario_proficiency_guidance(
+        cefr_level="A2",
+        reference_utterance="",
+    )
+    assert guidance.startswith("User proficiency: A2")
+    assert "beginner learners" in guidance
 
 
 @pytest.mark.django_db

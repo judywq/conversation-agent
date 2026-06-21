@@ -67,11 +67,13 @@ class DiscussionSetupView(LoginRequiredMixin, TemplateView):
 
         if action == "generate":
             cefr_level = getattr(profile, "cefr_level", "") or None
+            reference_utterance = getattr(profile, "proficiency_reference_utterance", "") or None
             try:
                 result = generate_discussion_scenario(
                     category=category,
                     subtopic=subtopic,
                     cefr_level=cefr_level,
+                    reference_utterance=reference_utterance,
                 )
             except Exception as exc:  # noqa: BLE001
                 return self.render_to_response(
