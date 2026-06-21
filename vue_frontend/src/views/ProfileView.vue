@@ -1,123 +1,164 @@
 <template>
   <div class="container mx-auto py-8 px-4">
-    <Card class="w-full mx-auto sm:max-w-2xl">
-      <CardHeader>
-        <CardTitle class="text-2xl">My Profile</CardTitle>
-        <CardDescription>
-          Set up your language-learning profile before starting conversations.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="space-y-4">
-        <div class="space-y-2">
-          <div class="text-sm font-medium">How should we address you?</div>
-          <Input
-            v-model="preferredName"
-            placeholder="E.g., Alex"
-            class="w-full"
-          />
-          <div class="text-xs text-muted-foreground">
-            This name will be used by agents when they speak to you.
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <div class="text-sm font-medium">What is your study major?</div>
-          <Input
-            v-model="major"
-            placeholder="E.g., Computer Science"
-            class="w-full"
-          />
-          <div class="text-xs text-muted-foreground">
-            Agents will be your classmates from the same major by default.
-          </div>
-        </div>
-
-        <div class="rounded-md border p-4 space-y-2">
-          <div class="text-sm font-medium">English proficiency</div>
-          <div class="text-sm text-muted-foreground">
-            Initial CEFR level:
-            <span class="font-medium text-foreground">{{ selectedCefrLevel || authStore.user?.cefr_level || 'Not set yet' }}</span>
-          </div>
-          <div v-if="authStore.user?.proficiency_reference_utterance" class="text-sm text-muted-foreground">
-            After your first discussion, agents match this sample of your speech instead of a CEFR label.
-          </div>
-          <div class="text-sm">
-            Profile status:
-            <span class="font-medium">{{ authStore.user?.profile_completed ? 'Complete' : 'Incomplete' }}</span>
-          </div>
-        </div>
-
-        <Card class="border">
-          <CardHeader>
-            <CardTitle class="text-base">Choose your English level</CardTitle>
+    <Card class="w-full mx-auto sm:max-w-3xl">
+      <CardHeader class="space-y-3">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div class="space-y-1">
+            <CardTitle class="text-2xl">My Profile</CardTitle>
             <CardDescription>
-              Listen to the samples below and pick the level you can comfortably follow. This sets your default
-              until your first discussion session updates it from your own speech.
+              Set up your language-learning profile before starting conversations.
             </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-3">
-            <Button
-              variant="outline"
-              :disabled="isGeneratingCefr"
-              @click="generateCefrSamples"
-            >
-              {{ isGeneratingCefr ? 'Generating samples…' : 'Generate listening samples' }}
-            </Button>
-            <div v-if="cefrSampleList.length === 0" class="text-sm text-muted-foreground">
-              Generate samples to choose your starting level.
-            </div>
-            <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-md border p-3">
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-3">
-                  <div class="font-medium w-5 text-center">{{ idx + 1 }}</div>
-                  <div class="font-medium">{{ sample.level }}</div>
-                  <audio v-if="sample.audio_url" :src="sample.audio_url" controls class="h-8 max-w-[180px]" />
-                </div>
-                <Button
-                  :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
-                  @click="selectedCefrLevel = sample.level"
-                >
-                  {{ selectedCefrLevel === sample.level ? 'Selected' : 'Choose' }}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div class="space-y-2">
-          <div class="text-sm font-medium">Personality self-evaluation</div>
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div v-for="trait in OCEAN_TRAITS" :key="trait.key" class="space-y-2">
-              <div class="space-y-1">
-                <label class="text-sm text-muted-foreground">{{ trait.label }}</label>
-                <div class="text-xs text-muted-foreground">{{ trait.description }}</div>
-              </div>
-              <Select v-model="oceanModel[trait.key]">
-                <SelectTrigger class="w-full">
-                  <SelectValue placeholder="Not set" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem :value="OCEAN_UNSET">Not set</SelectItem>
-                  <SelectItem v-for="lvl in OCEAN_LEVELS" :key="lvl" :value="lvl">
-                    {{ lvl }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          </div>
+          <div
+            class="inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-medium"
+            :class="
+              authStore.user?.profile_completed
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-amber-200 bg-amber-50 text-amber-800'
+            "
+          >
+            {{ authStore.user?.profile_completed ? 'Profile complete' : 'Profile incomplete' }}
           </div>
         </div>
+      </CardHeader>
+      <CardContent class="space-y-6">
+        <section class="rounded-lg border p-4 sm:p-5 space-y-4">
+          <div class="space-y-1">
+            <h2 class="text-base font-semibold">About you</h2>
+            <p class="text-sm text-muted-foreground">
+              Your name, study background, and personality—used to personalize agents in discussions.
+            </p>
+          </div>
+
+          <div class="space-y-4">
+            <div class="space-y-2">
+              <div class="text-sm font-medium">How should we address you?</div>
+              <Input
+                v-model="preferredName"
+                placeholder="E.g., Alex"
+                class="w-full"
+              />
+              <div class="text-xs text-muted-foreground">
+                This name will be used by agents when they speak to you.
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="text-sm font-medium">What is your study major?</div>
+              <Input
+                v-model="major"
+                placeholder="E.g., Computer Science"
+                class="w-full"
+              />
+              <div class="text-xs text-muted-foreground">
+                Agents will be your classmates from the same major by default.
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-4 border-t pt-4">
+            <div class="space-y-1">
+              <h3 class="text-sm font-semibold">Personality self-evaluation</h3>
+              <p class="text-xs text-muted-foreground">
+                OCEAN traits help match you with complementary agent personas in group discussions.
+              </p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div v-for="trait in OCEAN_TRAITS" :key="trait.key" class="space-y-2">
+                <div class="space-y-1">
+                  <label class="text-sm text-muted-foreground">{{ trait.label }}</label>
+                  <div class="text-xs text-muted-foreground">{{ trait.description }}</div>
+                </div>
+                <Select v-model="oceanModel[trait.key]">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="Not set" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem :value="OCEAN_UNSET">Not set</SelectItem>
+                    <SelectItem v-for="lvl in OCEAN_LEVELS" :key="lvl" :value="lvl">
+                      {{ lvl }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-lg border p-4 sm:p-5 space-y-4">
+          <div class="space-y-1">
+            <h2 class="text-base font-semibold">English proficiency</h2>
+            <p class="text-sm text-muted-foreground">
+              Listen to the samples and pick the level you can comfortably follow. After your first
+              discussion, agents may calibrate from your speech instead of this CEFR label.
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span>
+              Selected level:
+              <span class="font-medium text-foreground">
+                {{ selectedCefrLevel || authStore.user?.cefr_level || 'Not set yet' }}
+              </span>
+            </span>
+          </div>
+          <p
+            v-if="authStore.user?.proficiency_reference_utterance"
+            class="text-sm text-muted-foreground"
+          >
+            Agents now match a sample of your speech from a previous discussion.
+          </p>
+
+          <Button
+            variant="outline"
+            :disabled="isGeneratingCefr"
+            @click="generateCefrSamples"
+          >
+            {{ isGeneratingCefr ? 'Generating samples…' : 'Generate listening samples' }}
+          </Button>
+
+          <div v-if="cefrSampleList.length === 0" class="text-sm text-muted-foreground">
+            Generate samples to choose your starting level.
+          </div>
+          <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-md border p-3">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-wrap items-center gap-3">
+                <div class="font-medium w-5 text-center">{{ idx + 1 }}</div>
+                <div class="font-medium">{{ sample.level }}</div>
+                <audio v-if="sample.audio_url" :src="sample.audio_url" controls class="h-8 max-w-[220px]" />
+              </div>
+              <Button
+                class="shrink-0"
+                :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
+                @click="selectedCefrLevel = sample.level"
+              >
+                {{ selectedCefrLevel === sample.level ? 'Selected' : 'Choose' }}
+              </Button>
+            </div>
+          </div>
+        </section>
 
         <div v-if="generalError" class="text-destructive text-sm">
           {{ generalError }}
         </div>
 
-        <Button
-          class="w-full"
-          :disabled="isSubmitting"
-          @click="handleSave"
-        >
-          {{ isSubmitting ? 'Saving...' : 'Save' }}
-        </Button>
+        <div class="flex flex-col gap-3">
+          <Button
+            class="w-full"
+            :disabled="isSubmitting || isNavigating"
+            @click="handleSave"
+          >
+            {{ isSubmitting ? 'Saving...' : 'Save' }}
+          </Button>
+          <Button
+            class="w-full"
+            variant="outline"
+            :disabled="isSubmitting || isNavigating"
+            @click="handleGoToConversation"
+          >
+            {{ isNavigating ? 'Saving...' : 'Go to Conversation' }}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   </div>
@@ -143,8 +184,10 @@ import {
 } from '@/services/conversationService'
 import { AuthService } from '@/services/authService'
 import { useAuthStore } from '@/stores/auth'
+import { useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
+const router = useRouter()
 const { toast } = useToast()
 
 const OCEAN_LEVELS = ['low', 'medium', 'high'] as const
@@ -211,7 +254,62 @@ const selectedCefrLevel = ref<string | null>(authStore.user?.cefr_level ?? null)
 const isGeneratingCefr = ref(false)
 
 const isSubmitting = ref(false)
+const isNavigating = ref(false)
 const generalError = ref<string | null>(null)
+
+function buildOceanPayload(): Record<string, string> {
+  const oceanPayload: Record<string, string> = {}
+  for (const { key } of OCEAN_TRAITS) {
+    const v = oceanModel[key]
+    if (v && v !== OCEAN_UNSET) oceanPayload[key] = v
+  }
+  return oceanPayload
+}
+
+function validateProfile(): string | null {
+  if (!preferredName.value.trim()) {
+    return 'Enter how we should address you.'
+  }
+  if (!major.value.trim()) {
+    return 'Enter your study major.'
+  }
+  for (const { key, label } of OCEAN_TRAITS) {
+    const v = oceanModel[key]
+    if (!v || v === OCEAN_UNSET) {
+      return `Select a level for ${label}.`
+    }
+  }
+  if (!selectedCefrLevel.value) {
+    return 'Choose a CEFR listening level.'
+  }
+  return null
+}
+
+async function persistProfile(): Promise<boolean> {
+  const validationError = validateProfile()
+  if (validationError) {
+    generalError.value = validationError
+    toast({
+      title: 'Profile incomplete',
+      description: validationError,
+      variant: 'destructive',
+    })
+    return false
+  }
+
+  const payload = {
+    ocean: buildOceanPayload(),
+    preferred_name: preferredName.value,
+    major: major.value,
+    cefr_level: selectedCefrLevel.value,
+    cefr_sample_topic: PROFILE_ONBOARDING_CEFR_TOPIC,
+    cefr_sample_choices: cefrSamples.value,
+  }
+  const user = await AuthService.updateUser(payload)
+  authStore.user = user
+  authStore.saveState()
+  return true
+}
 
 watch(
   () => authStore.user?.ocean,
@@ -262,31 +360,8 @@ async function handleSave() {
   isSubmitting.value = true
   generalError.value = null
   try {
-    const oceanPayload: Record<string, string> = {}
-    for (const { key } of OCEAN_TRAITS) {
-      const v = oceanModel[key]
-      if (v && v !== OCEAN_UNSET) oceanPayload[key] = v
-    }
-    if (!selectedCefrLevel.value) {
-      generalError.value = 'Choose a CEFR listening level before saving.'
-      toast({
-        title: 'English level required',
-        description: generalError.value,
-        variant: 'destructive',
-      })
-      return
-    }
-    const payload = {
-      ocean: oceanPayload,
-      preferred_name: preferredName.value,
-      major: major.value,
-      cefr_level: selectedCefrLevel.value,
-      cefr_sample_topic: PROFILE_ONBOARDING_CEFR_TOPIC,
-      cefr_sample_choices: cefrSamples.value,
-    }
-    const user = await AuthService.updateUser(payload)
-    authStore.user = user
-    authStore.saveState()
+    const saved = await persistProfile()
+    if (!saved) return
     toast({
       title: 'Saved',
       description: 'Your profile has been updated.',
@@ -303,6 +378,37 @@ async function handleSave() {
     })
   } finally {
     isSubmitting.value = false
+  }
+}
+
+async function handleGoToConversation() {
+  isNavigating.value = true
+  generalError.value = null
+  try {
+    const saved = await persistProfile()
+    if (!saved) return
+    if (!authStore.user?.profile_completed) {
+      generalError.value = 'Complete your profile before starting a conversation.'
+      toast({
+        title: 'Profile incomplete',
+        description: generalError.value,
+        variant: 'destructive',
+      })
+      return
+    }
+    await router.push({ name: 'conversation' })
+  } catch (err: unknown) {
+    generalError.value =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: string }).message)
+        : 'Failed to save profile'
+    toast({
+      title: 'Error',
+      description: generalError.value,
+      variant: 'destructive',
+    })
+  } finally {
+    isNavigating.value = false
   }
 }
 </script>
