@@ -49,6 +49,19 @@ const participants = ref<Participant[]>([])
 type Turn = ConversationTurn
 
 const turns = ref<Turn[]>([])
+const liveSpeakingTurnKey = ref<string | null>(null)
+const completedAgentPlaybackKeys = ref<string[]>([])
+
+function turnKey(turn: Turn): string {
+  return `${turn.turn_index}.${turn.subturn_index ?? 0}`
+}
+
+function markAgentPlaybackComplete(key: string) {
+  if (!completedAgentPlaybackKeys.value.includes(key)) {
+    completedAgentPlaybackKeys.value = [...completedAgentPlaybackKeys.value, key]
+  }
+}
+
 type TurnDisplayItem = {
   key: string
   turn: Turn | null
@@ -60,20 +73,30 @@ type TurnDisplayItem = {
 }
 
 const turnDisplayList = computed((): TurnDisplayItem[] => {
-  const items: TurnDisplayItem[] = turns.value.map((turn, index) => ({
-    key: `${turn.turn_index}.${turn.subturn_index ?? 0}`,
-    turn,
-    number: index + 1,
-    showTranscript: turn.speaker_type === 'user',
-    isCurrent: false,
-    userTurnPrompt: false,
-    statusHint: '',
-  }))
+  const items: TurnDisplayItem[] = turns.value.map((turn, index) => {
+    const key = turnKey(turn)
+    return {
+      key,
+      turn,
+      number: index + 1,
+      showTranscript: turn.speaker_type === 'user',
+      isCurrent: liveSpeakingTurnKey.value === key || manualReplayTurnKey.value === key,
+      userTurnPrompt: false,
+      statusHint: '',
+    }
+  })
 
-  const userTurnActive = needUserTurn.value && !needFirstTurnChoice.value && !isPaused.value
+  const userTurnActive =
+    needUserTurn.value &&
+    !needFirstTurnChoice.value &&
+    !isPaused.value &&
+    !isProcessingTurnPlayback.value &&
+    turnPlaybackQueue.value.length === 0
   const partnerTurnActive =
     !!sessionId.value &&
     !userTurnActive &&
+    !isProcessingTurnPlayback.value &&
+    turnPlaybackQueue.value.length === 0 &&
     (agentStatus.value === 'thinking' || agentStatus.value === 'searching_online')
 
   if (userTurnActive) {
@@ -115,6 +138,15 @@ function currentTurnSpeakerLabel(item: TurnDisplayItem): string {
   if (!item.turn) return ''
   return item.turn.speaker_display_name || item.turn.speaker
 }
+
+function canShowReplayControls(item: TurnDisplayItem): boolean {
+  if (!item.turn?.audio_url) return false
+  if (liveSpeakingTurnKey.value === item.key || manualReplayTurnKey.value === item.key) return false
+  if (item.turn.speaker_type === 'agent') {
+    return completedAgentPlaybackKeys.value.includes(item.key)
+  }
+  return true
+}
 const agentStatus = ref<'idle' | 'thinking' | 'finished' | 'searching_online'>('idle')
 const activeAgentName = ref('')
 const avatarsEnabled = ref(true)
@@ -129,6 +161,10 @@ function participantRoleLabel(type: Participant['type']): string {
   return type
 }
 const activeSpeakerId = computed(() => {
+  if (liveSpeakingTurnKey.value) {
+    const speakingTurn = turns.value.find((t) => turnKey(t) === liveSpeakingTurnKey.value)
+    if (speakingTurn?.speaker) return speakingTurn.speaker
+  }
   if (agentStatus.value === 'thinking' || agentStatus.value === 'searching_online') {
     const match = participants.value.find(
       (p) => p.type === 'agent' && p.name === activeAgentName.value,
@@ -153,10 +189,10 @@ const recordedUrl = ref<string | null>(null)
 const autoSendRecordingAfterStop = ref(false)
 const currentAudio = ref<HTMLAudioElement | null>(null)
 
-type TurnAudioJob = { turn: Turn }
+type TurnPlaybackJob = { turn: Turn }
 
-const turnAudioQueue = ref<TurnAudioJob[]>([])
-const isProcessingTurnAudio = ref(false)
+const turnPlaybackQueue = ref<TurnPlaybackJob[]>([])
+const isProcessingTurnPlayback = ref(false)
 let playbackAbortController: AbortController | null = null
 
 const canStart = computed(() => connected.value && !sessionId.value && !!topic.value.trim() && !!authStore.user?.profile_completed)
@@ -198,13 +234,24 @@ function clearRecordingPreview() {
 
 function maybeFirePendingTermination() {
   if (!pendingTermination.value) return
-  if (isProcessingTurnAudio.value) return
-  if (turnAudioQueue.value.length > 0) return
+  if (isProcessingTurnPlayback.value) return
+  if (turnPlaybackQueue.value.length > 0) return
   if (currentAudio.value) return
   if (avatarSpeaking.value) return
   const finalize = pendingTermination.value
   pendingTermination.value = null
   finalize()
+}
+
+function flushTurnPlaybackQueueToDisplay() {
+  while (turnPlaybackQueue.value.length > 0) {
+    const job = turnPlaybackQueue.value.shift()
+    if (!job) continue
+    turns.value.push(job.turn)
+    if (isAgentTurn(job.turn)) {
+      markAgentPlaybackComplete(turnKey(job.turn))
+    }
+  }
 }
 
 function stopPlainAudio() {
@@ -292,9 +339,18 @@ async function playTurnAudioManual(turn: Turn, key: string) {
 }
 
 function stopAllAudioPlayback() {
+  const interruptedKey = liveSpeakingTurnKey.value
   playbackAbortController?.abort()
   playbackAbortController = null
-  turnAudioQueue.value = []
+  turnPlaybackQueue.value = []
+  isProcessingTurnPlayback.value = false
+  liveSpeakingTurnKey.value = null
+  if (interruptedKey) {
+    const interruptedTurn = turns.value.find((t) => turnKey(t) === interruptedKey)
+    if (interruptedTurn && isAgentTurn(interruptedTurn)) {
+      markAgentPlaybackComplete(interruptedKey)
+    }
+  }
   stopManualTurnAudio()
   avatarGridRef.value?.setIdleAll?.()
 }
@@ -400,52 +456,81 @@ async function playTurnAudioAndWait(turn: Turn, signal: AbortSignal): Promise<vo
   await playPlainAudioAndWait(turn.audio_url, signal)
 }
 
-async function processTurnAudioQueue() {
-  if (isProcessingTurnAudio.value) return
-  isProcessingTurnAudio.value = true
+async function processTurnPlaybackQueue() {
+  if (isProcessingTurnPlayback.value) return
+  isProcessingTurnPlayback.value = true
 
-  while (turnAudioQueue.value.length > 0) {
-    const job = turnAudioQueue.value.shift()
+  while (turnPlaybackQueue.value.length > 0) {
+    const job = turnPlaybackQueue.value.shift()
     if (!job) break
+
+    const key = turnKey(job.turn)
+    turns.value.push(job.turn)
+
+    if (!job.turn.audio_url) {
+      if (isAgentTurn(job.turn)) {
+        markAgentPlaybackComplete(key)
+      }
+      continue
+    }
 
     const abort = new AbortController()
     playbackAbortController = abort
     avatarSpeaking.value = true
+    liveSpeakingTurnKey.value = key
 
     await playTurnAudioAndWait(job.turn, abort.signal)
+
+    liveSpeakingTurnKey.value = null
+    avatarSpeaking.value = false
+    playbackAbortController = null
 
     if (abort.signal.aborted) {
       break
     }
+
+    if (isAgentTurn(job.turn)) {
+      markAgentPlaybackComplete(key)
+    }
   }
 
-  playbackAbortController = null
-  avatarSpeaking.value = false
-  isProcessingTurnAudio.value = false
+  isProcessingTurnPlayback.value = false
   maybeFirePendingTermination()
 
-  if (turnAudioQueue.value.length > 0) {
-    void processTurnAudioQueue()
+  if (turnPlaybackQueue.value.length > 0) {
+    void processTurnPlaybackQueue()
   }
 }
 
-function enqueueTurnAudio(turn: Turn) {
-  if (!turn.audio_url) return
-  turnAudioQueue.value.push({ turn })
-  void processTurnAudioQueue()
+function enqueueTurnForPlayback(turn: Turn) {
+  turnPlaybackQueue.value.push({ turn })
+  void processTurnPlaybackQueue()
 }
 
-function handleTurnAudio(turn: Turn) {
+function handleIncomingTurn(turn: Turn) {
   stopManualTurnAudio()
-  enqueueTurnAudio(turn)
+
+  if (turn.speaker_type === 'user') {
+    const existing = [...turns.value].reverse().find((item) => item.speaker_type === 'user')
+    if (existing && existing.utterance.trim() === turn.utterance.trim()) {
+      if (turn.audio_url) {
+        existing.audio_url = turn.audio_url
+      }
+      if (turn.speaker_display_name) {
+        existing.speaker_display_name = turn.speaker_display_name
+      }
+      return
+    }
+  }
+
+  enqueueTurnForPlayback(turn)
 }
 
 function playAudioNow(url: string) {
   if (!url) return
   const turn = [...turns.value].reverse().find((t) => t.audio_url === url)
   if (!turn?.audio_url) return
-  const key = `${turn.turn_index}.${turn.subturn_index ?? 0}`
-  void playTurnAudioManual(turn, key)
+  void playTurnAudioManual(turn, turnKey(turn))
 }
 
 function handleEvent(e: ConversationWsEvent) {
@@ -461,6 +546,10 @@ function handleEvent(e: ConversationWsEvent) {
     needFirstTurnChoice.value = false
     agentStatus.value = 'idle'
     turns.value = []
+    turnPlaybackQueue.value = []
+    isProcessingTurnPlayback.value = false
+    liveSpeakingTurnKey.value = null
+    completedAgentPlaybackKeys.value = []
     participants.value = []
     stopAllAudioPlayback()
     resetAvatars()
@@ -492,6 +581,7 @@ function handleEvent(e: ConversationWsEvent) {
     }
     const flushAudio = () => {
       stopAllAudioPlayback()
+      flushTurnPlaybackQueueToDisplay()
       resetAvatars()
     }
 
@@ -502,8 +592,8 @@ function handleEvent(e: ConversationWsEvent) {
     } else {
       // Natural max-turns termination: let the last audio finish before flipping UI state.
       if (
-        isProcessingTurnAudio.value ||
-        turnAudioQueue.value.length > 0 ||
+        isProcessingTurnPlayback.value ||
+        turnPlaybackQueue.value.length > 0 ||
         currentAudio.value ||
         avatarSpeaking.value
       ) {
@@ -528,9 +618,8 @@ function handleEvent(e: ConversationWsEvent) {
   }
   if (e.type === 'turn') {
     isEnded.value = false
-    turns.value.push(e.turn)
     if (e.turn.speaker_type === 'user') needUserTurn.value = false
-    void handleTurnAudio(e.turn)
+    handleIncomingTurn(e.turn)
   }
   if (e.type === 'error') {
     toast({ title: 'Error', description: e.message, variant: 'destructive' })
@@ -540,7 +629,19 @@ function handleEvent(e: ConversationWsEvent) {
 function startSession() {
   if (!authStore.user?.profile_completed) return
   warmupAvatars()
-  ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
+  void (async () => {
+    try {
+      await ws.ready()
+      ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
+    } catch {
+      connected.value = false
+      toast({
+        title: 'Connection error',
+        description: 'Could not connect to the conversation server. Please wait a moment and try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 function volunteer() {
@@ -725,9 +826,17 @@ async function generateDiscussionScenario() {
 onMounted(async () => {
   ws.connect()
   const off = ws.onEvent(handleEvent)
+  const offConnection = ws.onConnectionChange((open) => {
+    if (!open) {
+      connected.value = false
+    }
+  })
   window.addEventListener('keydown', handleRecordShortcut)
   window.addEventListener('pointerdown', handleConversationInteraction, { once: false })
-  onUnmounted(() => off())
+  onUnmounted(() => {
+    off()
+    offConnection()
+  })
   await loadTaxonomy()
   try {
     await authStore.fetchUser()
@@ -748,6 +857,7 @@ onUnmounted(() => {
   clearRecordingPreview()
   stopAllAudioPlayback()
   resetAvatars()
+  connected.value = false
   ws.close()
 })
 </script>
@@ -955,13 +1065,15 @@ onUnmounted(() => {
                   </div>
                   <template v-if="item.userTurnPrompt">
                     <div class="font-medium">Your turn to speak</div>
-                    <div class="text-muted-foreground">Use mic or text to respond.</div>
+                    <div class="text-muted-foreground">
+                      {{ authStore.isStaff ? 'Use mic or text to respond.' : 'Use the microphone to respond.' }}
+                    </div>
                   </template>
                   <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
                   <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
                     {{ item.turn.utterance }}
                   </div>
-                  <div v-if="item.turn?.audio_url" class="flex flex-wrap gap-2 pt-1">
+                  <div v-if="canShowReplayControls(item)" class="flex flex-wrap gap-2 pt-1">
                     <Button variant="outline" size="sm" @click="playTurnAudioManual(item.turn!, item.key)">
                       Replay
                     </Button>
@@ -978,7 +1090,7 @@ onUnmounted(() => {
               </CardContent>
             </Card>
 
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-3" :class="{ 'sm:grid-cols-2': authStore.isStaff }">
               <Card class="border">
                 <CardHeader>
                   <CardTitle class="text-base">Speak (microphone)</CardTitle>
@@ -1019,7 +1131,7 @@ onUnmounted(() => {
                 </CardContent>
               </Card>
 
-              <Card class="border">
+              <Card v-if="authStore.isStaff" class="border">
                 <CardHeader>
                   <CardTitle class="text-base">Speak (text)</CardTitle>
                 </CardHeader>
@@ -1063,13 +1175,15 @@ onUnmounted(() => {
               </div>
               <template v-if="item.userTurnPrompt">
                 <div class="font-medium">Your turn to speak</div>
-                <div class="text-muted-foreground">Use mic or text to respond.</div>
+                <div class="text-muted-foreground">
+                  {{ authStore.isStaff ? 'Use mic or text to respond.' : 'Use the microphone to respond.' }}
+                </div>
               </template>
               <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
               <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
                 {{ item.turn.utterance }}
               </div>
-              <div v-if="item.turn?.audio_url" class="flex flex-wrap gap-2 pt-1">
+              <div v-if="canShowReplayControls(item)" class="flex flex-wrap gap-2 pt-1">
                 <Button variant="outline" size="sm" @click="playTurnAudioManual(item.turn!, item.key)">
                   Replay
                 </Button>
@@ -1086,7 +1200,7 @@ onUnmounted(() => {
           </CardContent>
         </Card>
 
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3" :class="{ 'sm:grid-cols-2': authStore.isStaff }">
           <Card class="border">
             <CardHeader>
               <CardTitle class="text-base">Speak (microphone)</CardTitle>
@@ -1127,7 +1241,7 @@ onUnmounted(() => {
             </CardContent>
           </Card>
 
-          <Card class="border">
+          <Card v-if="authStore.isStaff" class="border">
             <CardHeader>
               <CardTitle class="text-base">Speak (text)</CardTitle>
             </CardHeader>
