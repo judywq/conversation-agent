@@ -35,6 +35,8 @@ from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
+from backend.conversation.services.session_serialization import can_continue_session
+from backend.conversation.services.session_serialization import turn_record_to_dict
 from backend.conversation.services.user_proficiency import resolve_user_proficiency
 from backend.conversation.services.user_proficiency import update_proficiency_from_session
 from backend.conversation.services.utterance_duplicates import DuplicateDetectionResult
@@ -206,6 +208,65 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             self.first_turn_choice = None
             await self.send_json({"type": "need_first_turn_choice"})
             asyncio.create_task(self._materialize_session_knowledge(session.id, discussion))
+            return
+
+        if msg_type == "resume_session":
+            if self.session_id is not None:
+                await self.send_json({"type": "error", "message": "Already in a session on this connection"})
+                return
+            try:
+                session_id = int(content.get("session_id"))
+            except (TypeError, ValueError):
+                await self.send_json({"type": "error", "message": "Invalid session id"})
+                return
+            session = await self._get_session(session_id)
+            if session is None:
+                await self.send_json({"type": "error", "message": "Session not found"})
+                return
+            if not can_continue_session(session):
+                await self.send_json({"type": "error", "message": "This discussion cannot be continued"})
+                return
+            profile_gate = await self._get_profile_gate_state()
+            if profile_gate["profile_completed"] is not True:
+                await self.send_json(
+                    {"type": "error", "message": "Complete your profile before continuing a conversation."},
+                )
+                return
+            if not profile_gate["cefr_level"]:
+                await self.send_json(
+                    {
+                        "type": "error",
+                        "message": "Choose your English level on your profile before continuing.",
+                    },
+                )
+                return
+            if session.paused:
+                await self._set_paused(session_id, paused=False)
+                session.paused = False
+            self.session_id = session.id
+            self.first_turn_choice = False if session.turn_count > 0 else None
+            self.user_volunteered = False
+            turns_payload = await self._session_turns_payload(session.id)
+            need_user_turn = bool(session.pending_forced_user_turn)
+            await self.send_json(
+                {
+                    "type": "session_resumed",
+                    "session_id": session.id,
+                    "topic": session.topic,
+                    "max_turns": session.max_turns,
+                    "turn_count": session.turn_count,
+                    "paused": False,
+                    "turns": turns_payload,
+                    "need_user_turn": need_user_turn,
+                },
+            )
+            await self.send_json(
+                {"type": "participants", "participants": await self._participants_payload(session.id)},
+            )
+            if need_user_turn:
+                await self.send_json({"type": "need_user_turn", "reason": "resume_pending_user_turn"})
+            else:
+                self._ensure_advance_loop_running()
             return
 
         if msg_type == "first_turn_choice":
@@ -598,6 +659,18 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     def _get_session(self, session_id: int) -> ConversationSession | None:
         user = self.scope["user"]
         return ConversationSession.objects.filter(id=session_id, user=user).first()
+
+    @database_sync_to_async
+    def _session_turns_payload(self, session_id: int) -> list[dict]:
+        session = (
+            ConversationSession.objects.filter(id=session_id)
+            .select_related("user__userprofile")
+            .first()
+        )
+        if session is None:
+            return []
+        turns = list(session.turns.order_by("turn_index", "subturn_index", "id"))
+        return [turn_record_to_dict(turn=turn, session=session) for turn in turns]
 
     @database_sync_to_async
     def _participants_payload(self, session_id: int) -> list[dict]:

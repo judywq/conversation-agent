@@ -1,4 +1,5 @@
 import api from '@/services/api'
+import type { ConversationTurn } from '@/services/conversationWs'
 
 export interface CefrSample {
   level: string
@@ -67,6 +68,33 @@ export interface ArgumentSummaryResult {
   claims?: ArgumentSummaryClaim[]
 }
 
+export interface ConversationSessionSummary {
+  id: number
+  topic: string
+  turn_count: number
+  max_turns: number
+  terminate: boolean
+  paused: boolean
+  news_category: string
+  news_subtopic: string
+  created_at: string | null
+  updated_at: string | null
+  argument_summary_status: string | null
+  can_continue: boolean
+}
+
+export interface ConversationSessionDetail extends ConversationSessionSummary {
+  turns: ConversationTurn[]
+  argument_summary: ArgumentSummaryResult
+}
+
+export interface ConversationSessionListResult {
+  count: number
+  limit: number
+  offset: number
+  results: ConversationSessionSummary[]
+}
+
 export const PROFILE_ONBOARDING_CEFR_TOPIC = 'University life and learning English'
 
 export class ConversationService {
@@ -127,6 +155,18 @@ export class ConversationService {
       `/conversation/sessions/${sessionId}/argument-summary/`,
       { timeout: 180000 },
     )
+    return res.data
+  }
+
+  static async fetchSessionHistory(limit = 20, offset = 0): Promise<ConversationSessionListResult> {
+    const res = await api.get<ConversationSessionListResult>('/conversation/sessions/', {
+      params: { limit, offset },
+    })
+    return res.data
+  }
+
+  static async fetchSessionDetail(sessionId: number): Promise<ConversationSessionDetail> {
+    const res = await api.get<ConversationSessionDetail>(`/conversation/sessions/${sessionId}/`)
     return res.data
   }
 }

@@ -25,6 +25,16 @@ export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
   | { type: 'session_started'; session_id: number; topic: string }
   | {
+      type: 'session_resumed'
+      session_id: number
+      topic: string
+      max_turns: number
+      turn_count: number
+      paused: boolean
+      turns: ConversationTurn[]
+      need_user_turn: boolean
+    }
+  | {
       type: 'participants'
       participants: ConversationParticipant[]
     }

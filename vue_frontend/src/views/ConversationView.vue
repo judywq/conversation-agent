@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ChevronDown } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
@@ -39,6 +40,8 @@ import {
 
 const { toast } = useToast()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 const ws = new ConversationWsClient()
 const connected = ref(false)
@@ -163,6 +166,13 @@ function markAllAgentPlaybackComplete() {
       markAgentPlaybackComplete(turnKey(turn))
     }
   }
+}
+
+function loadResumedTurns(turnList: Turn[]) {
+  turns.value = turnList
+  turnPlaybackQueue.value = []
+  isProcessingTurnPlayback.value = false
+  markAllAgentPlaybackComplete()
 }
 
 function canShowTurnAudioControls(item: TurnDisplayItem): boolean {
@@ -672,6 +682,29 @@ function handleEvent(e: ConversationWsEvent) {
     stopAllAudioPlayback()
     resetAvatars()
   }
+  if (e.type === 'session_resumed') {
+    sessionId.value = e.session_id
+    topic.value = e.topic || topic.value
+    isEnded.value = false
+    isPaused.value = e.paused ?? false
+    needFirstTurnChoice.value = false
+    needUserTurn.value = e.need_user_turn ?? false
+    agentStatus.value = 'idle'
+    liveSpeakingTurnKey.value = null
+    completedAgentPlaybackKeys.value = []
+    participants.value = []
+    endedArgumentSummary.value = null
+    endedSummaryLoading.value = false
+    turnPlaybackQueue.value = []
+    isProcessingTurnPlayback.value = false
+    stopAllAudioPlayback()
+    resetAvatars()
+    loadResumedTurns(e.turns ?? [])
+    toast({
+      title: 'Discussion resumed',
+      description: 'Pick up where you left off.',
+    })
+  }
   if (e.type === 'participants') {
     participants.value = e.participants ?? []
     void scheduleAvatarInitialization()
@@ -758,6 +791,23 @@ function startSession() {
     try {
       await ws.ready()
       ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
+    } catch {
+      connected.value = false
+      toast({
+        title: 'Connection error',
+        description: 'Could not connect to the conversation server. Please wait a moment and try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
+}
+
+function resumeSession(sessionIdToResume: number) {
+  warmupAvatars()
+  void (async () => {
+    try {
+      await ws.ready()
+      ws.send({ type: 'resume_session', session_id: sessionIdToResume })
     } catch {
       connected.value = false
       toast({
@@ -973,6 +1023,14 @@ onMounted(async () => {
     }
   } catch {
     // Keep the page usable if profile refresh fails.
+  }
+
+  const resumeParam = route.query.resume
+  const resumeId =
+    typeof resumeParam === 'string' ? Number(resumeParam) : Number.NaN
+  if (Number.isFinite(resumeId) && resumeId > 0) {
+    await router.replace({ name: 'conversation' })
+    resumeSession(resumeId)
   }
 })
 

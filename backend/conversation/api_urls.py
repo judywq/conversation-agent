@@ -3,6 +3,8 @@ from django.urls import path
 from backend.conversation.api_views import CefrTopicSamplesView
 from backend.conversation.api_views import DiscussionScenarioView
 from backend.conversation.api_views import SessionArgumentSummaryView
+from backend.conversation.api_views import SessionDetailView
+from backend.conversation.api_views import SessionListView
 from backend.conversation.api_views import SpeechToTextView
 from backend.conversation.api_views import UserAudioUploadView
 
@@ -12,6 +14,12 @@ urlpatterns = [
         "discussion-scenario/",
         DiscussionScenarioView.as_view(),
         name="conversation-discussion-scenario",
+    ),
+    path("sessions/", SessionListView.as_view(), name="conversation-session-list"),
+    path(
+        "sessions/<int:session_id>/",
+        SessionDetailView.as_view(),
+        name="conversation-session-detail",
     ),
     path(
         "sessions/<int:session_id>/argument-summary/",
