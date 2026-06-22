@@ -829,7 +829,7 @@ function pauseOrResume() {
 
 function stopConversation() {
   if (!sessionId.value) return
-  const ok = window.confirm('Stop the conversation? This will end the session.')
+  const ok = window.confirm('End the conversation?')
   if (!ok) return
   ws.send({ type: 'end_session' })
 }
@@ -1327,7 +1327,7 @@ onUnmounted(() => {
 
             <div class="flex flex-wrap gap-2 pt-2 border-t">
               <Button variant="destructive" @click="stopConversation">
-                Stop
+                End
               </Button>
             </div>
             </template>
@@ -1449,7 +1449,7 @@ onUnmounted(() => {
 
         <div class="flex flex-wrap gap-2 pt-2 border-t">
           <Button variant="destructive" @click="stopConversation">
-            Stop
+            End
           </Button>
         </div>
         </template>
