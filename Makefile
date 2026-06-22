@@ -1,4 +1,4 @@
-﻿# Replace the % with the desired environment, e.g. `make run-local` for local environment
+# Replace the % with the desired environment, e.g. `make run-local` for local environment
 # or `make run-production` for production environment
 
 # Show configs
