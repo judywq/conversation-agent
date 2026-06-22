@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
+from backend.conversation.services.argument_summary import get_argument_summary_for_session
 from backend.conversation.services.discussion_scenario import DISCUSSION_PROFILE_FIELDS
 from backend.conversation.services.discussion_scenario import apply_discussion_result_to_profile
 from backend.conversation.services.discussion_scenario import scenario_result_to_dict
@@ -157,4 +158,14 @@ class UserAudioUploadView(APIView):
                 "audio_url": clip.audio_file.url,
             },
         )
+
+
+class SessionArgumentSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id: int):
+        session = ConversationSession.objects.filter(id=session_id, user=request.user).first()
+        if session is None:
+            return Response({"detail": "Session not found."}, status=404)
+        return Response(get_argument_summary_for_session(session))
 

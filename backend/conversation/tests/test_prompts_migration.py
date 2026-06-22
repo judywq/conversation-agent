@@ -52,6 +52,10 @@ def test_agent_persona_template_substitutes_major():
         speech_act_subtype="inform",
         content_requirement="",
         retrieved_context="",
+        argument_summary_bullets="- Dorms build community",
+        audio_tags="[reflective]",
     )
     assert "Computer Science" in rendered
+    assert "Discussion points already covered" in rendered
+    assert "Dorms build community" in rendered
     assert "{major}" not in rendered

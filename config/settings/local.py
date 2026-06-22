@@ -119,6 +119,9 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # -------------------------------------------------------------------------------
 VUE_FRONTEND_USE_DEV_SERVER = True
 
+# Conversation (local testing defaults to fewer turns; override via CONVERSATION_MAX_TURNS)
+CONVERSATION_MAX_TURNS = env.int("CONVERSATION_MAX_TURNS", default=5)
+
 # Add artificial delay to API responses (in seconds)
 DEBUG_API_DELAY = 0
 DEBUG_API_ENDPOINTS_TO_DELAY = ["/api/requests"]

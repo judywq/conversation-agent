@@ -23,3 +23,9 @@ POSTGRES_DB=conversation_agent
 WEB_SEARCH_ENABLED=True
 WEB_SEARCH_MODEL=gpt-5
 WEB_SEARCH_TIMEOUT_SEC=30
+
+USER_MEMORY_EXTRACTION_ENABLED=True
+
+# Conversation
+# ------------------------------------------------------------------------------
+CONVERSATION_MAX_TURNS=5

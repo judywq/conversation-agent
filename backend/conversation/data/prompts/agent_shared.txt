@@ -30,6 +30,9 @@ Discussion topic:
 Discussion history:
 {history}
 
+Discussion points already covered:
+{argument_summary_bullets}
+
 # Instructions
 
 Target type (agent | user | everyone):
@@ -54,6 +57,8 @@ Retrieved context (may contain web, session, memory, knowledge, news, or exempla
 - Match your English to the proficiency level above. If a sample utterance is shown, use it only as a guide to the user's level; do not copy its topic or wording.
 - Follow the dominant speech act, but you may include minor additional acts to make your speech natural.
 - Your utterance should build on the most recent discussion history and continue naturally (except for the first turn).
+- Do not repeat claims, reasons, facts, data, examples, or counterarguments already listed under "Discussion points already covered" unless you add a genuinely new angle, correction, or deeper follow-up.
+- Prefer advancing the discussion with new reasons, questions, personal experiences, or connections not yet covered.
 - Use retrieved context only when it is relevant to the current turn.
 - If retrieved context includes provenance such as a title, organization, author, URL, or source label, mention only details that are actually present.
 - Do not invent citations, authors, organizations, URLs, dates, or other source details.

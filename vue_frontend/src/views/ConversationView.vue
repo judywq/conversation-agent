@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ChevronDown } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
+import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,6 +17,7 @@ import { useToast } from '@/components/ui/toast/use-toast'
 import { clearAudioBufferCache } from '@/composables/useTalkingHead'
 import {
   ConversationService,
+  type ArgumentSummaryResult,
   type DiscussionScenarioResult,
   type NewsCategory,
 } from '@/services/conversationService'
@@ -26,6 +29,13 @@ import {
 } from '@/services/conversationWs'
 import { useAuthStore } from '@/stores/auth'
 import { isLipSyncPayload } from '@/types/lipsync'
+import {
+  buildExportFilename,
+  downloadTextFile,
+  formatArgumentSummaryText,
+  formatCombinedExportText,
+  formatTranscriptText,
+} from '@/lib/conversationExport'
 
 const { toast } = useToast()
 const authStore = useAuthStore()
@@ -93,32 +103,34 @@ const turnDisplayList = computed((): TurnDisplayItem[] => {
     !isProcessingTurnPlayback.value &&
     turnPlaybackQueue.value.length === 0
   const partnerTurnActive =
-    !!sessionId.value &&
+    sessionInProgress.value &&
     !userTurnActive &&
     !isProcessingTurnPlayback.value &&
     turnPlaybackQueue.value.length === 0 &&
     (agentStatus.value === 'thinking' || agentStatus.value === 'searching_online')
 
-  if (userTurnActive) {
-    items.push({
-      key: 'current-turn',
-      turn: null,
-      number: items.length + 1,
-      showTranscript: false,
-      isCurrent: true,
-      userTurnPrompt: true,
-      statusHint: '',
-    })
-  } else if (partnerTurnActive) {
-    items.push({
-      key: 'current-turn',
-      turn: null,
-      number: items.length + 1,
-      showTranscript: false,
-      isCurrent: true,
-      userTurnPrompt: false,
-      statusHint: agentStatus.value === 'searching_online' ? 'Checking online…' : 'Thinking…',
-    })
+  if (!isEnded.value) {
+    if (userTurnActive) {
+      items.push({
+        key: 'current-turn',
+        turn: null,
+        number: items.length + 1,
+        showTranscript: false,
+        isCurrent: true,
+        userTurnPrompt: true,
+        statusHint: '',
+      })
+    } else if (partnerTurnActive) {
+      items.push({
+        key: 'current-turn',
+        turn: null,
+        number: items.length + 1,
+        showTranscript: false,
+        isCurrent: true,
+        userTurnPrompt: false,
+        statusHint: agentStatus.value === 'searching_online' ? 'Checking online…' : 'Thinking…',
+      })
+    }
   }
 
   return items
@@ -136,7 +148,21 @@ function currentTurnSpeakerLabel(item: TurnDisplayItem): string {
   if (item.userTurnPrompt) return 'You'
   if (item.isCurrent && item.statusHint) return activeAgentName.value || 'A partner'
   if (!item.turn) return ''
-  return item.turn.speaker_display_name || item.turn.speaker
+  return turnSpeakerLabel(item.turn)
+}
+
+function turnSpeakerLabel(turn: Turn): string {
+  if (turn.speaker_display_name) return turn.speaker_display_name
+  if (turn.speaker_type === 'user') return 'You'
+  return turn.speaker || 'Partner'
+}
+
+function markAllAgentPlaybackComplete() {
+  for (const turn of turns.value) {
+    if (isAgentTurn(turn)) {
+      markAgentPlaybackComplete(turnKey(turn))
+    }
+  }
 }
 
 function canShowTurnAudioControls(item: TurnDisplayItem): boolean {
@@ -193,6 +219,80 @@ const needFirstTurnChoice = ref(false)
 const inputText = ref('')
 const isPaused = ref(false)
 const isEnded = ref(false)
+const endedArgumentSummary = ref<ArgumentSummaryResult | null>(null)
+const endedSummaryLoading = ref(false)
+
+function onArgumentSummaryUpdated(summary: ArgumentSummaryResult) {
+  endedArgumentSummary.value = summary
+}
+
+async function fetchEndedArgumentSummary(): Promise<ArgumentSummaryResult | null> {
+  if (!sessionId.value) return null
+  endedSummaryLoading.value = true
+  try {
+    const result = await ConversationService.fetchArgumentSummary(sessionId.value)
+    endedArgumentSummary.value = result
+    return result
+  } catch {
+    return endedArgumentSummary.value
+  } finally {
+    endedSummaryLoading.value = false
+  }
+}
+
+async function resolveEndedArgumentSummary(): Promise<ArgumentSummaryResult | null> {
+  const cached = endedArgumentSummary.value
+  if (cached?.status === 'ready') {
+    return cached
+  }
+  return fetchEndedArgumentSummary()
+}
+
+function downloadTranscript() {
+  if (!sessionId.value || turns.value.length === 0) return
+  const content = formatTranscriptText(topic.value, turns.value, turnSpeakerLabel)
+  downloadTextFile(buildExportFilename(sessionId.value, 'transcript'), content)
+}
+
+async function downloadArgumentStructure() {
+  if (!sessionId.value) return
+  const summary = await resolveEndedArgumentSummary()
+  if (!summary || summary.status !== 'ready') return
+  const content = formatArgumentSummaryText(summary)
+  if (!content) return
+  downloadTextFile(buildExportFilename(sessionId.value, 'arguments'), content)
+}
+
+async function downloadCombinedExport() {
+  if (!sessionId.value || turns.value.length === 0) return
+  const summary = await resolveEndedArgumentSummary()
+  if (!summary || summary.status !== 'ready') return
+  const content = formatCombinedExportText(topic.value, turns.value, turnSpeakerLabel, summary)
+  downloadTextFile(buildExportFilename(sessionId.value, 'combined'), content)
+}
+
+const canDownloadArgumentStructure = computed(
+  () => endedArgumentSummary.value?.status === 'ready' && !!formatArgumentSummaryText(endedArgumentSummary.value),
+)
+
+const argumentDownloadBlockedReason = computed(() => {
+  if (endedSummaryLoading.value || endedArgumentSummary.value?.status === 'pending') {
+    return 'Argument summary is still being generated.'
+  }
+  if (endedArgumentSummary.value?.status === 'failed') {
+    return 'Argument summary could not be generated.'
+  }
+  if (endedArgumentSummary.value?.status === 'empty') {
+    return 'No structured arguments were identified.'
+  }
+  return ''
+})
+
+watch(isEnded, (ended) => {
+  if (ended && sessionId.value) {
+    void fetchEndedArgumentSummary()
+  }
+})
 
 const micState = ref<'idle' | 'requesting' | 'recording' | 'preview' | 'transcribing' | 'error'>('idle')
 const mediaRecorder = ref<MediaRecorder | null>(null)
@@ -208,7 +308,17 @@ const turnPlaybackQueue = ref<TurnPlaybackJob[]>([])
 const isProcessingTurnPlayback = ref(false)
 let playbackAbortController: AbortController | null = null
 
-const canStart = computed(() => connected.value && !sessionId.value && !!topic.value.trim() && !!authStore.user?.profile_completed)
+const showConversationPanel = computed(() => !!sessionId.value || isEnded.value)
+const sessionInProgress = computed(() => !!sessionId.value && !isEnded.value)
+const showArgumentSummary = computed(() => !!sessionId.value && turns.value.length > 0)
+
+const canStart = computed(
+  () =>
+    connected.value &&
+    (!sessionId.value || isEnded.value) &&
+    !!topic.value.trim() &&
+    !!authStore.user?.profile_completed,
+)
 
 const availableSubtopics = computed(() => {
   const category = taxonomy.value.find((item) => item.slug === selectedCategory.value)
@@ -216,7 +326,11 @@ const availableSubtopics = computed(() => {
 })
 
 const canGenerateScenario = computed(
-  () => !!selectedCategory.value && !!selectedSubtopic.value && !isGeneratingScenario.value && !sessionId.value,
+  () =>
+    !!selectedCategory.value &&
+    !!selectedSubtopic.value &&
+    !isGeneratingScenario.value &&
+    (!sessionId.value || isEnded.value),
 )
 
 watch(selectedCategory, () => {
@@ -553,6 +667,8 @@ function handleEvent(e: ConversationWsEvent) {
     liveSpeakingTurnKey.value = null
     completedAgentPlaybackKeys.value = []
     participants.value = []
+    endedArgumentSummary.value = null
+    endedSummaryLoading.value = false
     stopAllAudioPlayback()
     resetAvatars()
   }
@@ -571,20 +687,23 @@ function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'resumed') {
     isPaused.value = false
   }
-    if (e.type === 'session_ended' || e.type === 'terminated') {
-      void authStore.fetchUser().catch(() => {})
-      const applyEndedState = () => {
+  if (e.type === 'session_ended' || e.type === 'terminated') {
+    void authStore.fetchUser().catch(() => {})
+    const applyEndedState = () => {
       isEnded.value = true
       isPaused.value = false
       needUserTurn.value = false
       needFirstTurnChoice.value = false
       agentStatus.value = 'idle'
-      sessionId.value = null
+      liveSpeakingTurnKey.value = null
+      flushTurnPlaybackQueueToDisplay()
+      markAllAgentPlaybackComplete()
     }
     const flushAudio = () => {
       stopAllAudioPlayback()
       flushTurnPlaybackQueueToDisplay()
-      resetAvatars()
+      avatarGridRef.value?.setIdleAll?.()
+      avatarSpeaking.value = false
     }
 
     if (e.type === 'session_ended') {
@@ -599,8 +718,12 @@ function handleEvent(e: ConversationWsEvent) {
         currentAudio.value ||
         avatarSpeaking.value
       ) {
-        pendingTermination.value = applyEndedState
+        pendingTermination.value = () => {
+          flushAudio()
+          applyEndedState()
+        }
       } else {
+        flushAudio()
         applyEndedState()
       }
     }
@@ -877,7 +1000,7 @@ onUnmounted(() => {
         <div class="grid gap-4 sm:grid-cols-2">
           <div class="space-y-2">
             <div class="text-sm font-medium">Major category</div>
-            <Select v-model="selectedCategory" :disabled="!!sessionId || isGeneratingScenario">
+            <Select v-model="selectedCategory" :disabled="sessionInProgress || isGeneratingScenario">
               <SelectTrigger class="w-full">
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
@@ -895,7 +1018,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium">Subtopic</div>
             <Select
               v-model="selectedSubtopic"
-              :disabled="!selectedCategory || !!sessionId || isGeneratingScenario"
+              :disabled="!selectedCategory || sessionInProgress || isGeneratingScenario"
             >
               <SelectTrigger class="w-full">
                 <SelectValue placeholder="Select a subtopic" />
@@ -956,7 +1079,7 @@ onUnmounted(() => {
               <select
                 v-model.number="agentCount"
                 class="h-9 rounded-md border bg-background px-3 text-sm"
-                :disabled="!!sessionId"
+                :disabled="sessionInProgress"
               >
                 <option v-for="n in MAX_AGENT_COUNT" :key="n" :value="n">{{ n }}</option>
               </select>
@@ -964,13 +1087,13 @@ onUnmounted(() => {
             <p class="text-xs text-muted-foreground">
               Choose how many partners join you (1–{{ MAX_AGENT_COUNT }}). More partners means a larger group discussion.
             </p>
-            <div v-if="!sessionId" class="pt-2">
+            <div v-if="!sessionInProgress" class="pt-2">
               <Button :disabled="!canStart" @click="startSession">Start</Button>
             </div>
           </CardContent>
         </Card>
 
-        <template v-if="sessionId">
+        <template v-if="showConversationPanel">
         <div class="text-sm text-muted-foreground">
           Status:
           <span v-if="isEnded">Ended</span>
@@ -1005,7 +1128,7 @@ onUnmounted(() => {
           </CardContent>
         </Card>
 
-        <Card v-if="needFirstTurnChoice" class="border">
+        <Card v-if="needFirstTurnChoice && !isEnded" class="border">
           <CardHeader>
             <CardTitle class="text-base">Who speaks first?</CardTitle>
             <CardDescription>
@@ -1020,21 +1143,22 @@ onUnmounted(() => {
 
         <div class="flex flex-wrap items-center gap-2">
           <Button
-            v-if="sessionId && agentParticipants.length > 0"
+            v-if="sessionInProgress && agentParticipants.length > 0"
             variant="outline"
             size="sm"
             @click="toggleAvatarsEnabled"
           >
             {{ avatarsEnabled ? 'Avatars On' : 'Avatars Off' }}
           </Button>
-          <span v-if="sessionId && avatarsEnabled && !avatarWarmedUp" class="text-xs text-muted-foreground">
+          <span v-if="sessionInProgress && avatarsEnabled && !avatarWarmedUp" class="text-xs text-muted-foreground">
             Click anywhere to show your partners
           </span>
         </div>
 
         <div
-          v-if="sessionId && agentParticipants.length > 0"
-          class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]"
+          v-if="agentParticipants.length > 0"
+          class="grid grid-cols-1 gap-4"
+          :class="showArgumentSummary ? 'lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)_13rem] lg:gap-3' : 'lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]'"
         >
           <AgentAvatarGrid
             ref="avatarGridRef"
@@ -1044,12 +1168,12 @@ onUnmounted(() => {
             :warmed-up="avatarWarmedUp && avatarsEnabled"
           />
 
-          <div class="space-y-4">
+          <div class="min-w-0 space-y-4">
             <Card class="border">
               <CardHeader>
                 <CardTitle>Turns</CardTitle>
               </CardHeader>
-              <CardContent class="space-y-3">
+              <CardContent class="max-h-[min(50vh,24rem)] space-y-3 overflow-y-auto lg:max-h-[min(50vh,22rem)]">
                 <div
                   v-if="turnDisplayList.length === 0 && !hasCurrentTurnHighlight"
                   class="text-sm text-muted-foreground"
@@ -1068,7 +1192,7 @@ onUnmounted(() => {
                   <template v-if="item.userTurnPrompt">
                     <div class="font-medium">Your turn to speak</div>
                     <div class="text-muted-foreground">
-                      {{ authStore.isStaff ? 'Use mic or text to respond.' : 'Use the microphone to respond.' }}
+                      Use the microphone to respond.
                     </div>
                   </template>
                   <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
@@ -1100,7 +1224,8 @@ onUnmounted(() => {
               </CardContent>
             </Card>
 
-            <div class="grid grid-cols-1 gap-3" :class="{ 'sm:grid-cols-2': authStore.isStaff }">
+            <template v-if="!isEnded">
+            <div class="grid grid-cols-1 gap-3">
               <Card class="border">
                 <CardHeader>
                   <CardTitle class="text-base">Speak (microphone)</CardTitle>
@@ -1140,18 +1265,6 @@ onUnmounted(() => {
                   </div>
                 </CardContent>
               </Card>
-
-              <Card v-if="authStore.isStaff" class="border">
-                <CardHeader>
-                  <CardTitle class="text-base">Speak (text)</CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-3">
-                  <Textarea v-model="inputText" placeholder="Type your message…" class="min-h-[80px]" />
-                  <Button :disabled="!needUserTurn || needFirstTurnChoice || !inputText.trim()" @click="sendTextTurn">
-                    Send
-                  </Button>
-                </CardContent>
-              </Card>
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2 border-t">
@@ -1159,15 +1272,30 @@ onUnmounted(() => {
                 Stop
               </Button>
             </div>
+            </template>
           </div>
+
+          <ArgumentSummaryPanel
+            embedded
+            class="min-h-0 lg:sticky lg:top-4 lg:self-start"
+            :session-id="sessionId"
+            :turn-count="turns.length"
+            :visible="showArgumentSummary"
+            @summary-updated="onArgumentSummaryUpdated"
+          />
         </div>
 
         <template v-else>
+        <div
+          class="grid grid-cols-1 gap-4"
+          :class="showArgumentSummary ? 'lg:grid-cols-[minmax(0,1fr)_13rem] lg:gap-3' : ''"
+        >
+        <div class="min-w-0 space-y-4">
         <Card class="border">
           <CardHeader>
             <CardTitle>Turns</CardTitle>
           </CardHeader>
-          <CardContent class="space-y-3">
+          <CardContent class="max-h-[min(50vh,24rem)] space-y-3 overflow-y-auto">
             <div
               v-if="turnDisplayList.length === 0 && !hasCurrentTurnHighlight"
               class="text-sm text-muted-foreground"
@@ -1186,7 +1314,7 @@ onUnmounted(() => {
               <template v-if="item.userTurnPrompt">
                 <div class="font-medium">Your turn to speak</div>
                 <div class="text-muted-foreground">
-                  {{ authStore.isStaff ? 'Use mic or text to respond.' : 'Use the microphone to respond.' }}
+                  Use the microphone to respond.
                 </div>
               </template>
               <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
@@ -1218,7 +1346,8 @@ onUnmounted(() => {
           </CardContent>
         </Card>
 
-        <div class="grid grid-cols-1 gap-3" :class="{ 'sm:grid-cols-2': authStore.isStaff }">
+        <template v-if="!isEnded">
+        <div class="grid grid-cols-1 gap-3">
           <Card class="border">
             <CardHeader>
               <CardTitle class="text-base">Speak (microphone)</CardTitle>
@@ -1258,18 +1387,6 @@ onUnmounted(() => {
               </div>
             </CardContent>
           </Card>
-
-          <Card v-if="authStore.isStaff" class="border">
-            <CardHeader>
-              <CardTitle class="text-base">Speak (text)</CardTitle>
-            </CardHeader>
-            <CardContent class="space-y-3">
-              <Textarea v-model="inputText" placeholder="Type your message…" class="min-h-[80px]" />
-              <Button :disabled="!needUserTurn || needFirstTurnChoice || !inputText.trim()" @click="sendTextTurn">
-                Send
-              </Button>
-            </CardContent>
-          </Card>
         </div>
 
         <div class="flex flex-wrap gap-2 pt-2 border-t">
@@ -1278,6 +1395,64 @@ onUnmounted(() => {
           </Button>
         </div>
         </template>
+        </div>
+
+        <ArgumentSummaryPanel
+          v-if="sessionId"
+          embedded
+          class="min-h-0 lg:sticky lg:top-4 lg:self-start"
+          :session-id="sessionId"
+          :turn-count="turns.length"
+          :visible="showArgumentSummary"
+          @summary-updated="onArgumentSummaryUpdated"
+        />
+        </div>
+        </template>
+
+        <details v-if="isEnded && turns.length > 0" class="group rounded-md border">
+          <summary
+            class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-base font-medium [&::-webkit-details-marker]:hidden"
+          >
+            <span>Full transcript</span>
+            <ChevronDown class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div class="space-y-4 border-t px-4 py-3">
+            <div v-for="(turn, index) in turns" :key="turnKey(turn)" class="space-y-1">
+              <div class="text-xs text-muted-foreground">
+                Turn {{ index + 1 }} ·
+                <span class="font-medium text-foreground">{{ turnSpeakerLabel(turn) }}</span>
+              </div>
+              <div class="whitespace-pre-wrap text-sm">{{ turn.utterance }}</div>
+            </div>
+          </div>
+        </details>
+
+        <div v-if="isEnded && turns.length > 0" class="space-y-2">
+          <div class="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" @click="downloadTranscript">
+              Download transcript
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="!canDownloadArgumentStructure"
+              @click="downloadArgumentStructure"
+            >
+              Download argument structure
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="!canDownloadArgumentStructure"
+              @click="downloadCombinedExport"
+            >
+              Download both
+            </Button>
+          </div>
+          <p v-if="argumentDownloadBlockedReason" class="text-xs text-muted-foreground">
+            {{ argumentDownloadBlockedReason }}
+          </p>
+        </div>
         </template>
       </CardContent>
     </Card>

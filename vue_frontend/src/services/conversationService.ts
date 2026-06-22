@@ -42,6 +42,31 @@ export interface DiscussionScenarioResult {
   web_context_fetched: boolean
 }
 
+export interface ArgumentSummaryReason {
+  text: string
+}
+
+export interface ArgumentSummaryExplanation {
+  type: 'fact' | 'data' | 'example'
+  text: string
+}
+
+export interface ArgumentSummaryPackage {
+  type: 'argument' | 'counterargument'
+  reason: ArgumentSummaryReason
+  explanations: ArgumentSummaryExplanation[]
+}
+
+export interface ArgumentSummaryClaim {
+  text: string
+  arguments: ArgumentSummaryPackage[]
+}
+
+export interface ArgumentSummaryResult {
+  status: 'pending' | 'ready' | 'failed' | 'empty'
+  claims?: ArgumentSummaryClaim[]
+}
+
 export const PROFILE_ONBOARDING_CEFR_TOPIC = 'University life and learning English'
 
 export class ConversationService {
@@ -94,6 +119,14 @@ export class ConversationService {
     }, {
       timeout: 180000,
     })
+    return res.data
+  }
+
+  static async fetchArgumentSummary(sessionId: number): Promise<ArgumentSummaryResult> {
+    const res = await api.get<ArgumentSummaryResult>(
+      `/conversation/sessions/${sessionId}/argument-summary/`,
+      { timeout: 180000 },
+    )
     return res.data
   }
 }

@@ -12,6 +12,7 @@ from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.audio_tags import filter_to_valid_audio_tags
 from backend.conversation.services.audio_tags import format_audio_tags_for_prompt
 from backend.conversation.services.audio_tags import strip_audio_tags
+from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
@@ -375,6 +376,7 @@ def generate_agent_utterance_with_retrieval(
         major=str((agent.personality or {}).get("major") or ""),
         topic=session.topic,
         history=history,
+        argument_summary_bullets=get_argument_summary_bullets_for_agent(session),
         target=str(facilitator_plan.get("target") or "everyone"),
         target_type=_target_type(str(facilitator_plan.get("target") or "")),
         target_display_name=_target_display_name(
