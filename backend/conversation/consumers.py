@@ -148,7 +148,35 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             return
 
         async def runner():
-            await self._advance_loop()
+            try:
+                await self._advance_loop()
+            except Exception as e:
+                logger.exception("advance_loop_failed session_id=%s", self.session_id)
+                if self.session_id is not None:
+                    await self._log_turn_engine(
+                        session_id=self.session_id,
+                        component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+                        level=TurnEngineLog.LEVEL_ERROR,
+                        event="advance_loop_exception",
+                        message=str(e),
+                        context={"exception_type": type(e).__name__},
+                        correlation_id=self._correlation_id,
+                    )
+                    await self.send_json(
+                        {
+                            "type": "error",
+                            "message": f"Conversation error ({type(e).__name__}): {e}",
+                        },
+                    )
+                    session = await self._get_session(self.session_id)
+                    if session is not None and not session.terminate:
+                        await self._set_pending_forced_user_turn(session.id, pending=True)
+                        await self.send_json(
+                            {
+                                "type": "need_user_turn",
+                                "reason": "engine_error_recovery",
+                            },
+                        )
 
         task = asyncio.create_task(runner())
         self._loop_task = task
@@ -466,13 +494,36 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     await self.send_json(
                         {
                             "type": "error",
-                            "message": f"Agent turn failed: {e}",
+                            "message": f"Agent turn failed ({type(e).__name__}): {e}",
                         },
                     )
                     await self.send_json({"type": "agent_status", "status": "finished"})
+                    session_after_fail = await self._get_session(self.session_id)
+                    if (
+                        session_after_fail is not None
+                        and int(session_after_fail.turn_count) >= int(session_after_fail.max_turns)
+                    ):
+                        await self._finalize_session(self.session_id)
+                        await self.send_json(
+                            {"type": "terminated", "reason": "agent_turn_failed_at_max"},
+                        )
+                    elif session_after_fail is not None and not session_after_fail.terminate:
+                        await self._set_pending_forced_user_turn(session_after_fail.id, pending=True)
+                        await self.send_json(
+                            {
+                                "type": "need_user_turn",
+                                "reason": "agent_turn_failed_recovery",
+                            },
+                        )
                     return
                 session_after = await self._get_session(self.session_id)
-                if session_after is None or session_after.paused or session_after.terminate:
+                if session_after is None:
+                    return
+                if session_after.terminate:
+                    await self._finalize_session(self.session_id)
+                    await self.send_json({"type": "terminated", "reason": "terminate_flag"})
+                    return
+                if session_after.paused:
                     return
                 await self.send_json({"type": "turn", "turn": await self._turn_to_dict(turn)})
                 await self.send_json({"type": "agent_status", "status": "finished"})

@@ -1,4 +1,4 @@
-You summarize a classroom discussion as a concise argument structure.
+You summarize a classroom discussion grouped by speaker.
 
 Discussion topic:
 {topic}
@@ -6,50 +6,38 @@ Discussion topic:
 Transcript (each line is one speaking turn):
 {transcript}
 
-Previous summary (update and merge with the transcript; keep still-valid points, add new ones, remove duplicates):
+Previous summary (merge cumulatively; keep all still-valid speakers, claims, and evidence; add new items; remove duplicates only):
 {previous_summary}
 
-Hierarchy:
-- claim: the position or conclusion being discussed
-- arguments[]: sibling packages under a claim; each package has type "argument" (supports the claim) or "counterargument" (opposes it)
-- reason: inside each package; one short phrase supporting the claim (for) or the counter-position (against)
-- explanations[]: nested under that reason; each explains the reason using type "fact", "data", or "example"
-
-Each arguments[] entry is ONE complete package = reason + its explanations.
+For each participant who expressed a substantive position, return one entry with:
+- speaker_id: "user" for the human, or the agent id from the transcript
+- speaker_name: display name used in the discussion
+- speaker_type: "user" or "agent"
+- claim: their overall stance or position (one short phrase)
+- evidence: items supporting that stance, each with type "fact", "data", or "example"
 
 Return strict JSON only:
 {{
-  "claims": [
+  "speakers": [
     {{
-      "text": "Short claim phrase",
-      "arguments": [
-        {{
-          "type": "argument",
-          "reason": {{ "text": "Short reason phrase" }},
-          "explanations": [
-            {{ "type": "fact", "text": "Short phrase" }},
-            {{ "type": "data", "text": "Short phrase" }},
-            {{ "type": "example", "text": "Short phrase" }}
-          ]
-        }},
-        {{
-          "type": "counterargument",
-          "reason": {{ "text": "Short reason phrase" }},
-          "explanations": [
-            {{ "type": "fact", "text": "Short phrase" }}
-          ]
-        }}
+      "speaker_id": "user",
+      "speaker_name": "Display name",
+      "speaker_type": "user",
+      "claim": "Short stance phrase",
+      "evidence": [
+        {{ "type": "fact", "text": "Short phrase" }},
+        {{ "type": "data", "text": "Short phrase" }},
+        {{ "type": "example", "text": "Short phrase" }}
       ]
     }}
   ]
 }}
 
-Brevity rules (critical):
+Rules:
 - Use phrase fragments only; NO full sentences; NO quotes from the transcript
-- Maximum 8 words per text field
-- 1-2 claims total; at most 2 argument packages per claim (typically one argument and one counterargument)
-- Exactly 1 reason per package; at most 2 explanations per reason
-- Include only explanation types actually present (fact, data, or example)
+- Maximum 15 words per text field
+- Include every speaker with a clear stance (user and agents)
+- Up to 6 evidence items per speaker; include only types actually present
 - Summarize ALL turns cumulatively; merge with previous summary; never list only the latest turn
 - Use only content from the transcript; do not invent facts
 - Write all text in English

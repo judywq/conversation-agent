@@ -1,12 +1,7 @@
 import type { ArgumentSummaryResult } from '@/services/conversationService'
 import type { ConversationTurn } from '@/services/conversationWs'
 
-const PACKAGE_LABELS: Record<string, string> = {
-  argument: 'For',
-  counterargument: 'Against',
-}
-
-const EXPLANATION_LABELS: Record<string, string> = {
+const EVIDENCE_LABELS: Record<string, string> = {
   fact: 'Fact',
   data: 'Data',
   example: 'Example',
@@ -54,28 +49,24 @@ export function formatArgumentSummaryText(summary: ArgumentSummaryResult): strin
   }
 
   const lines: string[] = []
+  const speakerList = summary.speakers || []
 
-  for (const claim of summary.claims || []) {
-    const claimText = (claim.text || '').trim()
-    if (!claimText) continue
-    lines.push(`- ${claimText}`)
-
-    for (const pkg of claim.arguments || []) {
-      const packageLabel = PACKAGE_LABELS[pkg.type] || 'For'
-      const reasonText = (pkg.reason?.text || '').trim()
-      if (reasonText) {
-        lines.push(`  - ${packageLabel}: ${reasonText}`)
-      }
-      for (const explanation of pkg.explanations || []) {
-        const explanationText = (explanation.text || '').trim()
-        if (!explanationText) continue
-        const typeLabel = EXPLANATION_LABELS[explanation.type] || 'Fact'
-        lines.push(`    - ${typeLabel}: ${explanationText}`)
-      }
+  for (const speaker of speakerList) {
+    const name = (speaker.speaker_name || speaker.speaker_id || 'Speaker').trim()
+    const claim = (speaker.claim || '').trim()
+    if (!claim) continue
+    lines.push(`${name}`)
+    lines.push(`  Stance: ${claim}`)
+    for (const evidence of speaker.evidence || []) {
+      const evidenceText = (evidence.text || '').trim()
+      if (!evidenceText) continue
+      const typeLabel = EVIDENCE_LABELS[evidence.type] || 'Fact'
+      lines.push(`  - ${typeLabel}: ${evidenceText}`)
     }
+    lines.push('')
   }
 
-  return lines.join('\n')
+  return lines.join('\n').trimEnd()
 }
 
 export function formatCombinedExportText(
@@ -86,9 +77,6 @@ export function formatCombinedExportText(
 ): string {
   const transcript = formatTranscriptText(topic, turns, speakerLabel)
   const argumentsText = formatArgumentSummaryText(summary)
-  const parts = ['=== Transcript ===', transcript]
-  if (argumentsText) {
-    parts.push('', '=== Argument structure ===', argumentsText)
-  }
-  return parts.join('\n')
+  const parts = [transcript, argumentsText].filter(Boolean)
+  return parts.join('\n\n---\n\n')
 }

@@ -8,6 +8,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.prompts import load_facilitator_prompt
 from backend.conversation.prompts import render_prompt_template
+from backend.conversation.services.argument_summary import build_numbered_transcript
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
@@ -365,16 +366,19 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     """
     Returns a structured plan for the next agent turn.
     """
-    turns = get_short_term_turns(session, limit=3)
-    context = turns_to_messages(turns)
-    history = json.dumps(context, ensure_ascii=False, indent=2)
+    next_turn_count = int(session.turn_count) + 1
+    is_beginning = next_turn_count == 1
+    is_ending = next_turn_count == int(session.max_turns)
+    if is_ending:
+        history = build_numbered_transcript(session)
+    else:
+        turns = get_short_term_turns(session, limit=3)
+        context = turns_to_messages(turns)
+        history = json.dumps(context, ensure_ascii=False, indent=2)
     participants = ["user", *list(session.agent_profiles.order_by("agent_id").values_list("agent_id", flat=True))]
     participants_map = _participants_name_map(session)
     speech_act_options = ALLOWED_TAXONOMY
     template = load_facilitator_prompt()
-    next_turn_count = int(session.turn_count) + 1
-    is_beginning = next_turn_count == 1
-    is_ending = next_turn_count == int(session.max_turns)
     next_speaker_name = (agent.display_name or agent.agent_id).strip()
     chosen_agent_profile = {
         "agent_id": agent.agent_id,

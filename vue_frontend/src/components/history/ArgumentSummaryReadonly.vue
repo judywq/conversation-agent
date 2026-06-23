@@ -1,71 +1,56 @@
 <script setup lang="ts">
 import type {
-  ArgumentSummaryClaim,
-  ArgumentSummaryPackage,
+  ArgumentSummaryEvidence,
   ArgumentSummaryResult,
+  ArgumentSummarySpeaker,
 } from '@/services/conversationService'
 
-defineProps<{
+const props = defineProps<{
   summary: ArgumentSummaryResult | null | undefined
 }>()
 
-const PACKAGE_LABELS: Record<ArgumentSummaryPackage['type'], string> = {
-  argument: 'For',
-  counterargument: 'Against',
-}
-
-const EXPLANATION_LABELS: Record<string, string> = {
+const EVIDENCE_LABELS: Record<string, string> = {
   fact: 'Fact',
   data: 'Data',
   example: 'Example',
 }
 
-function packageLabel(pkg: ArgumentSummaryPackage): string {
-  return PACKAGE_LABELS[pkg.type] || 'For'
+function evidenceLabel(type: string): string {
+  return EVIDENCE_LABELS[type] || 'Fact'
 }
 
-function explanationLabel(type: string): string {
-  return EXPLANATION_LABELS[type] || 'Fact'
+function speakers(summary: ArgumentSummaryResult | null | undefined): ArgumentSummarySpeaker[] {
+  if (!summary) return []
+  if (summary.speakers?.length) return summary.speakers
+  return []
 }
 </script>
 
 <template>
   <div v-if="!summary || summary.status === 'empty'" class="text-sm text-muted-foreground">
-    No argument structure recorded.
+    No structured arguments yet.
   </div>
-  <div v-else-if="summary.status === 'failed'" class="text-sm text-destructive">
-    Argument structure could not be generated.
-  </div>
-  <div v-else-if="summary.status === 'pending'" class="text-sm text-muted-foreground">
-    Argument structure was still being generated.
-  </div>
-  <ul v-else class="list-none space-y-2 text-xs">
+  <ul v-else class="list-none space-y-3 text-sm">
     <li
-      v-for="(claim, claimIndex) in (summary.claims as ArgumentSummaryClaim[] | undefined) || []"
-      :key="`claim-${claimIndex}`"
+      v-for="(speaker, speakerIndex) in speakers(summary)"
+      :key="`${speaker.speaker_id}-${speakerIndex}`"
       class="space-y-1"
     >
-      <div class="font-medium leading-snug">• {{ claim.text }}</div>
-      <div
-        v-for="(pkg, pkgIndex) in claim.arguments"
-        :key="`pkg-${claimIndex}-${pkgIndex}`"
-        class="pl-3"
-      >
-        <div class="text-muted-foreground">{{ packageLabel(pkg) }}</div>
-        <ul class="mt-0.5 list-none space-y-0.5 pl-2">
-          <li class="leading-snug">• {{ pkg.reason.text }}</li>
-          <li
-            v-for="(explanation, expIndex) in pkg.explanations"
-            :key="`exp-${claimIndex}-${pkgIndex}-${expIndex}`"
-            class="pl-3 text-[11px] text-muted-foreground leading-snug"
-          >
-            {{ explanationLabel(explanation.type) }}: {{ explanation.text }}
-          </li>
-        </ul>
-      </div>
+      <div class="font-medium">{{ speaker.speaker_name || speaker.speaker_id }}</div>
+      <div class="text-muted-foreground">Stance: {{ speaker.claim }}</div>
+      <ul class="list-none space-y-0.5 pl-2">
+        <li
+          v-for="(item, evidenceIndex) in speaker.evidence"
+          :key="`${speaker.speaker_id}-evidence-${evidenceIndex}`"
+          class="text-[13px] leading-snug text-muted-foreground"
+        >
+          {{ evidenceLabel((item as ArgumentSummaryEvidence).type) }}:
+          {{ (item as ArgumentSummaryEvidence).text }}
+        </li>
+      </ul>
     </li>
-    <li v-if="!summary.claims?.length" class="text-muted-foreground">
-      No argument structure recorded.
+    <li v-if="speakers(summary).length === 0" class="text-muted-foreground">
+      No structured arguments yet.
     </li>
   </ul>
 </template>

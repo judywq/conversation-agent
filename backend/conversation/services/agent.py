@@ -12,7 +12,9 @@ from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.audio_tags import filter_to_valid_audio_tags
 from backend.conversation.services.audio_tags import format_audio_tags_for_prompt
 from backend.conversation.services.audio_tags import strip_audio_tags
+from backend.conversation.services.argument_summary import build_numbered_transcript
 from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
+from backend.conversation.services.argument_summary import is_closing_turn
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
@@ -349,9 +351,13 @@ def generate_agent_utterance_with_retrieval(
     agent: AgentProfile,
     facilitator_plan: dict,
 ) -> GeneratedAgentUtterance:
-    turns = get_short_term_turns(session, limit=3)
-    context = turns_to_messages(turns)
-    history = json.dumps(context, ensure_ascii=False, indent=2)
+    closing = is_closing_turn(session)
+    if closing:
+        history = build_numbered_transcript(session)
+    else:
+        turns = get_short_term_turns(session, limit=3)
+        context = turns_to_messages(turns)
+        history = json.dumps(context, ensure_ascii=False, indent=2)
     retrieval_plan = {
         **facilitator_plan,
         "_agent_persona_name": str((agent.personality or {}).get("persona_name") or ""),
@@ -388,6 +394,7 @@ def generate_agent_utterance_with_retrieval(
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
         retrieved_context=retrieval_context.rendered_context,
         audio_tags=format_audio_tags_for_prompt(),
+        is_ending="true" if closing else "false",
     )
     system = SystemMessage(content=prompt_text)
 

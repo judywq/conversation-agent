@@ -25,11 +25,11 @@ _STATUS_READY = "ready"
 _STATUS_FAILED = "failed"
 _STATUS_EMPTY = "empty"
 
-_MAX_WORDS = 8
-_MAX_CHARS = 60
-_VALID_PACKAGE_TYPES = frozenset({"argument", "counterargument"})
+_MAX_WORDS = 15
+_MAX_CHARS = 100
+_MAX_SPEAKERS = 6
+_MAX_EVIDENCE = 6
 _VALID_EXPLANATION_TYPES = frozenset({"fact", "data", "example"})
-_PACKAGE_LABELS = {"argument": "For", "counterargument": "Against"}
 _EXPLANATION_LABELS = {"fact": "Fact", "data": "Data", "example": "Example"}
 
 _EXECUTOR = ThreadPoolExecutor(
@@ -40,6 +40,10 @@ _EXECUTOR = ThreadPoolExecutor(
 _in_flight_sessions: set[int] = set()
 _pending_refresh_sessions: set[int] = set()
 _scheduler_lock = threading.Lock()
+
+
+def is_closing_turn(session: ConversationSession) -> bool:
+    return int(session.turn_count) + 1 >= int(session.max_turns)
 
 
 def _speaker_label(session: ConversationSession, turn: TurnRecord) -> str:
@@ -106,210 +110,183 @@ def _clamp_text(text: str, *, max_words: int = _MAX_WORDS, max_chars: int = _MAX
     return cleaned
 
 
-def _normalize_reason(value: Any) -> dict[str, str]:
-    if isinstance(value, dict):
-        text = _clamp_text(str(value.get("text") or ""))
-    elif isinstance(value, str):
-        text = _clamp_text(value)
-    else:
-        text = ""
-    return {"text": text}
-
-
-def _normalize_explanations(items: Any) -> list[dict[str, str]]:
+def _normalize_evidence(items: Any) -> list[dict[str, str]]:
     if not isinstance(items, list):
         return []
     normalized: list[dict[str, str]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
-        explanation_type = str(item.get("type") or "fact").strip().lower()
-        if explanation_type not in _VALID_EXPLANATION_TYPES:
-            explanation_type = "fact"
+        evidence_type = str(item.get("type") or "fact").strip().lower()
+        if evidence_type not in _VALID_EXPLANATION_TYPES:
+            evidence_type = "fact"
         text = _clamp_text(str(item.get("text") or ""))
         if text:
-            normalized.append({"type": explanation_type, "text": text})
-    return normalized[:2]
+            normalized.append({"type": evidence_type, "text": text})
+    return normalized[:_MAX_EVIDENCE]
 
 
-def _normalize_argument_package(item: Any) -> dict[str, Any] | None:
+def _normalize_speaker(item: Any) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
-    package_type = str(item.get("type") or "argument").strip().lower()
-    if package_type not in _VALID_PACKAGE_TYPES:
-        package_type = "argument"
-    reason = _normalize_reason(item.get("reason"))
-    if not reason["text"]:
+    speaker_id = str(item.get("speaker_id") or "").strip()
+    speaker_name = _clamp_text(str(item.get("speaker_name") or ""))
+    speaker_type = str(item.get("speaker_type") or "").strip().lower()
+    if speaker_type not in {"user", "agent"}:
+        speaker_type = "user" if speaker_id == "user" else "agent"
+    claim = _clamp_text(str(item.get("claim") or ""))
+    if not speaker_id or not claim:
         return None
-    explanations = _normalize_explanations(item.get("explanations"))
+    if not speaker_name:
+        speaker_name = speaker_id
     return {
-        "type": package_type,
-        "reason": reason,
-        "explanations": explanations,
+        "speaker_id": speaker_id,
+        "speaker_name": speaker_name,
+        "speaker_type": speaker_type,
+        "claim": claim,
+        "evidence": _normalize_evidence(item.get("evidence")),
     }
 
 
-def _normalize_claim(item: Any) -> dict[str, Any] | None:
-    if not isinstance(item, dict):
-        return None
-    if isinstance(item.get("claim"), dict):
-        claim_text = _clamp_text(str(item["claim"].get("text") or ""))
-    else:
-        claim_text = _clamp_text(str(item.get("text") or ""))
+def _evidence_key(item: dict[str, str]) -> tuple[str, str]:
+    return (str(item.get("type") or "fact").casefold(), str(item.get("text") or "").casefold())
+
+
+def _speaker_sort_key(speaker: dict[str, Any]) -> tuple[int, str]:
+    speaker_id = str(speaker.get("speaker_id") or "")
+    if speaker_id == "user":
+        return (0, speaker_id)
+    return (1, speaker_id)
+
+
+def merge_speaker_summaries(
+    previous: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for item in previous + new:
+        normalized = _normalize_speaker(item)
+        if normalized is None:
+            continue
+        speaker_id = normalized["speaker_id"]
+        existing = merged.get(speaker_id)
+        if existing is None:
+            merged[speaker_id] = normalized
+            continue
+        new_claim = normalized["claim"]
+        old_claim = str(existing.get("claim") or "")
+        if len(new_claim) >= len(old_claim):
+            existing["claim"] = new_claim
+        if normalized.get("speaker_name"):
+            existing["speaker_name"] = normalized["speaker_name"]
+        seen = {_evidence_key(e) for e in existing.get("evidence") or []}
+        for evidence in normalized.get("evidence") or []:
+            key = _evidence_key(evidence)
+            if key in seen:
+                continue
+            seen.add(key)
+            existing["evidence"].append(evidence)
+        existing["evidence"] = existing["evidence"][:_MAX_EVIDENCE]
+    speakers = sorted(merged.values(), key=_speaker_sort_key)
+    return speakers[:_MAX_SPEAKERS]
+
+
+def _migrate_legacy_claim_to_speakers(claim: dict[str, Any], *, index: int) -> dict[str, Any] | None:
+    claim_text = _clamp_text(str(claim.get("text") or ""))
     if not claim_text:
         return None
-
-    packages_raw = item.get("arguments")
-    packages: list[dict[str, Any]] = []
-    if isinstance(packages_raw, list):
-        for entry in packages_raw:
-            package = _normalize_argument_package(entry)
-            if package is not None:
-                packages.append(package)
-    packages = packages[:2]
-
-    if not packages:
-        return None
-    return {"text": claim_text, "arguments": packages}
-
-
-def _migrate_legacy_thread(thread: dict[str, Any]) -> dict[str, Any] | None:
-    claim_raw = thread.get("claim")
-    claim_text = ""
-    if isinstance(claim_raw, dict):
-        claim_text = _clamp_text(str(claim_raw.get("text") or ""))
-    if not claim_text:
-        return None
-
-    packages: list[dict[str, Any]] = []
-    grounds = thread.get("grounds")
-    if isinstance(grounds, list):
-        for ground in grounds:
-            if not isinstance(ground, dict):
+    evidence: list[dict[str, str]] = []
+    for package in claim.get("arguments") or []:
+        if not isinstance(package, dict):
+            continue
+        reason = package.get("reason") if isinstance(package.get("reason"), dict) else {}
+        reason_text = _clamp_text(str(reason.get("text") or ""))
+        package_type = str(package.get("type") or "argument")
+        if reason_text:
+            evidence.append({"type": "fact", "text": f"{package_type}: {reason_text}"})
+        for explanation in package.get("explanations") or []:
+            if not isinstance(explanation, dict):
                 continue
-            reason_text = _clamp_text(str(ground.get("text") or ""))
-            if not reason_text:
-                continue
-            explanations: list[dict[str, str]] = []
-            for fact in ground.get("supporting_facts") or []:
-                fact_text = _clamp_text(str(fact))
-                if fact_text:
-                    explanations.append({"type": "fact", "text": fact_text})
-            packages.append(
-                {
-                    "type": "argument",
-                    "reason": {"text": reason_text},
-                    "explanations": explanations[:2],
-                },
-            )
-            if len(packages) >= 2:
-                break
+            explanation_text = _clamp_text(str(explanation.get("text") or ""))
+            if explanation_text:
+                evidence.append(
+                    {
+                        "type": str(explanation.get("type") or "fact"),
+                        "text": explanation_text,
+                    },
+                )
+    return {
+        "speaker_id": f"legacy_claim_{index}",
+        "speaker_name": f"Topic position {index + 1}",
+        "speaker_type": "agent",
+        "claim": claim_text,
+        "evidence": evidence[:_MAX_EVIDENCE],
+    }
 
-    rebuttals = thread.get("rebuttals")
-    if isinstance(rebuttals, list) and len(packages) < 2:
-        for rebuttal in rebuttals:
-            if not isinstance(rebuttal, dict):
-                continue
-            counter = rebuttal.get("counterargument")
-            if not isinstance(counter, dict):
-                continue
-            reason_text = _clamp_text(str(counter.get("text") or ""))
-            if not reason_text:
-                continue
-            packages.append(
-                {
-                    "type": "counterargument",
-                    "reason": {"text": reason_text},
-                    "explanations": [],
-                },
-            )
-            break
 
-    if not packages:
-        return None
-    return {"text": claim_text, "arguments": packages[:2]}
+def _speakers_from_summary(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    speakers_raw = summary.get("speakers")
+    if isinstance(speakers_raw, list) and speakers_raw:
+        result: list[dict[str, Any]] = []
+        for item in speakers_raw:
+            normalized = _normalize_speaker(item)
+            if normalized is not None:
+                result.append(normalized)
+        return result
+
+    claims_raw = summary.get("claims")
+    if isinstance(claims_raw, list):
+        migrated: list[dict[str, Any]] = []
+        for index, claim in enumerate(claims_raw):
+            if not isinstance(claim, dict):
+                continue
+            speaker = _migrate_legacy_claim_to_speakers(claim, index=index)
+            if speaker is not None:
+                migrated.append(speaker)
+        return migrated
+
+    return []
 
 
 def parse_argument_summary_response(raw: str) -> dict[str, Any]:
     parsed = _extract_json_object(raw)
-    claims: list[dict[str, Any]] = []
-
-    claims_raw = parsed.get("claims")
-    if isinstance(claims_raw, list):
-        for item in claims_raw:
-            claim = _normalize_claim(item)
-            if claim is not None:
-                claims.append(claim)
-
-    if not claims:
-        threads_raw = parsed.get("argument_threads")
-        if isinstance(threads_raw, list):
-            for thread in threads_raw:
-                if not isinstance(thread, dict):
-                    continue
-                migrated = _migrate_legacy_thread(thread)
-                if migrated is not None:
-                    claims.append(migrated)
-
-    return {"claims": claims[:2]}
-
-
-def _claims_from_summary(summary: dict[str, Any]) -> list[dict[str, Any]]:
-    claims_raw = summary.get("claims")
-    if isinstance(claims_raw, list) and claims_raw:
-        return claims_raw
-    threads_raw = summary.get("argument_threads")
-    if not isinstance(threads_raw, list):
-        return []
-    migrated: list[dict[str, Any]] = []
-    for thread in threads_raw:
-        if not isinstance(thread, dict):
-            continue
-        claim = _migrate_legacy_thread(thread)
-        if claim is not None:
-            migrated.append(claim)
-    return migrated
+    speakers: list[dict[str, Any]] = []
+    speakers_raw = parsed.get("speakers")
+    if isinstance(speakers_raw, list):
+        for item in speakers_raw:
+            normalized = _normalize_speaker(item)
+            if normalized is not None:
+                speakers.append(normalized)
+    return {"speakers": speakers[:_MAX_SPEAKERS]}
 
 
 def format_argument_summary_bullets(summary: dict[str, Any]) -> str:
-    if summary.get("status") != _STATUS_READY:
+    if summary.get("status") not in {_STATUS_READY, _STATUS_PENDING}:
         return ""
 
     lines: list[str] = []
-    for claim in _claims_from_summary(summary):
-        if not isinstance(claim, dict):
+    for speaker in _speakers_from_summary(summary):
+        name = str(speaker.get("speaker_name") or speaker.get("speaker_id") or "Speaker").strip()
+        claim = str(speaker.get("claim") or "").strip()
+        if not claim:
             continue
-        claim_text = str(claim.get("text") or "").strip()
-        if not claim_text:
-            continue
-        lines.append(f"- {claim_text}")
-
-        for package in claim.get("arguments") or []:
-            if not isinstance(package, dict):
+        lines.append(f"- {name}: {claim}")
+        for evidence in speaker.get("evidence") or []:
+            if not isinstance(evidence, dict):
                 continue
-            package_type = str(package.get("type") or "argument")
-            label = _PACKAGE_LABELS.get(package_type, "For")
-            reason = package.get("reason") if isinstance(package.get("reason"), dict) else {}
-            reason_text = str(reason.get("text") or "").strip()
-            if reason_text:
-                lines.append(f"  - {label}: {reason_text}")
-            for explanation in package.get("explanations") or []:
-                if not isinstance(explanation, dict):
-                    continue
-                explanation_text = str(explanation.get("text") or "").strip()
-                if not explanation_text:
-                    continue
-                explanation_type = str(explanation.get("type") or "fact")
-                type_label = _EXPLANATION_LABELS.get(explanation_type, "Fact")
-                lines.append(f"    - {type_label}: {explanation_text}")
+            evidence_text = str(evidence.get("text") or "").strip()
+            if not evidence_text:
+                continue
+            evidence_type = str(evidence.get("type") or "fact")
+            type_label = _EXPLANATION_LABELS.get(evidence_type, "Fact")
+            lines.append(f"  - {type_label}: {evidence_text}")
 
     return "\n".join(lines)
 
 
 _ARGUMENT_SUMMARY_PENDING_AGENT_GUIDANCE = (
     "Argument summary is still being updated in the background. "
-    "Review the discussion history and do not repeat claims, reasons, "
-    "facts, data, examples, or counterarguments already stated."
+    "Review the discussion history and do not repeat stances or evidence already stated."
 )
 
 _ARGUMENT_SUMMARY_EMPTY_AGENT_GUIDANCE = (
@@ -325,11 +302,10 @@ def get_argument_summary_bullets_for_agent(session: ConversationSession) -> str:
         return _ARGUMENT_SUMMARY_EMPTY_AGENT_GUIDANCE
 
     status = stored.get("status")
+    bullets = format_argument_summary_bullets(stored)
     if status == _STATUS_READY:
-        bullets = format_argument_summary_bullets(stored)
         return bullets or _ARGUMENT_SUMMARY_EMPTY_AGENT_GUIDANCE
     if status == _STATUS_PENDING:
-        bullets = format_argument_summary_bullets(stored)
         if bullets:
             return (
                 f"{bullets}\n\n"
@@ -341,12 +317,12 @@ def get_argument_summary_bullets_for_agent(session: ConversationSession) -> str:
 
 def _previous_summary_json(session: ConversationSession) -> str:
     stored = session.argument_summary if isinstance(session.argument_summary, dict) else None
-    if not stored or stored.get("status") != _STATUS_READY:
+    if not stored:
         return "(none)"
-    claims = _claims_from_summary(stored)
-    if not claims:
+    speakers = _speakers_from_summary(stored)
+    if not speakers:
         return "(none)"
-    return json.dumps({"claims": claims}, ensure_ascii=False, indent=2)
+    return json.dumps({"speakers": speakers}, ensure_ascii=False, indent=2)
 
 
 def build_argument_summary_prompt(*, session: ConversationSession) -> str:
@@ -371,8 +347,10 @@ def extract_argument_summary(
     return parse_argument_summary_response(raw)
 
 
-def _summary_payload(*, status: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload = {"status": status}
+def _summary_payload(*, status: str, data: dict[str, Any] | None = None, turn_count: int | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"status": status}
+    if turn_count is not None:
+        payload["turn_count"] = int(turn_count)
     if data:
         payload.update(data)
     return payload
@@ -380,42 +358,71 @@ def _summary_payload(*, status: str, data: dict[str, Any] | None = None) -> dict
 
 def generate_argument_summary_for_session(session: ConversationSession) -> dict[str, Any]:
     if not session.turns.exists():
-        return _summary_payload(status=_STATUS_EMPTY)
+        return _summary_payload(status=_STATUS_EMPTY, data={"speakers": []})
+
+    stored = session.argument_summary if isinstance(session.argument_summary, dict) else None
+    previous_speakers = _speakers_from_summary(stored) if stored else []
 
     try:
         parsed = extract_argument_summary(session=session)
     except Exception:
         logger.exception("argument_summary_generation_failed", extra={"session_id": session.id})
-        session.argument_summary = _summary_payload(status=_STATUS_FAILED)
+        if previous_speakers:
+            payload = _summary_payload(
+                status=_STATUS_READY,
+                data={"speakers": previous_speakers},
+                turn_count=session.turn_count,
+            )
+        else:
+            payload = _summary_payload(status=_STATUS_FAILED, turn_count=session.turn_count)
+        session.argument_summary = payload
         session.save(update_fields=["argument_summary", "updated_at"])
         return session.argument_summary
 
-    if not parsed.get("claims"):
-        payload = _summary_payload(status=_STATUS_EMPTY, data={"claims": []})
+    merged = merge_speaker_summaries(previous_speakers, parsed.get("speakers") or [])
+    if not merged:
+        payload = _summary_payload(
+            status=_STATUS_EMPTY,
+            data={"speakers": []},
+            turn_count=session.turn_count,
+        )
     else:
-        payload = _summary_payload(status=_STATUS_READY, data=parsed)
+        payload = _summary_payload(
+            status=_STATUS_READY,
+            data={"speakers": merged},
+            turn_count=session.turn_count,
+        )
 
     session.argument_summary = payload
     session.save(update_fields=["argument_summary", "updated_at"])
     return payload
 
 
+def ensure_argument_summary_for_closing_turn(session: ConversationSession) -> dict[str, Any]:
+    stored = session.argument_summary if isinstance(session.argument_summary, dict) else None
+    if stored and stored.get("status") == _STATUS_READY and _speakers_from_summary(stored):
+        return stored
+    return generate_argument_summary_for_session(session)
+
+
 def mark_argument_summary_pending(session: ConversationSession) -> None:
     stored = session.argument_summary if isinstance(session.argument_summary, dict) else None
-    if stored and stored.get("status") == _STATUS_READY:
-        return
-    session.argument_summary = _summary_payload(status=_STATUS_PENDING)
+    previous_speakers = _speakers_from_summary(stored) if stored else []
+    data: dict[str, Any] = {"speakers": previous_speakers} if previous_speakers else {}
+    session.argument_summary = _summary_payload(
+        status=_STATUS_PENDING,
+        data=data,
+        turn_count=session.turn_count,
+    )
     session.save(update_fields=["argument_summary", "updated_at"])
 
 
 def get_argument_summary_for_session(session: ConversationSession) -> dict[str, Any]:
     stored = session.argument_summary if isinstance(session.argument_summary, dict) else None
-    if stored and stored.get("status") in {_STATUS_READY, _STATUS_FAILED, _STATUS_EMPTY}:
-        return stored
-    if stored and stored.get("status") == _STATUS_PENDING:
+    if stored and stored.get("status") in {_STATUS_READY, _STATUS_FAILED, _STATUS_EMPTY, _STATUS_PENDING}:
         return stored
     if not session.turns.exists():
-        return _summary_payload(status=_STATUS_EMPTY)
+        return _summary_payload(status=_STATUS_EMPTY, data={"speakers": []})
     return generate_argument_summary_for_session(session)
 
 
@@ -474,7 +481,11 @@ def _enqueue_argument_summary_refresh(session_id: int) -> None:
         return
 
     if not session.turns.exists():
-        session.argument_summary = _summary_payload(status=_STATUS_EMPTY)
+        session.argument_summary = _summary_payload(
+            status=_STATUS_EMPTY,
+            data={"speakers": []},
+            turn_count=session.turn_count,
+        )
         session.save(update_fields=["argument_summary", "updated_at"])
         with _scheduler_lock:
             _in_flight_sessions.discard(session_id)

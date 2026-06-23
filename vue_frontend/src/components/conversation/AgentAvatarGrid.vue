@@ -18,6 +18,8 @@ const props = defineProps<{
   activeSpeakerId: string | null
   agentStatus: 'idle' | 'thinking' | 'finished' | 'searching_online'
   warmedUp: boolean
+  /** When true, stack avatars in one column (better for the sidebar partner column). */
+  stacked?: boolean
 }>()
 
 const panelRefs = ref<Record<string, InstanceType<typeof AgentAvatarPanel> | null>>({})
@@ -25,6 +27,7 @@ const panelRefs = ref<Record<string, InstanceType<typeof AgentAvatarPanel> | nul
 const agents = computed(() => props.participants.filter((p) => p.type === 'agent'))
 
 const gridClass = computed(() => {
+  if (props.stacked) return 'grid-cols-1'
   const count = agents.value.length
   if (count <= 1) return 'grid-cols-1'
   if (count <= 2) return 'grid-cols-1 sm:grid-cols-2'

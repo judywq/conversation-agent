@@ -47,25 +47,33 @@ export interface ArgumentSummaryReason {
   text: string
 }
 
-export interface ArgumentSummaryExplanation {
+export interface ArgumentSummaryEvidence {
   type: 'fact' | 'data' | 'example'
   text: string
 }
 
-export interface ArgumentSummaryPackage {
-  type: 'argument' | 'counterargument'
-  reason: ArgumentSummaryReason
-  explanations: ArgumentSummaryExplanation[]
-}
-
-export interface ArgumentSummaryClaim {
-  text: string
-  arguments: ArgumentSummaryPackage[]
+export interface ArgumentSummarySpeaker {
+  speaker_id: string
+  speaker_name: string
+  speaker_type: 'user' | 'agent'
+  claim: string
+  evidence: ArgumentSummaryEvidence[]
 }
 
 export interface ArgumentSummaryResult {
   status: 'pending' | 'ready' | 'failed' | 'empty'
-  claims?: ArgumentSummaryClaim[]
+  /** Session turn_count when this summary was generated; used to defer UI until playback catches up. */
+  turn_count?: number
+  speakers?: ArgumentSummarySpeaker[]
+  /** @deprecated legacy topic-level claims; migrated on read */
+  claims?: Array<{
+    text: string
+    arguments: Array<{
+      type: string
+      reason: { text: string }
+      explanations: ArgumentSummaryEvidence[]
+    }>
+  }>
 }
 
 export interface ConversationSessionSummary {

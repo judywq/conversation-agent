@@ -171,7 +171,7 @@ onMounted(() => {
           Loading details…
         </div>
         <template v-else-if="sessionDetail(session.id)">
-          <div class="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
             <div class="space-y-2">
               <h3 class="text-sm font-medium">Transcript</h3>
               <div class="max-h-[min(60vh,28rem)] space-y-4 overflow-y-auto rounded-md border p-3">

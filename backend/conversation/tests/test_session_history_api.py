@@ -18,7 +18,7 @@ def test_session_summary_to_dict_includes_metadata(user) -> None:
         turn_count=3,
         max_turns=5,
         terminate=True,
-        argument_summary={"status": "ready", "claims": []},
+        argument_summary={"status": "ready", "speakers": []},
     )
 
     payload = session_summary_to_dict(session)

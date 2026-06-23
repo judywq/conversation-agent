@@ -85,8 +85,8 @@ If {next_speaker_type} is "agent":
   - The instruction MUST tell the speaker to greet everyone and briefly introduce the topic.
   - Prefer: speech_act.type="EXPRESSIVES" subtype="greet_welcome", target="everyone".
 - If {is_ending} == true:
-  - The instruction MUST tell the speaker to quickly wrap up the conversation,
-    optionally thanking everyone and inviting the user to end or continue later.
+  - The instruction MUST tell the speaker to briefly note what was discussed (topic/themes only), thank everyone, and close the session.
+  - Do NOT instruct a stance-by-stance or speaker-by-speaker recap.
   - Prefer: speech_act.type="DECLARATIONS" subtype="close_session" or "EXPRESSIVES" subtype="thank".
 
 # Output Format (STRICT JSON)

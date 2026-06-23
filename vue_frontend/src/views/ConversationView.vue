@@ -202,6 +202,19 @@ const avatarsEnabled = ref(true)
 const avatarWarmedUp = ref(false)
 const avatarGridRef = ref<InstanceType<typeof AgentAvatarGrid> | null>(null)
 const avatarSpeaking = ref(false)
+const agentPlaybackBusy = computed(
+  () =>
+    isProcessingTurnPlayback.value ||
+    turnPlaybackQueue.value.length > 0 ||
+    avatarSpeaking.value ||
+    liveSpeakingTurnKey.value !== null,
+)
+/** Turns fully revealed: listed turns minus any agent audio still queued or playing. */
+const effectiveSettledTurnCount = computed(() => {
+  const inFlight =
+    turnPlaybackQueue.value.length + (liveSpeakingTurnKey.value ? 1 : 0)
+  return Math.max(0, turns.value.length - inFlight)
+})
 const agentParticipants = computed(() => participants.value.filter((p) => p.type === 'agent'))
 
 function participantRoleLabel(type: Participant['type']): string {
@@ -1216,15 +1229,22 @@ onUnmounted(() => {
         <div
           v-if="agentParticipants.length > 0"
           class="grid grid-cols-1 gap-4"
-          :class="showArgumentSummary ? 'lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)_13rem] lg:gap-3' : 'lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]'"
+          :class="
+            showArgumentSummary
+              ? 'lg:grid-cols-[minmax(360px,28rem)_minmax(12rem,1fr)_minmax(12rem,1fr)] lg:items-stretch lg:gap-3'
+              : 'lg:grid-cols-[minmax(360px,28rem)_minmax(0,1fr)]'
+          "
         >
-          <AgentAvatarGrid
-            ref="avatarGridRef"
-            :participants="participants"
-            :active-speaker-id="activeSpeakerId"
-            :agent-status="agentStatus"
-            :warmed-up="avatarWarmedUp && avatarsEnabled"
-          />
+          <div class="w-full min-w-[min(100%,360px)] shrink-0 lg:min-w-[360px] lg:max-w-[28rem]">
+            <AgentAvatarGrid
+              ref="avatarGridRef"
+              stacked
+              :participants="participants"
+              :active-speaker-id="activeSpeakerId"
+              :agent-status="agentStatus"
+              :warmed-up="avatarWarmedUp && avatarsEnabled"
+            />
+          </div>
 
           <div class="min-w-0 space-y-4">
             <Card class="border">
@@ -1335,9 +1355,10 @@ onUnmounted(() => {
 
           <ArgumentSummaryPanel
             embedded
-            class="min-h-0 lg:sticky lg:top-4 lg:self-start"
+            class="min-h-[min(60vh,28rem)] h-full min-h-0"
             :session-id="sessionId"
-            :turn-count="turns.length"
+            :settled-turn-count="effectiveSettledTurnCount"
+            :playback-busy="agentPlaybackBusy"
             :visible="showArgumentSummary"
             @summary-updated="onArgumentSummaryUpdated"
           />
@@ -1346,7 +1367,7 @@ onUnmounted(() => {
         <template v-else>
         <div
           class="grid grid-cols-1 gap-4"
-          :class="showArgumentSummary ? 'lg:grid-cols-[minmax(0,1fr)_13rem] lg:gap-3' : ''"
+          :class="showArgumentSummary ? 'lg:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)] lg:items-stretch lg:gap-3' : ''"
         >
         <div class="min-w-0 space-y-4">
         <Card class="border">
@@ -1458,9 +1479,10 @@ onUnmounted(() => {
         <ArgumentSummaryPanel
           v-if="sessionId"
           embedded
-          class="min-h-0 lg:sticky lg:top-4 lg:self-start"
+          class="min-h-[min(60vh,28rem)] h-full min-h-0"
           :session-id="sessionId"
-          :turn-count="turns.length"
+          :settled-turn-count="effectiveSettledTurnCount"
+          :playback-busy="agentPlaybackBusy"
           :visible="showArgumentSummary"
           @summary-updated="onArgumentSummaryUpdated"
         />
