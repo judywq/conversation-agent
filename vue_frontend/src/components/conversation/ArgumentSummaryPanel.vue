@@ -87,12 +87,13 @@ function tryRevealSummary(result: ArgumentSummaryResult): boolean {
   return true
 }
 
-function tryApplyDeferred() {
+function tryApplyDeferred(): boolean {
   const pending = deferredResult.value
-  if (!pending || !canRevealSummary(pending)) return
+  if (!pending || !canRevealSummary(pending)) return false
   deferredResult.value = null
   refreshQueued = false
   applySummary(pending)
+  return true
 }
 
 function scheduleRefresh() {
