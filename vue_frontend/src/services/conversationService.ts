@@ -1,4 +1,5 @@
 import api from '@/services/api'
+import type { ConversationTurn } from '@/services/conversationWs'
 
 export interface CefrSample {
   level: string
@@ -40,6 +41,66 @@ export interface DiscussionScenarioResult {
   web_context: string
   knowledge_source: 'articles' | 'web' | 'none'
   web_context_fetched: boolean
+}
+
+export interface ArgumentSummaryReason {
+  text: string
+}
+
+export interface ArgumentSummaryEvidence {
+  type: 'fact' | 'data' | 'example'
+  text: string
+}
+
+export interface ArgumentSummarySpeaker {
+  speaker_id: string
+  speaker_name: string
+  speaker_type: 'user' | 'agent'
+  claim: string
+  evidence: ArgumentSummaryEvidence[]
+}
+
+export interface ArgumentSummaryResult {
+  status: 'pending' | 'ready' | 'failed' | 'empty'
+  /** Session turn_count when this summary was generated; used to defer UI until playback catches up. */
+  turn_count?: number
+  speakers?: ArgumentSummarySpeaker[]
+  /** @deprecated legacy topic-level claims; migrated on read */
+  claims?: Array<{
+    text: string
+    arguments: Array<{
+      type: string
+      reason: { text: string }
+      explanations: ArgumentSummaryEvidence[]
+    }>
+  }>
+}
+
+export interface ConversationSessionSummary {
+  id: number
+  topic: string
+  turn_count: number
+  max_turns: number
+  terminate: boolean
+  paused: boolean
+  news_category: string
+  news_subtopic: string
+  created_at: string | null
+  updated_at: string | null
+  argument_summary_status: string | null
+  can_continue: boolean
+}
+
+export interface ConversationSessionDetail extends ConversationSessionSummary {
+  turns: ConversationTurn[]
+  argument_summary: ArgumentSummaryResult
+}
+
+export interface ConversationSessionListResult {
+  count: number
+  limit: number
+  offset: number
+  results: ConversationSessionSummary[]
 }
 
 export const PROFILE_ONBOARDING_CEFR_TOPIC = 'University life and learning English'
@@ -94,6 +155,26 @@ export class ConversationService {
     }, {
       timeout: 180000,
     })
+    return res.data
+  }
+
+  static async fetchArgumentSummary(sessionId: number): Promise<ArgumentSummaryResult> {
+    const res = await api.get<ArgumentSummaryResult>(
+      `/conversation/sessions/${sessionId}/argument-summary/`,
+      { timeout: 180000 },
+    )
+    return res.data
+  }
+
+  static async fetchSessionHistory(limit = 20, offset = 0): Promise<ConversationSessionListResult> {
+    const res = await api.get<ConversationSessionListResult>('/conversation/sessions/', {
+      params: { limit, offset },
+    })
+    return res.data
+  }
+
+  static async fetchSessionDetail(sessionId: number): Promise<ConversationSessionDetail> {
+    const res = await api.get<ConversationSessionDetail>(`/conversation/sessions/${sessionId}/`)
     return res.data
   }
 }

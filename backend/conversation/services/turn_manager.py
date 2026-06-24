@@ -49,6 +49,17 @@ def decide_next_speaker(
     if should_terminate(session):
         return TurnDecision(terminate=True, next_speaker_type=None, next_speaker_id=None, reason="termination_condition")
 
+    turns_left = int(session.max_turns) - int(session.turn_count)
+    if turns_left <= 1:
+        closing_agent_id = _pick_any_agent(session)
+        if closing_agent_id is not None:
+            return TurnDecision(
+                terminate=False,
+                next_speaker_type="agent",
+                next_speaker_id=closing_agent_id,
+                reason="closing_agent_turn",
+            )
+
     if session.pending_forced_user_turn:
         return TurnDecision(terminate=False, next_speaker_type="user", next_speaker_id="user", reason="forced_user_turn")
 
@@ -78,20 +89,6 @@ def decide_next_speaker(
     named_question_override = _named_question_target_override(session)
     if named_question_override is not None:
         return named_question_override
-
-    # Closing policy: if there's only one turn remaining, prefer an agent so the
-    # conversation can end with an agent wrap-up rather than stopping right after
-    # a user utterance.
-    turns_left = int(session.max_turns) - int(session.turn_count)
-    if turns_left == 1:
-        closing_agent_id = _pick_any_agent(session)
-        if closing_agent_id is not None:
-            return TurnDecision(
-                terminate=False,
-                next_speaker_type="agent",
-                next_speaker_id=closing_agent_id,
-                reason="closing_agent_turn",
-            )
 
     if user_volunteered:
         return TurnDecision(

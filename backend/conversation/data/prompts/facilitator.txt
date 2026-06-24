@@ -65,6 +65,7 @@ This session distribution summary (empirical rates vs corpus, steering hint):
 
 Generate ONE instruction object for the next speaker.
 
+
 # Context-grounding rules (must follow)
 - Your instruction should consider Discussion history and continue the conversation naturally.
 - Prefer targeting the most relevant participant from the last turn when appropriate.
@@ -84,9 +85,25 @@ If {next_speaker_type} is "agent":
   - The instruction MUST tell the speaker to greet everyone and briefly introduce the topic.
   - Prefer: speech_act.type="EXPRESSIVES" subtype="greet_welcome", target="everyone".
 - If {is_ending} == true:
-  - The instruction MUST tell the speaker to quickly wrap up the conversation,
-    optionally thanking everyone and inviting the user to end or continue later.
+  - The instruction MUST tell the speaker to briefly note what was discussed (topic/themes only), thank everyone, and close the session.
+  - Do NOT instruct a stance-by-stance or speaker-by-speaker recap.
   - Prefer: speech_act.type="DECLARATIONS" subtype="close_session" or "EXPRESSIVES" subtype="thank".
+
+# Personal experience (context-sensitive — no fixed schedule)
+For middle turns only (`is_beginning` and `is_ending` are false), read Discussion history and decide whether the next speaker should share a brief personal anecdote. Do NOT request anecdotes on a fixed turn count or timer.
+
+Request a personal anecdote only when it feels natural, for example:
+- The previous speaker (user or agent) asked for personal experiences, stories, or "have you ever…?"
+- The previous speaker shared their own anecdote and a brief reciprocal share fits
+- The topic invites lived experience (dorms, classes, clubs, study habits, campus life) and the thread is conversational
+
+When requesting an anecdote:
+- Set `"personal_experience": true`
+- Set `"retrieval need": "memory"` (so the agent can load stored personal details)
+- Prefer speech_act.type="ASSERTIVES" subtype="opinion" (or EXPRESSIVES with a personal reason)
+- `content_requirement` examples: "Share a brief personal dorm story related to this." / "Give a first-person example from your classes."
+
+Otherwise set `"personal_experience": false` and use inform, challenge, or question instructions without a personal story.
 
 # Output Format (STRICT JSON)
 
@@ -98,13 +115,16 @@ If {next_speaker_type} is "agent":
     "subtype": "<subtype>"
   },
   "content_requirement": "<one-sentence instruction, fewer than 15 words>",
-  "retrieval need": "<memory | none>"
+  "retrieval need": "<memory | none>",
+  "personal_experience": false
 }
 
 # Constraints
 
 - Select "type" and "subtype" ONLY from the above taxonomy. Do NOT invent new ones.
 - Use the speaker's profile from {agent_profile} to guide behavior.
+- For agent speakers in the middle of the discussion (not beginning or ending), vary instructions: opinions with lived examples, factual inform, direct challenge, and invitations for others to share—not only factual inform.
+- When `personal_experience` is true, the content_requirement MUST clearly ask for a brief first-person example.
 - Choose a clear target:
   - a specific participant (for responses, questions, challenges)
   - "everyone" (for general contributions)

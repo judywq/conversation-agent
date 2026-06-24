@@ -459,6 +459,7 @@ def user_profile_from_rows(rows: list[SpeakerMemoryRow]) -> UserPersonalProfile:
 
 def agent_profile_from_rows(agent_slug: str, rows: list[SpeakerMemoryRow]) -> AgentPersonalProfile:
     profile = AgentPersonalProfile(agent_slug=agent_slug)
+    self_memory_types = {"self_fact", "self_event", "self_preference", "self_plan"}
     for row in rows:
         meta = row.metadata if isinstance(row.metadata, dict) else {}
         field = meta.get("field")
@@ -471,7 +472,9 @@ def agent_profile_from_rows(agent_slug: str, rows: list[SpeakerMemoryRow]) -> Ag
             profile.persona_summary = str(value)
         elif field == "speaking_style" and value:
             profile.speaking_style = str(value)
-        elif row.memory_type == "self_fact" and row.content:
+        elif row.memory_type == "self_style" and row.content and not profile.speaking_style:
+            profile.speaking_style = row.content
+        elif row.memory_type in self_memory_types and row.content:
             profile.self_revealed_facts.append(row.content)
     return profile
 

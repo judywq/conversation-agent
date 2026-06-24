@@ -351,6 +351,22 @@ def test_build_agent_retrieval_context_routes_exemplar_labels(
 @pytest.mark.django_db
 def test_generate_agent_utterance_injects_unified_retrieved_context(user, monkeypatch):
     session, agent = _make_session_with_agent(user)
+    session.argument_summary = {
+        "status": "ready",
+        "claims": [
+            {
+                "text": "The handbook supports the point.",
+                "arguments": [
+                    {
+                        "type": "argument",
+                        "reason": {"text": "Handbook cites the policy"},
+                        "explanations": [],
+                    },
+                ],
+            },
+        ],
+    }
+    session.save(update_fields=["argument_summary"])
     append_turn(
         session,
         speaker="user",
@@ -394,6 +410,8 @@ def test_generate_agent_utterance_injects_unified_retrieved_context(user, monkey
 
     assert utterance == "I think the course handbook supports that."
     assert "Retrieved information:\n1. Source: knowledge\n   Title: Course handbook" in captured["system_prompt"]
+    assert "Discussion points already covered" in captured["system_prompt"]
+    assert "The handbook supports the point." in captured["system_prompt"]
     assert "Retrieved web context" not in captured["system_prompt"]
     assert "today only web search is implemented" not in captured["system_prompt"]
 

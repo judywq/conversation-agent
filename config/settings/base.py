@@ -49,6 +49,8 @@ DOMAIN_NAME = env.str("DJANGO_DOMAIN_NAME", default="localhost:8000")
 # ------------------------------------------------------------------------------
 # For quick testing, you can override via env var CONVERSATION_AGENT_COUNT.
 CONVERSATION_AGENT_COUNT = env.int("CONVERSATION_AGENT_COUNT", default=3)
+# For quick testing, you can override via env var CONVERSATION_MAX_TURNS.
+CONVERSATION_MAX_TURNS = env.int("CONVERSATION_MAX_TURNS", default=20)
 AGENT_UTTERANCE_DUPLICATE_THRESHOLD = env.float("AGENT_UTTERANCE_DUPLICATE_THRESHOLD", default=0.75)
 AGENT_UTTERANCE_DUPLICATE_MIN_TOKENS = env.int("AGENT_UTTERANCE_DUPLICATE_MIN_TOKENS", default=4)
 AGENT_UTTERANCE_DUPLICATE_RECENT_LIMIT = env.int("AGENT_UTTERANCE_DUPLICATE_RECENT_LIMIT", default=20)

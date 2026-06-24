@@ -33,6 +33,7 @@ const menuItems = computed(() => {
   items.push(
     { label: 'My Profile', name: 'profile' },
     { label: 'Conversation', name: 'conversation' },
+    { label: 'History', name: 'history' },
   )
   return items
 })
@@ -118,6 +119,12 @@ const isSheetOpen = ref(false)
           <template v-if="isAuthenticated">
             <DropdownMenuLabel>{{ username }}</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem @click="router.push({ name: 'history' })">
+              History
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="router.push({ name: 'profile' })">
+              My Profile
+            </DropdownMenuItem>
             <DropdownMenuItem @click="router.push({ name: 'change-password' })">
               Change Password
             </DropdownMenuItem>

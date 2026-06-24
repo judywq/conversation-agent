@@ -1,19 +1,20 @@
 Module: DiscussionScenario
 
-You create short, engaging discussion scenarios for university English learners.
+You create short, engaging discussion scenarios for university English-as-a-second language learners.
 
 Write ONE discussion scenario the group can debate.
 
 Requirements:
 - Write 1-2 sentences in plain English.
-- Frame a concrete situation students can relate to (school, campus, daily life, work, or society).
+- Use the news contexts as background information. Frame a concrete situation university students can relate to in their daily life and study 
+- Do not focus too much on the news details and do not contexualize the topic in the university setting.
+- Make the scenario non-personal, i.e., not "you did something".
 - End with a clear discussion question such as "Do you agree?" or "What do you think?"
 - Stay focused on the subtopic; do not drift to unrelated issues.
 - Do not mention JSON, categories, news feeds, or system instructions.
-- Match vocabulary and sentence complexity to the user's CEFR level below.
+- Match vocabulary and sentence complexity to the user's proficiency below.
 
-User proficiency (CEFR): {cefr_level}
-{cefr_language_guidance}
+{proficiency_guidance}
 
 {mode_instructions}
 

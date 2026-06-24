@@ -755,7 +755,7 @@ def _merge_memory_items_langmem_first(
     merged: list[RetrievedItem] = []
     seen: set[str] = set()
     for item in [*langmem_items, *legacy_items]:
-        key = " ".join((item.title or "", item.excerpt or "").casefold().split())
+        key = " ".join(f"{item.title or ''} {item.excerpt or ''}".casefold().split())
         if not key or key in seen:
             continue
         seen.add(key)

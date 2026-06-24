@@ -190,12 +190,30 @@ def _cefr_language_guidance(cefr_level: str) -> str:
     )
 
 
+def build_discussion_scenario_proficiency_guidance(
+    *,
+    cefr_level: str | None,
+    reference_utterance: str | None,
+) -> str:
+    reference = str(reference_utterance or "").strip()
+    if reference:
+        return (
+            "User proficiency sample (shows the user's English level only; "
+            "match vocabulary and sentence complexity to this sample; "
+            "do not copy its topic or wording):\n"
+            f'"{reference}"'
+        )
+    level = normalize_user_cefr_level(cefr_level)
+    return f"User proficiency: {level}\n{_cefr_language_guidance(level)}"
+
+
 def generate_scenario_with_llm(
     *,
     category: str,
     subtopic: str,
     articles: list[NewsArticle],
     cefr_level: str | None = None,
+    reference_utterance: str | None = None,
 ) -> DiscussionScenarioResult:
     category_obj = get_category(category)
     subtopic_obj = get_subtopic(category, subtopic)
@@ -207,8 +225,10 @@ def generate_scenario_with_llm(
         category_name=category_obj.name,
         subtopic_name=subtopic_obj.name,
         subtopic_keywords=", ".join(subtopic_obj.keywords),
-        cefr_level=normalized_cefr,
-        cefr_language_guidance=_cefr_language_guidance(normalized_cefr),
+        proficiency_guidance=build_discussion_scenario_proficiency_guidance(
+            cefr_level=cefr_level,
+            reference_utterance=reference_utterance,
+        ),
         mode_instructions=ARTICLE_MODE_INSTRUCTIONS if has_articles else SUBTOPIC_MODE_INSTRUCTIONS,
         news_context=_build_news_context(articles) if has_articles else "Not applicable.",
     )
@@ -246,12 +266,14 @@ def generate_discussion_scenario_from_articles(
     subtopic: str,
     articles: list[NewsArticle],
     cefr_level: str | None = None,
+    reference_utterance: str | None = None,
 ) -> DiscussionScenarioResult:
     return generate_scenario_with_llm(
         category=category,
         subtopic=subtopic,
         articles=articles,
         cefr_level=cefr_level,
+        reference_utterance=reference_utterance,
     )
 
 
@@ -276,6 +298,7 @@ def setup_discussion_context(
     category: str,
     subtopic: str,
     cefr_level: str | None = None,
+    reference_utterance: str | None = None,
     limit: int = DISCUSSION_ARTICLE_LIMIT,
 ) -> DiscussionScenarioResult:
     normalized_cefr = normalize_user_cefr_level(cefr_level)
@@ -294,6 +317,7 @@ def setup_discussion_context(
                 subtopic=subtopic,
                 articles=articles,
                 cefr_level=normalized_cefr,
+                reference_utterance=reference_utterance,
             )
             fulltext_future = executor.submit(fetch_and_store_full_text, articles)
             result = scenario_future.result()
@@ -325,6 +349,7 @@ def setup_discussion_context(
         subtopic=subtopic,
         articles=[],
         cefr_level=normalized_cefr,
+        reference_utterance=reference_utterance,
     )
     web_context, web_context_fetched = _fetch_web_context_for_scenario(
         category_name=result.category_name,
@@ -348,8 +373,19 @@ def setup_discussion_context(
     )
 
 
-def generate_discussion_scenario(*, category: str, subtopic: str, cefr_level: str | None = None) -> DiscussionScenarioResult:
-    return setup_discussion_context(category=category, subtopic=subtopic, cefr_level=cefr_level)
+def generate_discussion_scenario(
+    *,
+    category: str,
+    subtopic: str,
+    cefr_level: str | None = None,
+    reference_utterance: str | None = None,
+) -> DiscussionScenarioResult:
+    return setup_discussion_context(
+        category=category,
+        subtopic=subtopic,
+        cefr_level=cefr_level,
+        reference_utterance=reference_utterance,
+    )
 
 
 DISCUSSION_PROFILE_FIELDS = (

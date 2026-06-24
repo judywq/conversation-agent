@@ -25,6 +25,16 @@ export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
   | { type: 'session_started'; session_id: number; topic: string }
   | {
+      type: 'session_resumed'
+      session_id: number
+      topic: string
+      max_turns: number
+      turn_count: number
+      paused: boolean
+      turns: ConversationTurn[]
+      need_user_turn: boolean
+    }
+  | {
       type: 'participants'
       participants: ConversationParticipant[]
     }
@@ -52,12 +62,37 @@ function toWsUrl(apiBaseUrl: string, path: string): string {
 export class ConversationWsClient {
   private ws: WebSocket | null = null
   private listeners: Array<(e: ConversationWsEvent) => void> = []
+  private connectionListeners: Array<(open: boolean) => void> = []
+
+  isOpen(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN
+  }
 
   connect(): void {
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+      return
+    }
+
+    this.teardownSocket()
+
     const apiBase = import.meta.env.VITE_API_BASE_URL as string
     const wsUrl = toWsUrl(apiBase, '/ws/conversation/')
-    this.ws = new WebSocket(wsUrl)
-    this.ws.onmessage = (evt) => {
+    const socket = new WebSocket(wsUrl)
+    this.ws = socket
+
+    socket.onopen = () => {
+      this.notifyConnectionChange(true)
+    }
+    socket.onclose = () => {
+      if (this.ws === socket) {
+        this.ws = null
+      }
+      this.notifyConnectionChange(false)
+    }
+    socket.onerror = () => {
+      // onclose follows
+    }
+    socket.onmessage = (evt) => {
       try {
         const data = JSON.parse(evt.data)
         this.listeners.forEach((l) => l(data))
@@ -67,6 +102,29 @@ export class ConversationWsClient {
     }
   }
 
+  ready(): Promise<void> {
+    if (this.isOpen()) {
+      return Promise.resolve()
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        offConn()
+        reject(new Error('WebSocket connection timeout'))
+      }, 10000)
+
+      const offConn = this.onConnectionChange((open) => {
+        if (open) {
+          window.clearTimeout(timeout)
+          offConn()
+          resolve()
+        }
+      })
+
+      this.connect()
+    })
+  }
+
   onEvent(listener: (e: ConversationWsEvent) => void): () => void {
     this.listeners.push(listener)
     return () => {
@@ -74,12 +132,42 @@ export class ConversationWsClient {
     }
   }
 
+  onConnectionChange(listener: (open: boolean) => void): () => void {
+    this.connectionListeners.push(listener)
+    return () => {
+      this.connectionListeners = this.connectionListeners.filter((l) => l !== listener)
+    }
+  }
+
+  private notifyConnectionChange(open: boolean) {
+    this.connectionListeners.forEach((listener) => listener(open))
+  }
+
   send(payload: any): void {
-    this.ws?.send(JSON.stringify(payload))
+    const socket = this.ws
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket is not connected')
+    }
+    socket.send(JSON.stringify(payload))
   }
 
   close(): void {
-    this.ws?.close()
+    this.teardownSocket()
+    this.notifyConnectionChange(false)
+  }
+
+  private teardownSocket(): void {
+    const socket = this.ws
+    if (!socket) return
+
     this.ws = null
+    socket.onopen = null
+    socket.onclose = null
+    socket.onmessage = null
+    socket.onerror = null
+
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      socket.close()
+    }
   }
 }

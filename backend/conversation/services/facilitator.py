@@ -8,11 +8,43 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.prompts import load_facilitator_prompt
 from backend.conversation.prompts import render_prompt_template
+from backend.conversation.services.argument_summary import build_numbered_transcript
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
 
 _FACILITATOR_CONTENT_REQUIREMENT_MAX_WORDS = 14
+
+_PERSONAL_EXPERIENCE_KEYWORDS = (
+    "personal",
+    "first-person",
+    "first person",
+    "your experience",
+    "anecdote",
+    "your story",
+    "share a brief",
+    "from your life",
+    "from your classes",
+    "your dorm",
+    "your campus",
+    "when i ",
+    "when you ",
+)
+
+
+def _parse_plan_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().casefold() in {"true", "1", "yes"}
+    return bool(value)
+
+
+def is_personal_experience_plan(plan: dict) -> bool:
+    if _parse_plan_bool(plan.get("personal_experience")):
+        return True
+    text = str(plan.get("content_requirement") or "").casefold()
+    return any(keyword in text for keyword in _PERSONAL_EXPERIENCE_KEYWORDS)
 
 
 def clamp_facilitator_content_requirement(text: str) -> str:
@@ -352,29 +384,42 @@ def coerce_speech_act_plan(payload: dict) -> dict:
     if subtype is not None and subtype not in ALLOWED_SA.get(sa_type, set()):
         subtype = "inform" if sa_type == "ASSERTIVES" else None
 
-    return {
+    personal_experience = _parse_plan_bool(payload.get("personal_experience"))
+    plan = {
         "type": sa_type,
         "subtype": subtype,
         "target": target,
         "content_requirement": content_requirement,
         "retrieval_requirement": retrieval_requirement,
+        "personal_experience": personal_experience,
     }
+    if is_personal_experience_plan(plan):
+        plan["personal_experience"] = True
+    if plan["personal_experience"] and str(plan["retrieval_requirement"] or "").strip().casefold() in {
+        "",
+        "none",
+    }:
+        plan["retrieval_requirement"] = "memory"
+    return plan
 
 
 def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile) -> dict:
     """
     Returns a structured plan for the next agent turn.
     """
-    turns = get_short_term_turns(session, limit=3)
-    context = turns_to_messages(turns)
-    history = json.dumps(context, ensure_ascii=False, indent=2)
+    next_turn_count = int(session.turn_count) + 1
+    is_beginning = next_turn_count == 1
+    is_ending = next_turn_count == int(session.max_turns)
+    if is_ending:
+        history = build_numbered_transcript(session)
+    else:
+        turns = get_short_term_turns(session, limit=3)
+        context = turns_to_messages(turns)
+        history = json.dumps(context, ensure_ascii=False, indent=2)
     participants = ["user", *list(session.agent_profiles.order_by("agent_id").values_list("agent_id", flat=True))]
     participants_map = _participants_name_map(session)
     speech_act_options = ALLOWED_TAXONOMY
     template = load_facilitator_prompt()
-    next_turn_count = int(session.turn_count) + 1
-    is_beginning = next_turn_count == 1
-    is_ending = next_turn_count == int(session.max_turns)
     next_speaker_name = (agent.display_name or agent.agent_id).strip()
     chosen_agent_profile = {
         "agent_id": agent.agent_id,

@@ -29,11 +29,14 @@ from backend.conversation.services.tts import synthesize_speech_with_lipsync
 from backend.conversation.services.tts import tts_provider_timeouts
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
+from backend.conversation.services.argument_summary import schedule_argument_summary_for_session
 from backend.conversation.services.turn_processor import mark_terminate
 from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
+from backend.conversation.services.session_serialization import can_continue_session
+from backend.conversation.services.session_serialization import turn_record_to_dict
 from backend.conversation.services.user_proficiency import resolve_user_proficiency
 from backend.conversation.services.user_proficiency import update_proficiency_from_session
 from backend.conversation.services.utterance_duplicates import DuplicateDetectionResult
@@ -145,7 +148,35 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             return
 
         async def runner():
-            await self._advance_loop()
+            try:
+                await self._advance_loop()
+            except Exception as e:
+                logger.exception("advance_loop_failed session_id=%s", self.session_id)
+                if self.session_id is not None:
+                    await self._log_turn_engine(
+                        session_id=self.session_id,
+                        component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
+                        level=TurnEngineLog.LEVEL_ERROR,
+                        event="advance_loop_exception",
+                        message=str(e),
+                        context={"exception_type": type(e).__name__},
+                        correlation_id=self._correlation_id,
+                    )
+                    await self.send_json(
+                        {
+                            "type": "error",
+                            "message": f"Conversation error ({type(e).__name__}): {e}",
+                        },
+                    )
+                    session = await self._get_session(self.session_id)
+                    if session is not None and not session.terminate:
+                        await self._set_pending_forced_user_turn(session.id, pending=True)
+                        await self.send_json(
+                            {
+                                "type": "need_user_turn",
+                                "reason": "engine_error_recovery",
+                            },
+                        )
 
         task = asyncio.create_task(runner())
         self._loop_task = task
@@ -205,6 +236,65 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             self.first_turn_choice = None
             await self.send_json({"type": "need_first_turn_choice"})
             asyncio.create_task(self._materialize_session_knowledge(session.id, discussion))
+            return
+
+        if msg_type == "resume_session":
+            if self.session_id is not None:
+                await self.send_json({"type": "error", "message": "Already in a session on this connection"})
+                return
+            try:
+                session_id = int(content.get("session_id"))
+            except (TypeError, ValueError):
+                await self.send_json({"type": "error", "message": "Invalid session id"})
+                return
+            session = await self._get_session(session_id)
+            if session is None:
+                await self.send_json({"type": "error", "message": "Session not found"})
+                return
+            if not can_continue_session(session):
+                await self.send_json({"type": "error", "message": "This discussion cannot be continued"})
+                return
+            profile_gate = await self._get_profile_gate_state()
+            if profile_gate["profile_completed"] is not True:
+                await self.send_json(
+                    {"type": "error", "message": "Complete your profile before continuing a conversation."},
+                )
+                return
+            if not profile_gate["cefr_level"]:
+                await self.send_json(
+                    {
+                        "type": "error",
+                        "message": "Choose your English level on your profile before continuing.",
+                    },
+                )
+                return
+            if session.paused:
+                await self._set_paused(session_id, paused=False)
+                session.paused = False
+            self.session_id = session.id
+            self.first_turn_choice = False if session.turn_count > 0 else None
+            self.user_volunteered = False
+            turns_payload = await self._session_turns_payload(session.id)
+            need_user_turn = bool(session.pending_forced_user_turn)
+            await self.send_json(
+                {
+                    "type": "session_resumed",
+                    "session_id": session.id,
+                    "topic": session.topic,
+                    "max_turns": session.max_turns,
+                    "turn_count": session.turn_count,
+                    "paused": False,
+                    "turns": turns_payload,
+                    "need_user_turn": need_user_turn,
+                },
+            )
+            await self.send_json(
+                {"type": "participants", "participants": await self._participants_payload(session.id)},
+            )
+            if need_user_turn:
+                await self.send_json({"type": "need_user_turn", "reason": "resume_pending_user_turn"})
+            else:
+                self._ensure_advance_loop_running()
             return
 
         if msg_type == "first_turn_choice":
@@ -404,13 +494,36 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     await self.send_json(
                         {
                             "type": "error",
-                            "message": f"Agent turn failed: {e}",
+                            "message": f"Agent turn failed ({type(e).__name__}): {e}",
                         },
                     )
                     await self.send_json({"type": "agent_status", "status": "finished"})
+                    session_after_fail = await self._get_session(self.session_id)
+                    if (
+                        session_after_fail is not None
+                        and int(session_after_fail.turn_count) >= int(session_after_fail.max_turns)
+                    ):
+                        await self._finalize_session(self.session_id)
+                        await self.send_json(
+                            {"type": "terminated", "reason": "agent_turn_failed_at_max"},
+                        )
+                    elif session_after_fail is not None and not session_after_fail.terminate:
+                        await self._set_pending_forced_user_turn(session_after_fail.id, pending=True)
+                        await self.send_json(
+                            {
+                                "type": "need_user_turn",
+                                "reason": "agent_turn_failed_recovery",
+                            },
+                        )
                     return
                 session_after = await self._get_session(self.session_id)
-                if session_after is None or session_after.paused or session_after.terminate:
+                if session_after is None:
+                    return
+                if session_after.terminate:
+                    await self._finalize_session(self.session_id)
+                    await self.send_json({"type": "terminated", "reason": "terminate_flag"})
+                    return
+                if session_after.paused:
                     return
                 await self.send_json({"type": "turn", "turn": await self._turn_to_dict(turn)})
                 await self.send_json({"type": "agent_status", "status": "finished"})
@@ -476,6 +589,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             user=user,
             topic=topic,
             agent_count=desired_count,
+            max_turns=int(getattr(settings, "CONVERSATION_MAX_TURNS", 20) or 20),
             news_category=str(discussion.get("news_category") or ""),
             news_subtopic=str(discussion.get("news_subtopic") or ""),
             scenario=scenario,
@@ -590,11 +704,24 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         if session is None:
             return
         update_proficiency_from_session(session)
+        schedule_argument_summary_for_session(session)
 
     @database_sync_to_async
     def _get_session(self, session_id: int) -> ConversationSession | None:
         user = self.scope["user"]
         return ConversationSession.objects.filter(id=session_id, user=user).first()
+
+    @database_sync_to_async
+    def _session_turns_payload(self, session_id: int) -> list[dict]:
+        session = (
+            ConversationSession.objects.filter(id=session_id)
+            .select_related("user__userprofile")
+            .first()
+        )
+        if session is None:
+            return []
+        turns = list(session.turns.order_by("turn_index", "subturn_index", "id"))
+        return [turn_record_to_dict(turn=turn, session=session) for turn in turns]
 
     @database_sync_to_async
     def _participants_payload(self, session_id: int) -> list[dict]:
@@ -652,6 +779,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             return
         mark_terminate(session)
         update_proficiency_from_session(session)
+        schedule_argument_summary_for_session(session)
 
     @database_sync_to_async
     def _set_paused(self, session_id: int, *, paused: bool) -> None:

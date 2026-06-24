@@ -12,6 +12,9 @@ from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.audio_tags import filter_to_valid_audio_tags
 from backend.conversation.services.audio_tags import format_audio_tags_for_prompt
 from backend.conversation.services.audio_tags import strip_audio_tags
+from backend.conversation.services.argument_summary import build_numbered_transcript
+from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
+from backend.conversation.services.argument_summary import is_closing_turn
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
@@ -20,6 +23,8 @@ from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import map_retrieval_sources
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.web_search import build_web_search_query
+from backend.conversation.services.facilitator import is_personal_experience_plan
+from backend.conversation.services.speaker_profiles import build_agent_personal_profile_context
 from backend.conversation.services.user_proficiency import resolve_user_proficiency
 
 _AGENT_RETRIEVAL_TOP_K = 5
@@ -289,6 +294,8 @@ def resolve_agent_retrieval_sources(
         sources.add("web")
     if session is not None and _should_retrieve_session_news(facilitator_plan, session):
         sources.add("news")
+    if is_personal_experience_plan(facilitator_plan):
+        sources |= map_retrieval_sources("memory")
     return sources
 
 
@@ -348,9 +355,13 @@ def generate_agent_utterance_with_retrieval(
     agent: AgentProfile,
     facilitator_plan: dict,
 ) -> GeneratedAgentUtterance:
-    turns = get_short_term_turns(session, limit=3)
-    context = turns_to_messages(turns)
-    history = json.dumps(context, ensure_ascii=False, indent=2)
+    closing = is_closing_turn(session)
+    if closing:
+        history = build_numbered_transcript(session)
+    else:
+        turns = get_short_term_turns(session, limit=3)
+        context = turns_to_messages(turns)
+        history = json.dumps(context, ensure_ascii=False, indent=2)
     retrieval_plan = {
         **facilitator_plan,
         "_agent_persona_name": str((agent.personality or {}).get("persona_name") or ""),
@@ -360,6 +371,15 @@ def generate_agent_utterance_with_retrieval(
         retrieval_plan,
         agent=agent,
     )
+
+    if is_personal_experience_plan(facilitator_plan):
+        agent_personal_profile = build_agent_personal_profile_context(
+            session.user,
+            agent.agent_id,
+            topic=session.topic,
+        )
+    else:
+        agent_personal_profile = "Not applicable."
 
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")
@@ -375,6 +395,7 @@ def generate_agent_utterance_with_retrieval(
         major=str((agent.personality or {}).get("major") or ""),
         topic=session.topic,
         history=history,
+        argument_summary_bullets=get_argument_summary_bullets_for_agent(session),
         target=str(facilitator_plan.get("target") or "everyone"),
         target_type=_target_type(str(facilitator_plan.get("target") or "")),
         target_display_name=_target_display_name(
@@ -384,8 +405,10 @@ def generate_agent_utterance_with_retrieval(
         speech_act_type=str(facilitator_plan.get("type") or "ASSERTIVES"),
         speech_act_subtype=str(facilitator_plan.get("subtype") or "inform"),
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
+        agent_personal_profile=agent_personal_profile,
         retrieved_context=retrieval_context.rendered_context,
         audio_tags=format_audio_tags_for_prompt(),
+        is_ending="true" if closing else "false",
     )
     system = SystemMessage(content=prompt_text)
 

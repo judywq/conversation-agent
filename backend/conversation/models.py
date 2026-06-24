@@ -53,6 +53,12 @@ class ConversationSession(TimestampedBase):
     # Running counts of speech acts for facilitator target-mix guidance (major + ASSERTIVES/DIRECTIVES subtypes).
     speech_act_counters = models.JSONField(default=dict, blank=True)
 
+    argument_summary = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Toulmin-structured argument summary generated when the session ends.",
+    )
+
     def __str__(self) -> str:
         return f"ConversationSession({self.id}, user={self.user_id}, turns={self.turn_count})"
 

@@ -9,6 +9,9 @@ from rest_framework.views import APIView
 
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
+from backend.conversation.services.argument_summary import get_argument_summary_for_session
+from backend.conversation.services.session_serialization import session_detail_to_dict
+from backend.conversation.services.session_serialization import session_summary_to_dict
 from backend.conversation.services.discussion_scenario import DISCUSSION_PROFILE_FIELDS
 from backend.conversation.services.discussion_scenario import apply_discussion_result_to_profile
 from backend.conversation.services.discussion_scenario import scenario_result_to_dict
@@ -57,12 +60,15 @@ class DiscussionScenarioView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         cefr_level = None
+        reference_utterance = None
         if hasattr(request.user, "userprofile"):
             cefr_level = request.user.userprofile.cefr_level
+            reference_utterance = request.user.userprofile.proficiency_reference_utterance
         result = setup_discussion_context(
             category=category,
             subtopic=subtopic,
             cefr_level=cefr_level,
+            reference_utterance=reference_utterance,
         )
         if hasattr(request.user, "userprofile"):
             profile = request.user.userprofile
@@ -154,4 +160,58 @@ class UserAudioUploadView(APIView):
                 "audio_url": clip.audio_file.url,
             },
         )
+
+
+class SessionArgumentSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id: int):
+        session = ConversationSession.objects.filter(id=session_id, user=request.user).first()
+        if session is None:
+            return Response({"detail": "Session not found."}, status=404)
+        return Response(get_argument_summary_for_session(session))
+
+
+class SessionListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            limit = min(max(int(request.query_params.get("limit", 20)), 1), 100)
+        except (TypeError, ValueError):
+            limit = 20
+        try:
+            offset = max(int(request.query_params.get("offset", 0)), 0)
+        except (TypeError, ValueError):
+            offset = 0
+
+        queryset = (
+            ConversationSession.objects.filter(user=request.user, turn_count__gt=0)
+            .order_by("-created_at")
+        )
+        total = queryset.count()
+        sessions = list(queryset[offset : offset + limit])
+        return Response(
+            {
+                "count": total,
+                "limit": limit,
+                "offset": offset,
+                "results": [session_summary_to_dict(session) for session in sessions],
+            },
+        )
+
+
+class SessionDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id: int):
+        session = (
+            ConversationSession.objects.filter(id=session_id, user=request.user)
+            .prefetch_related("turns")
+            .select_related("user__userprofile")
+            .first()
+        )
+        if session is None:
+            return Response({"detail": "Session not found."}, status=404)
+        return Response(session_detail_to_dict(session))
 

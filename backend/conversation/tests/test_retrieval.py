@@ -39,6 +39,18 @@ LABEL_FILTER_SCORE = 0.1
 TRACE_EXEMPLAR_ID = 123
 
 
+def test_merge_memory_items_langmem_first_dedupes_by_title_and_excerpt() -> None:
+    first = RetrievedItem(source="memory", title="Climate", excerpt="Rising seas")
+    dupe = RetrievedItem(source="memory", title="Climate", excerpt="Rising seas")
+    other = RetrievedItem(source="memory", title="Jobs", excerpt="Green economy")
+
+    merged = retrieval_service._merge_memory_items_langmem_first([first], [dupe, other], top_k=5)
+
+    assert len(merged) == 2
+    assert merged[0].title == "Climate"
+    assert merged[1].title == "Jobs"
+
+
 def _embed_memory(memory: UserMemory) -> UserMemory:
     result = generate_embedding(build_user_memory_embedding_text(memory))
     memory.embedding = result.vector

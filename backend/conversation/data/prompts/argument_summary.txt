@@ -1,0 +1,43 @@
+You summarize a classroom discussion grouped by speaker.
+
+Discussion topic:
+{topic}
+
+Transcript (each line is one speaking turn):
+{transcript}
+
+Previous summary (merge cumulatively; keep all still-valid speakers, claims, and evidence; add new items; remove duplicates only):
+{previous_summary}
+
+For each participant who expressed a substantive position, return one entry with:
+- speaker_id: "user" for the human, or the agent id from the transcript
+- speaker_name: display name used in the discussion
+- speaker_type: "user" or "agent"
+- claim: their overall stance or position (one short phrase)
+- evidence: items supporting that stance, each with type "fact", "data", or "example"
+
+Return strict JSON only:
+{{
+  "speakers": [
+    {{
+      "speaker_id": "user",
+      "speaker_name": "Display name",
+      "speaker_type": "user",
+      "claim": "Short stance phrase",
+      "evidence": [
+        {{ "type": "fact", "text": "Short phrase" }},
+        {{ "type": "data", "text": "Short phrase" }},
+        {{ "type": "example", "text": "Short phrase" }}
+      ]
+    }}
+  ]
+}}
+
+Rules:
+- Use phrase fragments only; NO full sentences; NO quotes from the transcript
+- Maximum 15 words per text field
+- Include every speaker with a clear stance (user and agents)
+- Up to 6 evidence items per speaker; include only types actually present
+- Summarize ALL turns cumulatively; merge with previous summary; never list only the latest turn
+- Use only content from the transcript; do not invent facts
+- Write all text in English
