@@ -23,6 +23,8 @@ from backend.conversation.services.retrieval import RetrievedContext
 from backend.conversation.services.retrieval import map_retrieval_sources
 from backend.conversation.services.retrieval import retrieve
 from backend.conversation.services.web_search import build_web_search_query
+from backend.conversation.services.facilitator import is_personal_experience_plan
+from backend.conversation.services.speaker_profiles import build_agent_personal_profile_context
 from backend.conversation.services.user_proficiency import resolve_user_proficiency
 
 _AGENT_RETRIEVAL_TOP_K = 5
@@ -292,6 +294,8 @@ def resolve_agent_retrieval_sources(
         sources.add("web")
     if session is not None and _should_retrieve_session_news(facilitator_plan, session):
         sources.add("news")
+    if is_personal_experience_plan(facilitator_plan):
+        sources |= map_retrieval_sources("memory")
     return sources
 
 
@@ -368,6 +372,15 @@ def generate_agent_utterance_with_retrieval(
         agent=agent,
     )
 
+    if is_personal_experience_plan(facilitator_plan):
+        agent_personal_profile = build_agent_personal_profile_context(
+            session.user,
+            agent.agent_id,
+            topic=session.topic,
+        )
+    else:
+        agent_personal_profile = "Not applicable."
+
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")
     template = next(
@@ -392,6 +405,7 @@ def generate_agent_utterance_with_retrieval(
         speech_act_type=str(facilitator_plan.get("type") or "ASSERTIVES"),
         speech_act_subtype=str(facilitator_plan.get("subtype") or "inform"),
         content_requirement=str(facilitator_plan.get("content_requirement") or ""),
+        agent_personal_profile=agent_personal_profile,
         retrieved_context=retrieval_context.rendered_context,
         audio_tags=format_audio_tags_for_prompt(),
         is_ending="true" if closing else "false",

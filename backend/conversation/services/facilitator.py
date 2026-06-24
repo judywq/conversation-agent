@@ -15,6 +15,37 @@ from backend.conversation.services.memory import turns_to_messages
 
 _FACILITATOR_CONTENT_REQUIREMENT_MAX_WORDS = 14
 
+_PERSONAL_EXPERIENCE_KEYWORDS = (
+    "personal",
+    "first-person",
+    "first person",
+    "your experience",
+    "anecdote",
+    "your story",
+    "share a brief",
+    "from your life",
+    "from your classes",
+    "your dorm",
+    "your campus",
+    "when i ",
+    "when you ",
+)
+
+
+def _parse_plan_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().casefold() in {"true", "1", "yes"}
+    return bool(value)
+
+
+def is_personal_experience_plan(plan: dict) -> bool:
+    if _parse_plan_bool(plan.get("personal_experience")):
+        return True
+    text = str(plan.get("content_requirement") or "").casefold()
+    return any(keyword in text for keyword in _PERSONAL_EXPERIENCE_KEYWORDS)
+
 
 def clamp_facilitator_content_requirement(text: str) -> str:
     """Keep facilitator instructions to one sentence and fewer than 15 words."""
@@ -353,13 +384,23 @@ def coerce_speech_act_plan(payload: dict) -> dict:
     if subtype is not None and subtype not in ALLOWED_SA.get(sa_type, set()):
         subtype = "inform" if sa_type == "ASSERTIVES" else None
 
-    return {
+    personal_experience = _parse_plan_bool(payload.get("personal_experience"))
+    plan = {
         "type": sa_type,
         "subtype": subtype,
         "target": target,
         "content_requirement": content_requirement,
         "retrieval_requirement": retrieval_requirement,
+        "personal_experience": personal_experience,
     }
+    if is_personal_experience_plan(plan):
+        plan["personal_experience"] = True
+    if plan["personal_experience"] and str(plan["retrieval_requirement"] or "").strip().casefold() in {
+        "",
+        "none",
+    }:
+        plan["retrieval_requirement"] = "memory"
+    return plan
 
 
 def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile) -> dict:

@@ -20,6 +20,7 @@ from backend.conversation.services.speaker_memories import seed_relationship_mem
 from backend.conversation.services.speaker_memories import sanitize_all_langmem_memories
 from backend.conversation.services.speaker_memories import sanitize_namespace_memories
 from backend.conversation.services.speaker_memories import user_profile_from_rows
+from backend.conversation.services.speaker_memories import search_user_memories
 from backend.conversation.services.speaker_memories import seed_user_from_userprofile
 from backend.conversation.services.speaker_profile_schemas import AgentPersonalProfile
 from backend.conversation.services.speaker_profile_schemas import RelationshipProfile
@@ -175,6 +176,70 @@ def format_profiles_for_prompt(
         agent=get_agent_profile(user, agent_slug, store=store),
         relationship=get_relationship_profile(user, agent_slug, store=store),
     )
+
+
+def build_agent_personal_profile_context(
+    user: Any,
+    agent_slug: str,
+    *,
+    topic: str = "",
+    store: BaseStore | None = None,
+) -> str:
+    if not langmem_enabled():
+        return (
+            "No stored personal profile available. "
+            "You may invent one brief plausible first-person detail consistent with your persona and major."
+        )
+
+    profile = get_agent_profile(user, agent_slug, store=store)
+    lines: list[str] = []
+    if profile is not None:
+        if profile.persona_summary:
+            lines.append(f"Persona: {profile.persona_summary}")
+        if profile.speaking_style:
+            lines.append(f"Speaking style: {profile.speaking_style}")
+        for fact in profile.self_revealed_facts:
+            cleaned = str(fact).strip()
+            if cleaned:
+                lines.append(f"- {cleaned}")
+
+    topic_query = str(topic or "").strip()
+    if topic_query:
+        hits = search_user_memories(
+            user,
+            topic_query,
+            agent_slug=agent_slug,
+            top_k=5,
+            store=store,
+        )
+        agent_namespace = agent_memories_ns(user.id, agent_slug)
+        seen = {line.casefold() for line in lines}
+        for row, _score, namespace in hits:
+            if namespace != agent_namespace:
+                continue
+            if row.memory_type not in {
+                "self_fact",
+                "self_event",
+                "self_preference",
+                "self_plan",
+                "self_style",
+            }:
+                continue
+            content = str(row.content or "").strip()
+            if not content:
+                continue
+            line = f"- [{row.memory_type}] {content}"
+            if line.casefold() in seen:
+                continue
+            lines.append(line)
+            seen.add(line.casefold())
+
+    if not lines:
+        return (
+            "No personal anecdotes on file for this agent yet. "
+            "You may invent one brief plausible first-person example aligned with your persona, major, and the topic."
+        )
+    return "Reuse these personal details if relevant; do not contradict them:\n" + "\n".join(lines)
 
 
 def seed_user_profile_from_userprofile(user: Any, *, store: BaseStore | None = None) -> UserPersonalProfile:
