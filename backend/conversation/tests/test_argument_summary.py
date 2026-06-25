@@ -13,6 +13,8 @@ from backend.conversation.services.argument_summary import get_argument_summary_
 from backend.conversation.services.argument_summary import mark_argument_summary_pending
 from backend.conversation.services.argument_summary import merge_speaker_summaries
 from backend.conversation.services.argument_summary import parse_argument_summary_response
+from backend.conversation.services.argument_summary import _normalize_speaker
+from backend.conversation.services.argument_summary import _speakers_from_summary
 from backend.conversation.services.turn_manager import decide_next_speaker
 
 
@@ -42,7 +44,7 @@ def test_build_numbered_transcript_includes_speakers(user) -> None:
     assert "commuting saves money" in transcript
 
 
-def test_parse_argument_summary_response_normalizes_speakers() -> None:
+def test_parse_argument_summary_response_normalizes_nested_speakers() -> None:
     raw = json.dumps(
         {
             "speakers": [
@@ -50,19 +52,37 @@ def test_parse_argument_summary_response_normalizes_speakers() -> None:
                     "speaker_id": "user",
                     "speaker_name": "Judy",
                     "speaker_type": "user",
-                    "claim": "Dorms build community",
-                    "evidence": [
-                        {"type": "fact", "text": "Shared meals daily contact"},
-                        {"type": "data", "text": "Survey shows more friendships"},
+                    "claims": [
+                        {
+                            "text": "Dorms build community",
+                            "reasons": [
+                                {
+                                    "text": "Shared meals create daily contact",
+                                    "explanations": [
+                                        {"type": "fact", "text": "Common dining halls"},
+                                        {"type": "data", "text": "More friendships reported"},
+                                    ],
+                                },
+                            ],
+                        },
                     ],
                 },
                 {
                     "speaker_id": "agent_1",
                     "speaker_name": "Lucas",
                     "speaker_type": "agent",
-                    "claim": "Commuting is cheaper",
-                    "evidence": [
-                        {"type": "example", "text": "Saves housing meal plan costs"},
+                    "claims": [
+                        {
+                            "text": "Commuting is cheaper",
+                            "reasons": [
+                                {
+                                    "text": "Avoids housing and meal-plan fees",
+                                    "explanations": [
+                                        {"type": "example", "text": "Saves thousands per semester"},
+                                    ],
+                                },
+                            ],
+                        },
                     ],
                 },
             ],
@@ -72,37 +92,47 @@ def test_parse_argument_summary_response_normalizes_speakers() -> None:
     parsed = parse_argument_summary_response(raw)
 
     assert len(parsed["speakers"]) == 2
-    assert parsed["speakers"][0]["speaker_name"] == "Judy"
-    assert parsed["speakers"][0]["claim"] == "Dorms build community"
-    assert parsed["speakers"][1]["evidence"][0]["type"] == "example"
+    assert parsed["speakers"][0]["claims"][0]["text"] == "Dorms build community"
+    assert parsed["speakers"][0]["claims"][0]["reasons"][0]["explanations"][1]["type"] == "data"
+    assert parsed["speakers"][1]["claims"][0]["reasons"][0]["explanations"][0]["type"] == "example"
 
 
-def test_normalize_evidence_clamps_length_and_keeps_turn() -> None:
-    from backend.conversation.services.argument_summary import _normalize_evidence
-
-    items = _normalize_evidence(
-        [
-            {
-                "turn": 2,
-                "type": "fact",
-                "text": "This evidence phrase is intentionally much too long for the summary panel",
-            },
-        ],
+def test_normalize_speaker_migrates_flat_legacy_shape() -> None:
+    speaker = _normalize_speaker(
+        {
+            "speaker_id": "user",
+            "speaker_name": "Judy",
+            "speaker_type": "user",
+            "claim": "Dorms build community",
+            "evidence": [
+                {"turn": 2, "type": "fact", "text": "Shared meals daily contact"},
+            ],
+        },
     )
 
-    assert len(items) == 1
-    assert items[0]["turn"] == 2
-    assert len(str(items[0]["text"]).split()) <= 8
+    assert speaker is not None
+    assert speaker["claims"][0]["text"] == "Dorms build community"
+    assert speaker["claims"][0]["reasons"][0]["text"] == "Shared meals daily contact"
+    assert "turn" not in speaker["claims"][0]["reasons"][0]["explanations"][0]
 
 
-def test_merge_speaker_summaries_accumulates_evidence() -> None:
+def test_merge_speaker_summaries_updates_existing_claim_and_reason() -> None:
     previous = [
         {
             "speaker_id": "user",
             "speaker_name": "Judy",
             "speaker_type": "user",
-            "claim": "Dorms help community",
-            "evidence": [{"turn": 1, "type": "fact", "text": "Shared meals"}],
+            "claims": [
+                {
+                    "text": "Dorms help community",
+                    "reasons": [
+                        {
+                            "text": "Shared meals",
+                            "explanations": [{"type": "fact", "text": "Daily contact"}],
+                        },
+                    ],
+                },
+            ],
         },
     ]
     new = [
@@ -110,17 +140,28 @@ def test_merge_speaker_summaries_accumulates_evidence() -> None:
             "speaker_id": "user",
             "speaker_name": "Judy",
             "speaker_type": "user",
-            "claim": "Dorms help freshmen build community",
-            "evidence": [
-                {"turn": 3, "type": "data", "text": "70 percent made friends"},
+            "claims": [
+                {
+                    "text": "Dorms help freshmen build community",
+                    "reasons": [
+                        {
+                            "text": "Shared meals",
+                            "explanations": [{"type": "data", "text": "70 percent made friends"}],
+                        },
+                    ],
+                },
             ],
         },
         {
             "speaker_id": "agent_1",
             "speaker_name": "Lucas",
             "speaker_type": "agent",
-            "claim": "Commuting saves money",
-            "evidence": [],
+            "claims": [
+                {
+                    "text": "Commuting saves money",
+                    "reasons": [],
+                },
+            ],
         },
     ]
 
@@ -128,39 +169,13 @@ def test_merge_speaker_summaries_accumulates_evidence() -> None:
 
     assert len(merged) == 2
     user = merged[0]
-    assert user["claim"] == "Dorms help freshmen build community"
-    assert len(user["evidence"]) == 2
+    assert user["claims"][0]["text"] == "Dorms help freshmen build community"
+    assert len(user["claims"]) == 1
+    assert len(user["claims"][0]["reasons"]) == 1
+    assert len(user["claims"][0]["reasons"][0]["explanations"]) == 2
 
 
-def test_merge_speaker_summaries_replaces_evidence_for_same_turn() -> None:
-    previous = [
-        {
-            "speaker_id": "user",
-            "speaker_name": "Judy",
-            "speaker_type": "user",
-            "claim": "Dorms help community",
-            "evidence": [{"turn": 2, "type": "fact", "text": "Shared meals"}],
-        },
-    ]
-    new = [
-        {
-            "speaker_id": "user",
-            "speaker_name": "Judy",
-            "speaker_type": "user",
-            "claim": "Dorms help freshmen build community",
-            "evidence": [{"turn": 2, "type": "data", "text": "More daily contact"}],
-        },
-    ]
-
-    merged = merge_speaker_summaries(previous, new)
-
-    user = merged[0]
-    assert len(user["evidence"]) == 1
-    assert user["evidence"][0]["type"] == "data"
-    assert user["evidence"][0]["turn"] == 2
-
-
-def test_format_argument_summary_bullets_renders_speaker_stances() -> None:
+def test_format_argument_summary_bullets_renders_nested_structure_without_turn_numbers() -> None:
     bullets = format_argument_summary_bullets(
         {
             "status": "ready",
@@ -169,17 +184,29 @@ def test_format_argument_summary_bullets_renders_speaker_stances() -> None:
                     "speaker_id": "user",
                     "speaker_name": "Judy",
                     "speaker_type": "user",
-                    "claim": "Dorms build community",
-                    "evidence": [
-                        {"type": "fact", "text": "Shared meals daily contact"},
+                    "claims": [
+                        {
+                            "text": "Dorms build community",
+                            "reasons": [
+                                {
+                                    "text": "Shared meals create contact",
+                                    "explanations": [
+                                        {"type": "fact", "text": "Common dining halls"},
+                                    ],
+                                },
+                            ],
+                        },
                     ],
                 },
             ],
         },
     )
 
-    assert "- Judy: Dorms build community" in bullets
-    assert "  - Fact: Shared meals daily contact" in bullets
+    assert "- Judy" in bullets
+    assert "Claim: Dorms build community" in bullets
+    assert "Reason: Shared meals create contact" in bullets
+    assert "Fact: Common dining halls" in bullets
+    assert "Turn " not in bullets
 
 
 @pytest.mark.django_db
@@ -194,8 +221,12 @@ def test_get_argument_summary_bullets_for_agent_uses_ready_summary(user) -> None
                     "speaker_id": "user",
                     "speaker_name": "Judy",
                     "speaker_type": "user",
-                    "claim": "Dorms build community",
-                    "evidence": [],
+                    "claims": [
+                        {
+                            "text": "Dorms build community",
+                            "reasons": [],
+                        },
+                    ],
                 },
             ],
         },
@@ -203,11 +234,12 @@ def test_get_argument_summary_bullets_for_agent_uses_ready_summary(user) -> None
 
     bullets = get_argument_summary_bullets_for_agent(session)
 
-    assert "Judy: Dorms build community" in bullets
+    assert "Judy" in bullets
+    assert "Claim: Dorms build community" in bullets
 
 
 @pytest.mark.django_db
-def test_build_argument_summary_prompt_includes_previous_summary(user) -> None:
+def test_build_argument_summary_prompt_includes_previous_summary_and_new_rules(user) -> None:
     session = ConversationSession.objects.create(
         user=user,
         topic="Campus life",
@@ -218,8 +250,12 @@ def test_build_argument_summary_prompt_includes_previous_summary(user) -> None:
                     "speaker_id": "user",
                     "speaker_name": "Judy",
                     "speaker_type": "user",
-                    "claim": "Dorms build community",
-                    "evidence": [],
+                    "claims": [
+                        {
+                            "text": "Dorms build community",
+                            "reasons": [],
+                        },
+                    ],
                 },
             ],
         },
@@ -235,7 +271,9 @@ def test_build_argument_summary_prompt_includes_previous_summary(user) -> None:
     prompt = build_argument_summary_prompt(session=session)
 
     assert "Dorms build community" in prompt
-    assert "Previous summary" in prompt
+    assert "Previous speaker opinions" in prompt
+    assert "valuable argumentation" in prompt
+    assert "Do NOT include turn numbers" in prompt
     assert "Turn 1" in prompt
 
 
@@ -251,8 +289,17 @@ def test_mark_argument_summary_pending_preserves_speakers(user) -> None:
                     "speaker_id": "user",
                     "speaker_name": "Judy",
                     "speaker_type": "user",
-                    "claim": "Dorms build community",
-                    "evidence": [{"type": "fact", "text": "Shared meals"}],
+                    "claims": [
+                        {
+                            "text": "Dorms build community",
+                            "reasons": [
+                                {
+                                    "text": "Shared meals",
+                                    "explanations": [{"type": "fact", "text": "Daily contact"}],
+                                },
+                            ],
+                        },
+                    ],
                 },
             ],
         },
@@ -262,8 +309,35 @@ def test_mark_argument_summary_pending_preserves_speakers(user) -> None:
     session.refresh_from_db()
 
     assert session.argument_summary["status"] == "pending"
-    assert session.argument_summary["speakers"][0]["claim"] == "Dorms build community"
+    assert session.argument_summary["speakers"][0]["claims"][0]["text"] == "Dorms build community"
     assert session.argument_summary["turn_count"] == session.turn_count
+
+
+def test_speakers_from_summary_migrates_legacy_topic_claims() -> None:
+    speakers = _speakers_from_summary(
+        {
+            "status": "ready",
+            "claims": [
+                {
+                    "text": "AI helps learning",
+                    "arguments": [
+                        {
+                            "type": "argument",
+                            "reason": {"text": "Adaptive feedback"},
+                            "explanations": [
+                                {"type": "example", "text": "Personalized quizzes"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert len(speakers) == 1
+    assert speakers[0]["claims"][0]["text"] == "AI helps learning"
+    assert speakers[0]["claims"][0]["reasons"][0]["text"] == "Adaptive feedback"
+    assert speakers[0]["claims"][0]["reasons"][0]["explanations"][0]["text"] == "Personalized quizzes"
 
 
 @pytest.mark.django_db
@@ -300,8 +374,12 @@ def test_session_argument_summary_api_returns_ready_payload(user, client) -> Non
                 "speaker_id": "user",
                 "speaker_name": "Judy",
                 "speaker_type": "user",
-                "claim": "AI helps personalized learning",
-                "evidence": [],
+                "claims": [
+                    {
+                        "text": "AI helps personalized learning",
+                        "reasons": [],
+                    },
+                ],
             },
         ],
     }
@@ -313,7 +391,7 @@ def test_session_argument_summary_api_returns_ready_payload(user, client) -> Non
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
-    assert response.json()["speakers"][0]["claim"] == "AI helps personalized learning"
+    assert response.json()["speakers"][0]["claims"][0]["text"] == "AI helps personalized learning"
 
 
 @pytest.mark.django_db

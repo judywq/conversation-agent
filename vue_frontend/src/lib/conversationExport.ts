@@ -1,11 +1,6 @@
 import type { ArgumentSummaryResult } from '@/services/conversationService'
 import type { ConversationTurn } from '@/services/conversationWs'
-
-const EVIDENCE_LABELS: Record<string, string> = {
-  fact: 'Fact',
-  data: 'Data',
-  example: 'Example',
-}
+import { formatSpeakerOpinionsText } from '@/lib/argumentSummaryDisplay'
 
 export function buildExportFilename(
   sessionId: number,
@@ -44,30 +39,7 @@ export function formatTranscriptText(
 }
 
 export function formatArgumentSummaryText(summary: ArgumentSummaryResult): string {
-  if (summary.status !== 'ready') {
-    return ''
-  }
-
-  const lines: string[] = []
-  const speakerList = summary.speakers || []
-
-  for (const speaker of speakerList) {
-    const name = (speaker.speaker_name || speaker.speaker_id || 'Speaker').trim()
-    const claim = (speaker.claim || '').trim()
-    if (!claim) continue
-    lines.push(`${name}`)
-    lines.push(`  Stance: ${claim}`)
-    for (const evidence of speaker.evidence || []) {
-      const evidenceText = (evidence.text || '').trim()
-      if (!evidenceText) continue
-      const typeLabel = EVIDENCE_LABELS[evidence.type] || 'Fact'
-      const turnPrefix = evidence.turn ? `Turn ${evidence.turn} · ` : ''
-      lines.push(`  - ${turnPrefix}${typeLabel}: ${evidenceText}`)
-    }
-    lines.push('')
-  }
-
-  return lines.join('\n').trimEnd()
+  return formatSpeakerOpinionsText(summary)
 }
 
 export function formatCombinedExportText(

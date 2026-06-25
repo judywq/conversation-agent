@@ -66,6 +66,6 @@ def test_agent_persona_template_substitutes_major():
         personal_experience_priority="Not applicable.",
     )
     assert "Computer Science" in rendered
-    assert "Discussion summary by speaker" in rendered
+    assert "Speaker opinions" in rendered
     assert "Dorms build community" in rendered
     assert "{major}" not in rendered

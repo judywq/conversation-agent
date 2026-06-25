@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import json
 import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -12,6 +15,7 @@ from langchain_core.messages import SystemMessage
 from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.names import cefr_tts_voice_for_level
 from backend.conversation.services.tts import synthesize_speech
 
@@ -38,7 +42,12 @@ def _cefr_tts_max_workers() -> int:
     return len(CEFR_LEVELS)
 
 
-def generate_cefr_topic_samples(*, topic: str, voice: str | None = None) -> list[dict[str, str]]:
+def generate_cefr_topic_samples(
+    *,
+    topic: str,
+    voice: str | None = None,
+    user: Any | None = None,
+) -> list[dict[str, str]]:
     t_pipeline0 = time.perf_counter()
     topic_log = topic[:200]
     provider = str(getattr(settings, "TTS_PROVIDER", "openai") or "openai").lower()
@@ -71,7 +80,7 @@ def generate_cefr_topic_samples(*, topic: str, voice: str | None = None) -> list
     t_llm0 = time.perf_counter()
     try:
         llm = get_default_chat_llm()
-        result = llm.invoke([SystemMessage(content=prompt_text)])
+        result = invoke_chat_llm(llm, [SystemMessage(content=prompt_text)], user=user)
         raw = result.content if hasattr(result, "content") else str(result)
     except Exception:
         logger.exception(

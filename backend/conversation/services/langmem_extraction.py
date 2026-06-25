@@ -13,6 +13,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.speaker_profiles import extract_and_update_profiles
+from backend.conversation.services.llm_tracing import conversation_tracing_context
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +76,19 @@ def run_langmem_extraction_for_turn(
         return
 
     try:
-        turns = get_short_term_turns(session, limit=10)
-        messages = turns_to_langmem_messages(turns)
-        if not messages:
-            return
-
-        if turn.speaker_type == TurnRecord.SPEAKER_TYPE_USER:
-            extract_and_update_profiles(user, messages)
-        elif turn.speaker_type == TurnRecord.SPEAKER_TYPE_AGENT:
-            agent_slug = (turn.speaker or "").strip()
-            if not agent_slug:
+        with conversation_tracing_context(user):
+            turns = get_short_term_turns(session, limit=10)
+            messages = turns_to_langmem_messages(turns)
+            if not messages:
                 return
-            extract_and_update_profiles(user, messages, agent_slug=agent_slug)
+
+            if turn.speaker_type == TurnRecord.SPEAKER_TYPE_USER:
+                extract_and_update_profiles(user, messages)
+            elif turn.speaker_type == TurnRecord.SPEAKER_TYPE_AGENT:
+                agent_slug = (turn.speaker or "").strip()
+                if not agent_slug:
+                    return
+                extract_and_update_profiles(user, messages, agent_slug=agent_slug)
     except Exception:
         logger.exception(
             "langmem_extraction_failed",

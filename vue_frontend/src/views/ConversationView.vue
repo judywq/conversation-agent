@@ -234,11 +234,8 @@ const argumentDownloadBlockedReason = computed(() => {
   if (endedSummaryLoading.value || endedArgumentSummary.value?.status === 'pending') {
     return 'Argument summary is still being generated.'
   }
-  if (endedArgumentSummary.value?.status === 'failed') {
-    return 'Argument summary could not be generated.'
-  }
-  if (endedArgumentSummary.value?.status === 'empty') {
-    return 'No structured arguments were identified.'
+  if (endedArgumentSummary.value?.status === 'failed' || endedArgumentSummary.value?.status === 'empty') {
+    return 'No speaker opinions were identified.'
   }
   return ''
 })
@@ -1559,7 +1556,7 @@ onUnmounted(() => {
               :disabled="!canDownloadArgumentStructure"
               @click="downloadArgumentStructure"
             >
-              Download argument structure
+              Download speaker opinions
             </Button>
             <Button
               variant="outline"

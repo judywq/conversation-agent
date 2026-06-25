@@ -17,6 +17,7 @@ from backend.conversation.services.argument_summary import build_numbered_transc
 from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
 from backend.conversation.services.argument_summary import is_closing_turn
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
@@ -445,7 +446,7 @@ def generate_agent_utterance_with_retrieval(
     system = SystemMessage(content=prompt_text)
 
     llm = get_default_chat_llm()
-    result = llm.invoke([system])
+    result = invoke_chat_llm(llm, [system], user=session.user)
     text = result.content if hasattr(result, "content") else str(result)
     speech_act_type = str(facilitator_plan.get("type") or "ASSERTIVES")
     speech_act_subtype = str(facilitator_plan.get("subtype") or "")

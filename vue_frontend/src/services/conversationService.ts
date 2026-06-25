@@ -43,23 +43,30 @@ export interface DiscussionScenarioResult {
   web_context_fetched: boolean
 }
 
-export interface ArgumentSummaryReason {
+export interface ArgumentSummaryExplanation {
+  type: 'fact' | 'data' | 'example'
   text: string
 }
 
-export interface ArgumentSummaryEvidence {
-  type: 'fact' | 'data' | 'example'
+export interface ArgumentSummaryReason {
   text: string
-  /** Speaking-turn number from the transcript, when available. */
-  turn?: number
+  explanations: ArgumentSummaryExplanation[]
+}
+
+export interface ArgumentSummaryClaim {
+  text: string
+  reasons: ArgumentSummaryReason[]
 }
 
 export interface ArgumentSummarySpeaker {
   speaker_id: string
   speaker_name: string
   speaker_type: 'user' | 'agent'
-  claim: string
-  evidence: ArgumentSummaryEvidence[]
+  claims: ArgumentSummaryClaim[]
+  /** @deprecated flat legacy shape */
+  claim?: string
+  /** @deprecated flat legacy shape */
+  evidence?: ArgumentSummaryExplanation[]
 }
 
 export interface ArgumentSummaryResult {
@@ -73,7 +80,7 @@ export interface ArgumentSummaryResult {
     arguments: Array<{
       type: string
       reason: { text: string }
-      explanations: ArgumentSummaryEvidence[]
+      explanations: ArgumentSummaryExplanation[]
     }>
   }>
 }

@@ -197,7 +197,7 @@ onMounted(() => {
             </div>
 
             <div class="space-y-2">
-              <h3 class="text-sm font-medium">Argument structure</h3>
+              <h3 class="text-sm font-medium">Speaker opinions</h3>
               <div class="max-h-[min(60vh,28rem)] overflow-y-auto rounded-md border p-3">
                 <ArgumentSummaryReadonly :summary="sessionDetail(session.id)!.argument_summary" />
               </div>
@@ -221,7 +221,7 @@ onMounted(() => {
               :disabled="sessionDetail(session.id)!.argument_summary.status !== 'ready'"
               @click="downloadArguments(sessionDetail(session.id)!)"
             >
-              Download argument structure
+              Download speaker opinions
             </Button>
             <Button
               variant="outline"

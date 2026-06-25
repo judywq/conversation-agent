@@ -10,6 +10,8 @@ from langmem import create_memory_store_manager
 from backend.conversation.services.langmem_store import speaker_profile_store
 from backend.conversation.services.langmem_store import speaker_profiles_enabled
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import conversation_tracing_context
+from backend.conversation.services.llm_tracing import invoke_runnable
 from backend.conversation.services.speaker_memories import agent_profile_from_rows
 from backend.conversation.services.speaker_memories import get_all_speaker_memories
 from backend.conversation.services.speaker_memories import langmem_enabled
@@ -297,13 +299,18 @@ def extract_and_update_profiles(
         if agent_slug:
             agent_ns = agent_memories_ns(user.id, agent_slug)
             relationship_ns = relationship_memories_ns(user.id, agent_slug)
-            _agent_memory_manager(active_store, agent_slug).invoke(payload, config=config)
-            _relationship_memory_manager(active_store, agent_slug).invoke(payload, config=config)
+            invoke_runnable(_agent_memory_manager(active_store, agent_slug), payload, user=user, config=config)
+            invoke_runnable(
+                _relationship_memory_manager(active_store, agent_slug),
+                payload,
+                user=user,
+                config=config,
+            )
             sanitize_namespace_memories(active_store, agent_ns)
             sanitize_namespace_memories(active_store, relationship_ns)
         else:
             user_ns = user_memories_ns(user.id)
-            _user_memory_manager(active_store).invoke(payload, config=config)
+            invoke_runnable(_user_memory_manager(active_store), payload, user=user, config=config)
             sanitize_namespace_memories(active_store, user_ns)
 
 

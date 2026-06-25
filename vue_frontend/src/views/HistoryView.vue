@@ -9,7 +9,7 @@ import HistorySessionList from '@/components/history/HistorySessionList.vue'
       <CardHeader>
         <CardTitle class="text-2xl">History</CardTitle>
         <CardDescription>
-          Browse past discussions. Expand a chat to view the transcript, replay audio, and argument structure.
+          Browse past discussions. Expand a chat to view the transcript, replay audio, and speaker opinions.
         </CardDescription>
       </CardHeader>
       <CardContent>

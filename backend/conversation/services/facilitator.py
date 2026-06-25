@@ -10,6 +10,7 @@ from backend.conversation.prompts import load_facilitator_prompt
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.argument_summary import build_numbered_transcript
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
 
@@ -675,7 +676,7 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     system = SystemMessage(content=prompt_text)
 
     llm = get_default_chat_llm()
-    result = llm.invoke([system])
+    result = invoke_chat_llm(llm, [system], user=session.user)
 
     raw = result.content if hasattr(result, "content") else str(result)
     try:

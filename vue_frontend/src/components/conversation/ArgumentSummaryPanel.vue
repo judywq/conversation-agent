@@ -2,10 +2,13 @@
 import { ChevronDown, Minus } from 'lucide-vue-next'
 import { onUnmounted, ref, watch } from 'vue'
 import {
+  explanationLabel,
+  explanationLine,
+  speakersFromSummary,
+} from '@/lib/argumentSummaryDisplay'
+import {
   ConversationService,
-  type ArgumentSummaryEvidence,
   type ArgumentSummaryResult,
-  type ArgumentSummarySpeaker,
 } from '@/services/conversationService'
 
 const props = defineProps<{
@@ -28,12 +31,6 @@ const errorMessage = ref('')
 const minimized = ref(false)
 const deferredResult = ref<ArgumentSummaryResult | null>(null)
 
-const EVIDENCE_LABELS: Record<string, string> = {
-  fact: 'Fact',
-  data: 'Data',
-  example: 'Example',
-}
-
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollAttempts = 0
 const MAX_POLL_ATTEMPTS = 30
@@ -44,22 +41,6 @@ function clearPollTimer() {
     clearTimeout(pollTimer)
     pollTimer = null
   }
-}
-
-function evidenceLabel(type: string): string {
-  return EVIDENCE_LABELS[type] || 'Fact'
-}
-
-function evidenceLine(item: ArgumentSummaryEvidence): string {
-  const label = evidenceLabel(item.type)
-  const text = (item.text || '').trim()
-  const turnPrefix = item.turn ? `Turn ${item.turn} · ` : ''
-  return `${turnPrefix}${label}: ${text}`
-}
-
-function speakers(result: ArgumentSummaryResult | null): ArgumentSummarySpeaker[] {
-  if (!result?.speakers?.length) return []
-  return result.speakers
 }
 
 function summaryTurnCount(result: ArgumentSummaryResult): number {
@@ -151,12 +132,8 @@ async function loadSummary() {
       }
       return
     }
-
-    if (revealed && result.status === 'failed') {
-      errorMessage.value = 'Could not generate the argument summary.'
-    }
   } catch {
-    errorMessage.value = 'Could not load the argument summary.'
+    errorMessage.value = 'Could not load speaker opinions.'
   } finally {
     if (summary.value?.status !== 'pending') {
       loading.value = false
@@ -232,11 +209,11 @@ onUnmounted(() => {
       "
     >
       <div class="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
-        <div class="text-sm font-medium">Argument structure</div>
+        <div class="text-sm font-medium">Speaker opinions</div>
         <button
           type="button"
           class="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          :aria-label="minimized ? 'Expand argument structure' : 'Minimize argument structure'"
+          :aria-label="minimized ? 'Expand speaker opinions' : 'Minimize speaker opinions'"
           @click="minimized = !minimized"
         >
           <ChevronDown v-if="minimized" class="h-4 w-4" />
@@ -245,10 +222,6 @@ onUnmounted(() => {
       </div>
 
       <template v-if="!minimized">
-        <p class="shrink-0 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
-          Stances by speaker
-        </p>
-
         <div
           :class="
             embedded
@@ -257,12 +230,12 @@ onUnmounted(() => {
           "
         >
           <div class="space-y-3 text-sm">
-            <div v-if="loading && !speakers(summary).length" class="text-muted-foreground">
+            <div v-if="loading && !speakersFromSummary(summary).length" class="text-muted-foreground">
               Building summary…
             </div>
             <div v-else-if="errorMessage" class="text-destructive">{{ errorMessage }}</div>
-            <div v-else-if="summary?.status === 'empty'" class="text-muted-foreground">
-              No structured arguments yet.
+            <div v-else-if="summary?.status === 'empty' || summary?.status === 'failed'" class="text-muted-foreground">
+              No speaker opinions yet.
             </div>
             <template v-else-if="summary?.status === 'ready' || summary?.status === 'pending'">
               <div
@@ -272,28 +245,41 @@ onUnmounted(() => {
                 Updating…
               </div>
               <div
-                v-for="(speaker, speakerIndex) in speakers(summary)"
+                v-for="(speaker, speakerIndex) in speakersFromSummary(summary)"
                 :key="`${speaker.speaker_id}-${speakerIndex}`"
-                class="space-y-1 border-b pb-2 last:border-b-0 last:pb-0"
+                class="space-y-2 border-b pb-2 last:border-b-0 last:pb-0"
               >
                 <div class="font-medium leading-snug">{{ speaker.speaker_name || speaker.speaker_id }}</div>
-                <div class="text-muted-foreground leading-snug">Stance: {{ speaker.claim }}</div>
-                <ul class="max-h-40 space-y-0.5 overflow-y-auto pl-2">
-                  <li
-                    v-for="(item, evidenceIndex) in speaker.evidence"
-                    :key="`${speaker.speaker_id}-ev-${evidenceIndex}`"
-                    class="truncate text-[12px] leading-snug text-muted-foreground"
-                    :title="evidenceLine(item as ArgumentSummaryEvidence)"
+                <div
+                  v-for="(claim, claimIndex) in speaker.claims"
+                  :key="`${speaker.speaker_id}-claim-${claimIndex}`"
+                  class="space-y-1 pl-2"
+                >
+                  <div class="leading-snug">{{ claim.text }}</div>
+                  <ul
+                    v-for="(reason, reasonIndex) in claim.reasons || []"
+                    :key="`${speaker.speaker_id}-reason-${claimIndex}-${reasonIndex}`"
+                    class="space-y-0.5 pl-2"
                   >
-                    {{ evidenceLine(item as ArgumentSummaryEvidence) }}
-                  </li>
-                </ul>
+                    <li class="text-[12px] leading-snug text-muted-foreground">
+                      {{ reason.text }}
+                    </li>
+                    <li
+                      v-for="(explanation, explanationIndex) in reason.explanations || []"
+                      :key="`${speaker.speaker_id}-exp-${claimIndex}-${reasonIndex}-${explanationIndex}`"
+                      class="truncate pl-2 text-[11px] leading-snug text-muted-foreground"
+                      :title="explanationLine(explanation)"
+                    >
+                      {{ explanationLabel(explanation.type) }}: {{ explanation.text }}
+                    </li>
+                  </ul>
+                </div>
               </div>
               <div
-                v-if="!speakers(summary).length && summary.status === 'ready'"
+                v-if="!speakersFromSummary(summary).length && summary.status === 'ready'"
                 class="text-muted-foreground"
               >
-                No structured arguments yet.
+                No speaker opinions yet.
               </div>
             </template>
           </div>

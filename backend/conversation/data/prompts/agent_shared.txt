@@ -30,7 +30,7 @@ Discussion topic:
 Discussion history:
 {history}
 
-Discussion summary by speaker:
+Speaker opinions:
 {argument_summary_bullets}
 
 # Instructions
@@ -71,7 +71,7 @@ Retrieved context (may contain web, session, memory, knowledge, news, or exempla
 - Follow the dominant speech act, but you may include minor additional acts to make your speech natural.
 - Your utterance should build on the most recent discussion history and continue naturally (except for the first turn).
 - Follow `content_requirement` closely. If it asks for a personal example: use details from "Agent personal profile" when present; do not contradict them. If the profile says none on file, invent one brief plausible first-person example (1–2 sentences) aligned with your persona, major, and topic. Do not mention "profile" or retrieval in the utterance.
-- Do not repeat stances or evidence already listed under "Discussion summary by speaker" unless you add a genuinely new angle, correction, or deeper follow-up.
+- Do not repeat stances or evidence already listed under "Speaker opinions" unless you add a genuinely new angle, correction, or deeper follow-up.
 - Prefer advancing the discussion with new reasons, questions, or connections not yet covered.
 - Use retrieved context only when it is relevant to the current turn.
 - If retrieved context includes provenance such as a title, organization, author, URL, or source label, mention only details that are actually present.
