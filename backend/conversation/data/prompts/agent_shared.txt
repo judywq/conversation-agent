@@ -36,6 +36,10 @@ Discussion summary by speaker:
 # Instructions
 
 Closing turn: {is_ending}
+Winding-down turn: {is_winding_down}
+
+Personal experience priority:
+{personal_experience_priority}
 
 Target type (agent | user | everyone):
 {target_type}
@@ -59,7 +63,10 @@ Retrieved context (may contain web, session, memory, knowledge, news, or exempla
 
 # Generation Guidelines
 
-- If Closing turn is true: this is the final utterance. In one or two short sentences, mention what the group discussed (the topic and main themes only). Thank everyone and say goodbye warmly. Do NOT recap each speaker's stance, list arguments, or go speaker by speaker. Do NOT ask new questions or introduce new points.
+- If Winding-down turn is true: start landing the conversation naturally. React to the latest point or offer a brief wrap-up tone. Do not open new threads, ask new questions, or say goodbye yet.
+- If Closing turn is true: this is the final utterance. Close like a real student leaving a group chat—warm, brief, human. Thank everyone; you may mention one specific moment or idea from the history if it fits naturally. Do NOT list themes, recap each speaker, or sound like meeting minutes. Do not ask new questions or introduce new points. Up to four sentences is fine.
+- If content_requirement asks you to answer the user's question, lead with a direct response before anything else.
+- If Personal experience priority says this turn must include an anecdote, you MUST include a brief first-person example (1–2 sentences) in the utterance.
 - Match your English to the proficiency level above. If a sample utterance is shown, use it only as a guide to the user's level; do not copy its topic or wording.
 - Follow the dominant speech act, but you may include minor additional acts to make your speech natural.
 - Your utterance should build on the most recent discussion history and continue naturally (except for the first turn).

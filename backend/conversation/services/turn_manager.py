@@ -5,6 +5,7 @@ from typing import Literal
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
+from backend.conversation.services.facilitator import last_user_group_question_turn
 
 SpeakerType = Literal["agent", "user"]
 
@@ -89,6 +90,10 @@ def decide_next_speaker(
     named_question_override = _named_question_target_override(session)
     if named_question_override is not None:
         return named_question_override
+
+    group_question_override = _user_group_question_override(session)
+    if group_question_override is not None:
+        return group_question_override
 
     if user_volunteered:
         return TurnDecision(
@@ -253,6 +258,44 @@ def _named_question_target_override(session: ConversationSession) -> TurnDecisio
                 reason="named_question_target_agent",
             )
     return None
+
+
+def _user_group_question_override(session: ConversationSession) -> TurnDecision | None:
+    """
+    If the user just asked a question to everyone, the next speaker must be an agent
+    who can answer it (never route back to the user immediately).
+    """
+    if last_user_group_question_turn(session) is None:
+        return None
+    agent_id = _pick_balanced_agent(session)
+    if agent_id is None:
+        return None
+    return TurnDecision(
+        terminate=False,
+        next_speaker_type="agent",
+        next_speaker_id=agent_id,
+        reason="user_group_question",
+    )
+
+
+def _pick_balanced_agent(session: ConversationSession) -> str | None:
+    agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
+    if not agents:
+        return None
+    weights = _participant_weights(agents)
+    counts = _participant_turn_counts(session, agents)
+    agent_ids = [agent.agent_id for agent in agents]
+    total = sum(counts.get(agent_id, 0) for agent_id in agent_ids)
+    if total <= 0:
+        return max(
+            ((agent_id, weights.get(agent_id, 0.0)) for agent_id in agent_ids),
+            key=lambda item: item[1],
+        )[0]
+    deficits = {
+        agent_id: weights.get(agent_id, 0.0) - (counts.get(agent_id, 0) / total)
+        for agent_id in agent_ids
+    }
+    return max(deficits.items(), key=lambda item: item[1])[0]
 
 
 def _pick_balanced_participant(session: ConversationSession) -> str:

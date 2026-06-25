@@ -27,8 +27,9 @@ _STATUS_EMPTY = "empty"
 
 _MAX_WORDS = 15
 _MAX_CHARS = 100
+_MAX_EVIDENCE_WORDS = 8
+_MAX_EVIDENCE_CHARS = 50
 _MAX_SPEAKERS = 6
-_MAX_EVIDENCE = 6
 _VALID_EXPLANATION_TYPES = frozenset({"fact", "data", "example"})
 _EXPLANATION_LABELS = {"fact": "Fact", "data": "Data", "example": "Example"}
 
@@ -110,20 +111,32 @@ def _clamp_text(text: str, *, max_words: int = _MAX_WORDS, max_chars: int = _MAX
     return cleaned
 
 
-def _normalize_evidence(items: Any) -> list[dict[str, str]]:
+def _normalize_evidence(items: Any) -> list[dict[str, str | int]]:
     if not isinstance(items, list):
         return []
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, str | int]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
         evidence_type = str(item.get("type") or "fact").strip().lower()
         if evidence_type not in _VALID_EXPLANATION_TYPES:
             evidence_type = "fact"
-        text = _clamp_text(str(item.get("text") or ""))
-        if text:
-            normalized.append({"type": evidence_type, "text": text})
-    return normalized[:_MAX_EVIDENCE]
+        text = _clamp_text(
+            str(item.get("text") or ""),
+            max_words=_MAX_EVIDENCE_WORDS,
+            max_chars=_MAX_EVIDENCE_CHARS,
+        )
+        if not text:
+            continue
+        entry: dict[str, str | int] = {"type": evidence_type, "text": text}
+        turn_raw = item.get("turn")
+        if isinstance(turn_raw, int) and turn_raw > 0:
+            entry["turn"] = turn_raw
+        elif isinstance(turn_raw, str) and turn_raw.strip().isdigit():
+            entry["turn"] = int(turn_raw.strip())
+        normalized.append(entry)
+    normalized.sort(key=lambda e: int(e.get("turn") or 0))
+    return normalized
 
 
 def _normalize_speaker(item: Any) -> dict[str, Any] | None:
@@ -148,8 +161,19 @@ def _normalize_speaker(item: Any) -> dict[str, Any] | None:
     }
 
 
-def _evidence_key(item: dict[str, str]) -> tuple[str, str]:
-    return (str(item.get("type") or "fact").casefold(), str(item.get("text") or "").casefold())
+def _evidence_key(item: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(item.get("turn") or ""),
+        str(item.get("type") or "fact").casefold(),
+        str(item.get("text") or "").casefold(),
+    )
+
+
+def _evidence_dedupe_key(item: dict[str, Any]) -> str | tuple[str, int]:
+    turn = item.get("turn")
+    if isinstance(turn, int) and turn > 0:
+        return ("turn", turn)
+    return _evidence_key(item)
 
 
 def _speaker_sort_key(speaker: dict[str, Any]) -> tuple[int, str]:
@@ -179,14 +203,22 @@ def merge_speaker_summaries(
             existing["claim"] = new_claim
         if normalized.get("speaker_name"):
             existing["speaker_name"] = normalized["speaker_name"]
-        seen = {_evidence_key(e) for e in existing.get("evidence") or []}
+        seen = {_evidence_dedupe_key(e) for e in existing.get("evidence") or []}
         for evidence in normalized.get("evidence") or []:
-            key = _evidence_key(evidence)
+            key = _evidence_dedupe_key(evidence)
             if key in seen:
-                continue
+                if isinstance(key, tuple) and key[0] == "turn":
+                    existing["evidence"] = [
+                        e for e in existing.get("evidence") or [] if _evidence_dedupe_key(e) != key
+                    ]
+                else:
+                    continue
             seen.add(key)
             existing["evidence"].append(evidence)
-        existing["evidence"] = existing["evidence"][:_MAX_EVIDENCE]
+        existing["evidence"] = sorted(
+            existing["evidence"],
+            key=lambda e: int(e.get("turn") or 0),
+        )
     speakers = sorted(merged.values(), key=_speaker_sort_key)
     return speakers[:_MAX_SPEAKERS]
 
@@ -220,7 +252,7 @@ def _migrate_legacy_claim_to_speakers(claim: dict[str, Any], *, index: int) -> d
         "speaker_name": f"Topic position {index + 1}",
         "speaker_type": "agent",
         "claim": claim_text,
-        "evidence": evidence[:_MAX_EVIDENCE],
+        "evidence": evidence,
     }
 
 
@@ -279,7 +311,9 @@ def format_argument_summary_bullets(summary: dict[str, Any]) -> str:
                 continue
             evidence_type = str(evidence.get("type") or "fact")
             type_label = _EXPLANATION_LABELS.get(evidence_type, "Fact")
-            lines.append(f"  - {type_label}: {evidence_text}")
+            turn_num = evidence.get("turn")
+            turn_prefix = f"Turn {turn_num} · " if turn_num else ""
+            lines.append(f"  - {turn_prefix}{type_label}: {evidence_text}")
 
     return "\n".join(lines)
 

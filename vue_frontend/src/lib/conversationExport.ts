@@ -61,7 +61,8 @@ export function formatArgumentSummaryText(summary: ArgumentSummaryResult): strin
       const evidenceText = (evidence.text || '').trim()
       if (!evidenceText) continue
       const typeLabel = EVIDENCE_LABELS[evidence.type] || 'Fact'
-      lines.push(`  - ${typeLabel}: ${evidenceText}`)
+      const turnPrefix = evidence.turn ? `Turn ${evidence.turn} · ` : ''
+      lines.push(`  - ${turnPrefix}${typeLabel}: ${evidenceText}`)
     }
     lines.push('')
   }

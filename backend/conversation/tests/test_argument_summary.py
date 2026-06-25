@@ -77,6 +77,24 @@ def test_parse_argument_summary_response_normalizes_speakers() -> None:
     assert parsed["speakers"][1]["evidence"][0]["type"] == "example"
 
 
+def test_normalize_evidence_clamps_length_and_keeps_turn() -> None:
+    from backend.conversation.services.argument_summary import _normalize_evidence
+
+    items = _normalize_evidence(
+        [
+            {
+                "turn": 2,
+                "type": "fact",
+                "text": "This evidence phrase is intentionally much too long for the summary panel",
+            },
+        ],
+    )
+
+    assert len(items) == 1
+    assert items[0]["turn"] == 2
+    assert len(str(items[0]["text"]).split()) <= 8
+
+
 def test_merge_speaker_summaries_accumulates_evidence() -> None:
     previous = [
         {
@@ -84,7 +102,7 @@ def test_merge_speaker_summaries_accumulates_evidence() -> None:
             "speaker_name": "Judy",
             "speaker_type": "user",
             "claim": "Dorms help community",
-            "evidence": [{"type": "fact", "text": "Shared meals"}],
+            "evidence": [{"turn": 1, "type": "fact", "text": "Shared meals"}],
         },
     ]
     new = [
@@ -93,7 +111,9 @@ def test_merge_speaker_summaries_accumulates_evidence() -> None:
             "speaker_name": "Judy",
             "speaker_type": "user",
             "claim": "Dorms help freshmen build community",
-            "evidence": [{"type": "data", "text": "70 percent made friends"}],
+            "evidence": [
+                {"turn": 3, "type": "data", "text": "70 percent made friends"},
+            ],
         },
         {
             "speaker_id": "agent_1",
@@ -110,6 +130,34 @@ def test_merge_speaker_summaries_accumulates_evidence() -> None:
     user = merged[0]
     assert user["claim"] == "Dorms help freshmen build community"
     assert len(user["evidence"]) == 2
+
+
+def test_merge_speaker_summaries_replaces_evidence_for_same_turn() -> None:
+    previous = [
+        {
+            "speaker_id": "user",
+            "speaker_name": "Judy",
+            "speaker_type": "user",
+            "claim": "Dorms help community",
+            "evidence": [{"turn": 2, "type": "fact", "text": "Shared meals"}],
+        },
+    ]
+    new = [
+        {
+            "speaker_id": "user",
+            "speaker_name": "Judy",
+            "speaker_type": "user",
+            "claim": "Dorms help freshmen build community",
+            "evidence": [{"turn": 2, "type": "data", "text": "More daily contact"}],
+        },
+    ]
+
+    merged = merge_speaker_summaries(previous, new)
+
+    user = merged[0]
+    assert len(user["evidence"]) == 1
+    assert user["evidence"][0]["type"] == "data"
+    assert user["evidence"][0]["turn"] == 2
 
 
 def test_format_argument_summary_bullets_renders_speaker_stances() -> None:

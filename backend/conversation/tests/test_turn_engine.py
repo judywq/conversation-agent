@@ -256,3 +256,29 @@ def test_agent_turn_name_target_fallback_routes_user_via_directive_metadata(user
     assert decision.next_speaker_id == "user"
     assert decision.reason == "directive_target_user"
 
+
+@pytest.mark.django_db
+def test_user_group_question_routes_to_agent_not_user(user):
+    session = ConversationSession.objects.create(user=user, topic="Campus dorms", turn_count=2)
+    AgentProfile.objects.bulk_create(
+        [
+            AgentProfile(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"}),
+            AgentProfile(session=session, agent_id="agent_2", personality={"persona_name": "Fact Checker"}),
+        ],
+    )
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="What do you all think about living on campus?",
+        source="text",
+    )
+    session.turns.update(target="everyone", speech_act="DIRECTIVES", subtype="request_info")
+
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=1)
+
+    assert decision.terminate is False
+    assert decision.next_speaker_type == "agent"
+    assert decision.next_speaker_id in {"agent_1", "agent_2"}
+    assert decision.reason == "user_group_question"
+

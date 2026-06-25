@@ -11,6 +11,8 @@ from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 from dj_rest_auth.views import PasswordResetConfirmView
 
+from config.views import csrf_cookie
+
 urlpatterns = [
     # path("", TemplateView.as_view(template_name="pages/home.html"), name="home"),
     # path(
@@ -36,6 +38,7 @@ urlpatterns = [
 urlpatterns += [
     # API base url
     # path("api/", include("config.api_router")),
+    path("api/csrf/", csrf_cookie, name="api-csrf"),
     path("api/llm/", include("backend.llm_caller.api_urls")),
     path("api/conversation/", include("backend.conversation.api_urls")),
     path("api/news/", include("backend.news.api_urls")),

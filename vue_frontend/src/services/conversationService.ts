@@ -50,6 +50,8 @@ export interface ArgumentSummaryReason {
 export interface ArgumentSummaryEvidence {
   type: 'fact' | 'data' | 'example'
   text: string
+  /** Speaking-turn number from the transcript, when available. */
+  turn?: number
 }
 
 export interface ArgumentSummarySpeaker {

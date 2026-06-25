@@ -19,6 +19,13 @@ function evidenceLabel(type: string): string {
   return EVIDENCE_LABELS[type] || 'Fact'
 }
 
+function evidenceLine(item: ArgumentSummaryEvidence): string {
+  const label = evidenceLabel(item.type)
+  const text = (item.text || '').trim()
+  const turnPrefix = item.turn ? `Turn ${item.turn} · ` : ''
+  return `${turnPrefix}${label}: ${text}`
+}
+
 function speakers(summary: ArgumentSummaryResult | null | undefined): ArgumentSummarySpeaker[] {
   if (!summary) return []
   if (summary.speakers?.length) return summary.speakers
@@ -38,14 +45,14 @@ function speakers(summary: ArgumentSummaryResult | null | undefined): ArgumentSu
     >
       <div class="font-medium">{{ speaker.speaker_name || speaker.speaker_id }}</div>
       <div class="text-muted-foreground">Stance: {{ speaker.claim }}</div>
-      <ul class="list-none space-y-0.5 pl-2">
+      <ul class="max-h-40 space-y-0.5 overflow-y-auto pl-2">
         <li
           v-for="(item, evidenceIndex) in speaker.evidence"
           :key="`${speaker.speaker_id}-evidence-${evidenceIndex}`"
-          class="text-[13px] leading-snug text-muted-foreground"
+          class="truncate text-[12px] leading-snug text-muted-foreground"
+          :title="evidenceLine(item as ArgumentSummaryEvidence)"
         >
-          {{ evidenceLabel((item as ArgumentSummaryEvidence).type) }}:
-          {{ (item as ArgumentSummaryEvidence).text }}
+          {{ evidenceLine(item as ArgumentSummaryEvidence) }}
         </li>
       </ul>
     </li>

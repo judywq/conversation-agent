@@ -8,7 +8,9 @@ from backend.conversation.services import agent as agent_service
 from backend.conversation.services.agent import _avoid_question_ending_when_not_request
 from backend.conversation.services.agent import _build_agent_retrieval_context
 from backend.conversation.services.agent import _enforce_directive_target_name
+from backend.conversation.services.agent import _limit_sentences
 from backend.conversation.services.agent import _limit_to_three_sentences
+from backend.conversation.services.agent import _max_sentences_for_turn
 from backend.conversation.services.agent import _normalize_directive_question_punctuation
 from backend.conversation.services.agent import generate_agent_utterance
 from backend.conversation.services.agent import generate_agent_utterance_with_retrieval
@@ -65,6 +67,18 @@ def test_avoid_question_ending_keeps_request_like_directives():
 def test_limit_to_three_sentences_truncates():
     out = _limit_to_three_sentences("One. Two! Three? Four. Five.")
     assert out == "One. Two! Three?"
+
+
+def test_limit_sentences_allows_five_on_closing():
+    out = _limit_sentences(
+        "One. Two. Three. Four. Five. Six.",
+        max_sentences=_max_sentences_for_turn(closing=True, winding_down=False),
+    )
+    assert out == "One. Two. Three. Four. Five."
+
+
+def test_max_sentences_for_turn_winding_down():
+    assert _max_sentences_for_turn(closing=False, winding_down=True) == 4
 
 
 def test_normalize_directive_question_punctuation_converts_named_period_to_question():
@@ -150,7 +164,7 @@ def test_build_agent_retrieval_context_routes_web_search_to_web_only(user, monke
         },
     )
 
-    assert captured["sources"] == {"web"}
+    assert captured["sources"] == {"exemplar"}
     assert captured["session"] == session
     assert captured["user"] == user
     assert captured["top_k"] == 5
@@ -159,7 +173,6 @@ def test_build_agent_retrieval_context_routes_web_search_to_web_only(user, monke
     assert "Topic: Climate policy" in captured["query"]
     assert "Facilitator instruction: Use a recent policy example." in captured["query"]
     assert "Latest turn: We should ground this in recent evidence." in captured["query"]
-    assert context.rendered_context == "Retrieved information:\n1. Source: web"
 
 
 @pytest.mark.django_db
@@ -245,6 +258,33 @@ def test_build_agent_retrieval_context_always_retrieves_exemplar_when_facilitato
 
     assert captured["sources"] == {"exemplar"}
     assert "exemplar" in context.source_statuses
+
+
+@pytest.mark.django_db
+def test_resolve_agent_retrieval_skips_web_after_user_turn(user):
+    session, agent = _make_session_with_agent(user)
+    agent.personality = {"persona_name": "Fact Checker"}
+    agent.save(update_fields=["personality"])
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="Is that statistic still accurate?",
+        source="text",
+    )
+
+    sources = resolve_agent_retrieval_sources(
+        {
+            "retrieval_requirement": "none",
+            "type": "ASSERTIVES",
+            "subtype": "inform",
+        },
+        session=session,
+        agent=agent,
+    )
+
+    assert "web" not in sources
+    assert "exemplar" in sources
 
 
 @pytest.mark.django_db

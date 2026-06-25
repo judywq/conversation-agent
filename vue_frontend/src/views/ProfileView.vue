@@ -144,7 +144,7 @@
         <div class="flex flex-col gap-3">
           <Button
             class="w-full"
-            :disabled="isSubmitting || isNavigating"
+            :disabled="isSubmitting"
             @click="handleSave"
           >
             {{ isSubmitting ? 'Saving...' : 'Save' }}
@@ -152,10 +152,10 @@
           <Button
             class="w-full"
             variant="outline"
-            :disabled="isSubmitting || isNavigating"
+            :disabled="isSubmitting"
             @click="handleGoToConversation"
           >
-            {{ isNavigating ? 'Saving...' : 'Go to Conversation' }}
+            Go to Conversation
           </Button>
         </div>
       </CardContent>
@@ -253,7 +253,6 @@ const selectedCefrLevel = ref<string | null>(authStore.user?.cefr_level ?? null)
 const isGeneratingCefr = ref(false)
 
 const isSubmitting = ref(false)
-const isNavigating = ref(false)
 const generalError = ref<string | null>(null)
 
 function buildOceanPayload(): Record<string, string> {
@@ -381,33 +380,18 @@ async function handleSave() {
 }
 
 async function handleGoToConversation() {
-  isNavigating.value = true
   generalError.value = null
-  try {
-    const saved = await persistProfile()
-    if (!saved) return
-    if (!authStore.user?.profile_completed) {
-      generalError.value = 'Complete your profile before starting a conversation.'
-      toast({
-        title: 'Profile incomplete',
-        description: generalError.value,
-        variant: 'destructive',
-      })
-      return
-    }
-    await router.push({ name: 'conversation' })
-  } catch (err: unknown) {
+  if (!authStore.user?.profile_completed) {
+    const validationError = validateProfile()
     generalError.value =
-      err && typeof err === 'object' && 'message' in err
-        ? String((err as { message: string }).message)
-        : 'Failed to save profile'
+      validationError ?? 'Complete your profile before starting a conversation. Use Save first.'
     toast({
-      title: 'Error',
+      title: 'Profile incomplete',
       description: generalError.value,
       variant: 'destructive',
     })
-  } finally {
-    isNavigating.value = false
+    return
   }
+  await router.push({ name: 'conversation' })
 }
 </script>

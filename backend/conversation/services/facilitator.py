@@ -31,6 +31,228 @@ _PERSONAL_EXPERIENCE_KEYWORDS = (
     "when you ",
 )
 
+_EXPERIENCE_INVITE_PHRASES = (
+    "have you ever",
+    "your experience",
+    "what about you",
+    "how about you",
+    "anyone else",
+    "personal story",
+    "your story",
+    "share your",
+    "tell us about your",
+    "tell me about your",
+    "do you have any experience",
+    "what do you all think",
+    "what do you think",
+)
+
+_LIVED_EXPERIENCE_CUES = (
+    "when i ",
+    "my freshman",
+    "my first year",
+    "i remember",
+    "in my dorm",
+    "for me,",
+    "i once",
+    "personally,",
+    "in my experience",
+    "back in high school",
+    "last semester",
+)
+
+_CAMPUS_TOPIC_CUES = (
+    "dorm",
+    "campus",
+    "class",
+    "classes",
+    "club",
+    "study",
+    "freshman",
+    "roommate",
+    "university",
+    "college",
+)
+
+_INTERROGATIVE_START = re.compile(
+    r"^(?:do|does|did|can|could|would|will|what|how|why|where|when|who|"
+    r"is|are|was|were|have|has|had)\b",
+    re.IGNORECASE,
+)
+
+
+def last_real_turn(session: ConversationSession) -> TurnRecord | None:
+    return (
+        TurnRecord.objects.filter(session=session)
+        .exclude(speaker_type=TurnRecord.SPEAKER_TYPE_MAKESHIFT)
+        .order_by("-turn_index", "-subturn_index")
+        .first()
+    )
+
+
+def _is_group_target(target: str | None) -> bool:
+    cleaned = (target or "").strip().casefold()
+    return not cleaned or cleaned in {"everyone", "all", "null"}
+
+
+def is_interrogative_utterance(text: str) -> bool:
+    utterance = (text or "").strip()
+    if not utterance:
+        return False
+    if utterance.endswith("?"):
+        return True
+    parts = re.split(r"(?<=[.!?])\s+", utterance)
+    parts = [part.strip() for part in parts if part.strip()]
+    last = parts[-1] if parts else utterance
+    core = last.rstrip(".!?").strip()
+    return bool(core and _INTERROGATIVE_START.match(core))
+
+
+def is_user_group_question_turn(turn: TurnRecord) -> bool:
+    if turn.speaker_type != TurnRecord.SPEAKER_TYPE_USER:
+        return False
+    if not is_interrogative_utterance(turn.utterance):
+        return False
+    return _is_group_target(turn.target)
+
+
+def last_user_group_question_turn(session: ConversationSession) -> TurnRecord | None:
+    last = last_real_turn(session)
+    if last is None or not is_user_group_question_turn(last):
+        return None
+    return last
+
+
+def count_session_anecdotes(session: ConversationSession) -> int:
+    count = 0
+    turns = (
+        TurnRecord.objects.filter(session=session, speaker_type=TurnRecord.SPEAKER_TYPE_AGENT)
+        .only("utterance")
+    )
+    for turn in turns:
+        text = (turn.utterance or "").casefold()
+        if any(cue in text for cue in _LIVED_EXPERIENCE_CUES):
+            count += 1
+    return count
+
+
+def detect_anecdote_opportunity(session: ConversationSession) -> bool:
+    recent = list(
+        TurnRecord.objects.filter(session=session)
+        .exclude(speaker_type=TurnRecord.SPEAKER_TYPE_MAKESHIFT)
+        .order_by("-turn_index", "-subturn_index")[:2],
+    )
+    if not recent:
+        return False
+
+    for turn in recent:
+        text = (turn.utterance or "").casefold()
+        if any(phrase in text for phrase in _EXPERIENCE_INVITE_PHRASES):
+            return True
+        if any(cue in text for cue in _LIVED_EXPERIENCE_CUES):
+            return True
+
+    topic = (session.topic or "").casefold()
+    if count_session_anecdotes(session) == 0 and any(cue in topic for cue in _CAMPUS_TOPIC_CUES):
+        if session.turn_count >= 3:
+            return True
+    return False
+
+
+def build_experience_steering_hint(session: ConversationSession) -> str:
+    last = last_real_turn(session)
+    if last is not None:
+        text = (last.utterance or "").casefold()
+        if any(phrase in text for phrase in _EXPERIENCE_INVITE_PHRASES):
+            return (
+                "User invited personal sharing in the last turn; "
+                "strongly prefer personal_experience: true with memory retrieval."
+            )
+    anecdote_count = count_session_anecdotes(session)
+    if anecdote_count == 0:
+        return (
+            "No clear personal anecdotes from agents yet; include one when context fits "
+            "(not on a fixed schedule)."
+        )
+    return (
+        f"Session has about {anecdote_count} anecdote-style agent turn(s); "
+        "reciprocal sharing still welcome when natural."
+    )
+
+
+def apply_experience_plan_nudge(
+    session: ConversationSession,
+    plan: dict,
+    *,
+    is_beginning: bool,
+    is_ending: bool,
+    is_winding_down: bool,
+) -> dict:
+    if is_beginning or is_ending or is_winding_down:
+        return plan
+    if not detect_anecdote_opportunity(session):
+        return plan
+    if is_personal_experience_plan(plan):
+        return plan
+
+    updated = dict(plan)
+    updated["personal_experience"] = True
+    updated["retrieval_requirement"] = "memory"
+    updated["type"] = "ASSERTIVES"
+    updated["subtype"] = "opinion"
+    if not any(kw in str(updated.get("content_requirement") or "").casefold() for kw in _PERSONAL_EXPERIENCE_KEYWORDS):
+        updated["content_requirement"] = clamp_facilitator_content_requirement(
+            "Share a brief first-person example related to the last point.",
+        )
+    return updated
+
+
+def apply_user_question_answer_plan(
+    session: ConversationSession,
+    plan: dict,
+    *,
+    is_ending: bool,
+    is_winding_down: bool,
+) -> dict:
+    if is_ending or is_winding_down:
+        return plan
+    if last_user_group_question_turn(session) is None:
+        return plan
+
+    updated = dict(plan)
+    updated["content_requirement"] = clamp_facilitator_content_requirement(
+        "Answer the user's question directly first.",
+    )
+    updated["target"] = "user"
+    updated["type"] = "ASSERTIVES"
+    updated["subtype"] = "opinion"
+    updated["personal_experience"] = False
+    updated["retrieval_requirement"] = str(updated.get("retrieval_requirement") or "none")
+    return updated
+
+
+def finalize_facilitator_plan(
+    session: ConversationSession,
+    plan: dict,
+    *,
+    is_beginning: bool,
+    is_ending: bool,
+    is_winding_down: bool,
+) -> dict:
+    plan = apply_experience_plan_nudge(
+        session,
+        plan,
+        is_beginning=is_beginning,
+        is_ending=is_ending,
+        is_winding_down=is_winding_down,
+    )
+    return apply_user_question_answer_plan(
+        session,
+        plan,
+        is_ending=is_ending,
+        is_winding_down=is_winding_down,
+    )
+
 
 def _parse_plan_bool(value: object) -> bool:
     if isinstance(value, bool):
@@ -409,8 +631,9 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     """
     next_turn_count = int(session.turn_count) + 1
     is_beginning = next_turn_count == 1
-    is_ending = next_turn_count == int(session.max_turns)
-    if is_ending:
+    is_ending = next_turn_count >= int(session.max_turns)
+    is_winding_down = next_turn_count == int(session.max_turns) - 1 and not is_beginning
+    if is_ending or is_winding_down:
         history = build_numbered_transcript(session)
     else:
         turns = get_short_term_turns(session, limit=3)
@@ -438,6 +661,8 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
         max_turns=str(session.max_turns),
         is_beginning="true" if is_beginning else "false",
         is_ending="true" if is_ending else "false",
+        is_winding_down="true" if is_winding_down else "false",
+        experience_steering_hint=build_experience_steering_hint(session),
         participants=json.dumps(participants, ensure_ascii=False),
         participants_map=json.dumps(participants_map, ensure_ascii=False),
         agent_profile=json.dumps(chosen_agent_profile, ensure_ascii=False),
@@ -459,7 +684,14 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
             parsed = {}
     except json.JSONDecodeError:
         parsed = {}
-    return coerce_speech_act_plan(parsed)
+    plan = coerce_speech_act_plan(parsed)
+    return finalize_facilitator_plan(
+        session,
+        plan,
+        is_beginning=is_beginning,
+        is_ending=is_ending,
+        is_winding_down=is_winding_down,
+    )
 
 
 def _participants_name_map(session: ConversationSession) -> dict[str, str]:

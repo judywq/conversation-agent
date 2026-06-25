@@ -1,7 +1,6 @@
 import axios from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import Cookies from 'js-cookie';
-import { retry } from '@/lib/retry';
 import { useAuthStore } from '@/stores/auth';
 import router from '@/router';
 import { AxiosError } from 'axios';
@@ -15,14 +14,27 @@ if (window.location.protocol === 'https:') {
   csrf_key = '__Secure-csrftoken';
 }
 
+type ApiRequestConfig = InternalAxiosRequestConfig & {
+  __isRetry?: boolean;
+  skipAuthRedirect?: boolean;
+};
+
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: 5000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+/** Fetch CSRF cookie from Django before the first mutating request. */
+export async function ensureCsrfToken(): Promise<void> {
+  if (Cookies.get(csrf_key)) {
+    return;
+  }
+  await api.get('/csrf/');
+}
 
 // Add a request interceptor to dynamically set the CSRF token
 api.interceptors.request.use(
@@ -116,17 +128,33 @@ function handleApiError(error: AxiosError<ApiErrorResponse>): ApiError {
 api.interceptors.response.use(
   response => response,
   async error => {
-    const config = error.config;
+    const config = error.config as ApiRequestConfig | undefined;
+
+    // Retry once on timeouts / no-response errors (common on cold backend start).
+    if (config && !config.__isRetry && !error.response) {
+      config.__isRetry = true;
+      try {
+        return await api(config);
+      } catch (retryError) {
+        error = retryError;
+      }
+    }
 
     if (error.response && error.response.status === 403) {
       const { detail } = error.response.data;
       // If the error is due to missing credentials, log the user out
       // The server will return a 403 status code with a detail message
       //  like "Authentication credentials were not provided."
-      if (detail && detail.includes('credentials')) {
+      if (
+        detail &&
+        detail.includes('credentials') &&
+        !config?.skipAuthRedirect
+      ) {
         const authStore = useAuthStore();
-        await authStore.logout();
-        router.push({ name: 'login' });
+        if (authStore.isAuthenticated) {
+          await authStore.logout();
+          router.push({ name: 'login' });
+        }
       }
     }
 
