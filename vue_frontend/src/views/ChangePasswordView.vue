@@ -5,6 +5,13 @@
       <CardDescription>Enter your current password and a new password</CardDescription>
     </CardHeader>
     <CardContent>
+      <div
+        v-if="authStore.user?.must_change_password"
+        class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        role="alert"
+      >
+        Your account requires a new password before you can continue.
+      </div>
       <form @submit="handleSubmit" class="grid gap-4">
         <FormField
           v-slot="{ componentField }"

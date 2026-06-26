@@ -25,6 +25,7 @@ const api: AxiosInstance = axios.create({
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept-Language': 'en',
   },
 });
 
