@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import Cookies from 'js-cookie';
 import { useAuthStore } from '@/stores/auth';
 import router from '@/router';
@@ -14,10 +14,14 @@ if (window.location.protocol === 'https:') {
   csrf_key = '__Secure-csrftoken';
 }
 
-type ApiRequestConfig = InternalAxiosRequestConfig & {
-  __isRetry?: boolean;
-  skipAuthRedirect?: boolean;
-};
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    __isRetry?: boolean;
+    skipAuthRedirect?: boolean;
+  }
+}
+
+export type ApiRequestConfig = AxiosRequestConfig;
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
