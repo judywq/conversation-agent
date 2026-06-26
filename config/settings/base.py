@@ -5,6 +5,7 @@ import ssl
 from pathlib import Path
 
 import environ
+from django.utils.translation import gettext_lazy as _
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # backend/
@@ -28,12 +29,9 @@ TIME_ZONE = "Asia/Tokyo"
 # https://docs.djangoproject.com/en/dev/ref/settings/#language-code
 LANGUAGE_CODE = "en-us"
 # https://docs.djangoproject.com/en/dev/ref/settings/#languages
-# from django.utils.translation import gettext_lazy as _
-# LANGUAGES = [
-#     ('en', _('English')),
-#     ('fr-fr', _('French')),
-#     ('pt-br', _('Portuguese')),
-# ]
+LANGUAGES = [
+    ("en", _("English")),
+]
 # https://docs.djangoproject.com/en/dev/ref/settings/#site-id
 SITE_ID = 1
 # https://docs.djangoproject.com/en/dev/ref/settings/#use-i18n
@@ -51,6 +49,7 @@ DOMAIN_NAME = env.str("DJANGO_DOMAIN_NAME", default="localhost:8000")
 CONVERSATION_AGENT_COUNT = env.int("CONVERSATION_AGENT_COUNT", default=3)
 # For quick testing, you can override via env var CONVERSATION_MAX_TURNS.
 CONVERSATION_MAX_TURNS = env.int("CONVERSATION_MAX_TURNS", default=20)
+CONVERSATION_MAX_EXTENSION_TURNS = env.int("CONVERSATION_MAX_EXTENSION_TURNS", default=4)
 AGENT_UTTERANCE_DUPLICATE_THRESHOLD = env.float("AGENT_UTTERANCE_DUPLICATE_THRESHOLD", default=0.75)
 AGENT_UTTERANCE_DUPLICATE_MIN_TOKENS = env.int("AGENT_UTTERANCE_DUPLICATE_MIN_TOKENS", default=4)
 AGENT_UTTERANCE_DUPLICATE_RECENT_LIMIT = env.int("AGENT_UTTERANCE_DUPLICATE_RECENT_LIMIT", default=20)

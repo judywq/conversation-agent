@@ -28,8 +28,14 @@ Maximum turns:
 Beginning flag:
 {is_beginning}
 
+Winding-down flag:
+{is_winding_down}
+
 Ending flag:
 {is_ending}
+
+Personal experience steering:
+{experience_steering_hint}
 
 Next speaker type:
 {next_speaker_type}
@@ -71,12 +77,13 @@ Generate ONE instruction object for the next speaker.
 - Prefer targeting the most relevant participant from the last turn when appropriate.
 - If the history is empty (no prior turns), ask a simple opening question aligned with the topic.
 - Keep "content_requirement" to exactly ONE sentence and fewer than 15 words. Be concise and actionable.
+- If the last user turn was a question to everyone, the next agent MUST answer that question first (target "user").
 
 # Speech-act distribution (soft guidance)
 - Corpus targets describe typical proportions of SA types (and ASSERTIVES/DIRECTIVES subtypes). Prefer choices that move this session's running distribution toward those proportions, using `sa_session_summary` (especially `steering_hint`) as a guide.
 - When you choose ASSERTIVES, weigh subtype toward `sa_target_weights_assertives_subtypes` relative to how often each subtype has appeared so far in this session.
 - When you choose DIRECTIVES, weigh subtype toward `sa_target_weights_directives_subtypes` relative to how often each subtype has appeared so far in this session.
-- These weights do NOT override turn-boundary rules (`is_beginning`, `is_ending`).
+- These weights do NOT override turn-boundary rules (`is_beginning`, `is_winding_down`, `is_ending`) or unanswered user questions.
 
 
 # Turn-boundary rules (must follow)
@@ -84,18 +91,25 @@ If {next_speaker_type} is "agent":
 - If {is_beginning} == true:
   - The instruction MUST tell the speaker to greet everyone and briefly introduce the topic.
   - Prefer: speech_act.type="EXPRESSIVES" subtype="greet_welcome", target="everyone".
+- If {is_winding_down} == true:
+  - Start landing the conversation naturally (no new threads or questions).
+  - Prefer a brief reaction to the latest point or a casual "this has been a good chat" tone.
+  - Do NOT say goodbye yet.
 - If {is_ending} == true:
-  - The instruction MUST tell the speaker to briefly note what was discussed (topic/themes only), thank everyone, and close the session.
-  - Do NOT instruct a stance-by-stance or speaker-by-speaker recap.
+  - This is the final turn. Instruct a natural sign-off like a real student leaving a group chat.
+  - Thank the group warmly; you may reference one specific moment from the discussion if it fits.
+  - Do NOT instruct a minutes-style summary, theme list, or speaker-by-speaker recap.
   - Prefer: speech_act.type="DECLARATIONS" subtype="close_session" or "EXPRESSIVES" subtype="thank".
 
 # Personal experience (context-sensitive — no fixed schedule)
-For middle turns only (`is_beginning` and `is_ending` are false), read Discussion history and decide whether the next speaker should share a brief personal anecdote. Do NOT request anecdotes on a fixed turn count or timer.
+For middle turns only (`is_beginning`, `is_winding_down`, and `is_ending` are false), read Discussion history and decide whether the next speaker should share a brief personal anecdote. Do NOT request anecdotes on a fixed turn count or timer.
 
 Request a personal anecdote only when it feels natural, for example:
 - The previous speaker (user or agent) asked for personal experiences, stories, or "have you ever…?"
 - The previous speaker shared their own anecdote and a brief reciprocal share fits
 - The topic invites lived experience (dorms, classes, clubs, study habits, campus life) and the thread is conversational
+
+When the user invites personal sharing, you MUST set `personal_experience`: true.
 
 When requesting an anecdote:
 - Set `"personal_experience": true`
@@ -123,7 +137,7 @@ Otherwise set `"personal_experience": false` and use inform, challenge, or quest
 
 - Select "type" and "subtype" ONLY from the above taxonomy. Do NOT invent new ones.
 - Use the speaker's profile from {agent_profile} to guide behavior.
-- For agent speakers in the middle of the discussion (not beginning or ending), vary instructions: opinions with lived examples, factual inform, direct challenge, and invitations for others to share—not only factual inform.
+- For agent speakers in the middle of the discussion (not beginning, winding-down, or ending), vary instructions: opinions with lived examples, factual inform, direct challenge, and invitations for others to share—not only factual inform.
 - When `personal_experience` is true, the content_requirement MUST clearly ask for a brief first-person example.
 - Choose a clear target:
   - a specific participant (for responses, questions, challenges)

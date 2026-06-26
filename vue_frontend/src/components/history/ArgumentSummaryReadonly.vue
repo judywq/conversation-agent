@@ -1,56 +1,54 @@
 <script setup lang="ts">
-import type {
-  ArgumentSummaryEvidence,
-  ArgumentSummaryResult,
-  ArgumentSummarySpeaker,
-} from '@/services/conversationService'
+import {
+  explanationLabel,
+  explanationLine,
+  speakersFromSummary,
+} from '@/lib/argumentSummaryDisplay'
+import type { ArgumentSummaryResult } from '@/services/conversationService'
 
-const props = defineProps<{
+defineProps<{
   summary: ArgumentSummaryResult | null | undefined
 }>()
-
-const EVIDENCE_LABELS: Record<string, string> = {
-  fact: 'Fact',
-  data: 'Data',
-  example: 'Example',
-}
-
-function evidenceLabel(type: string): string {
-  return EVIDENCE_LABELS[type] || 'Fact'
-}
-
-function speakers(summary: ArgumentSummaryResult | null | undefined): ArgumentSummarySpeaker[] {
-  if (!summary) return []
-  if (summary.speakers?.length) return summary.speakers
-  return []
-}
 </script>
 
 <template>
   <div v-if="!summary || summary.status === 'empty'" class="text-sm text-muted-foreground">
-    No structured arguments yet.
+    No speaker opinions yet.
   </div>
   <ul v-else class="list-none space-y-3 text-sm">
     <li
-      v-for="(speaker, speakerIndex) in speakers(summary)"
+      v-for="(speaker, speakerIndex) in speakersFromSummary(summary)"
       :key="`${speaker.speaker_id}-${speakerIndex}`"
-      class="space-y-1"
+      class="space-y-2"
     >
       <div class="font-medium">{{ speaker.speaker_name || speaker.speaker_id }}</div>
-      <div class="text-muted-foreground">Stance: {{ speaker.claim }}</div>
-      <ul class="list-none space-y-0.5 pl-2">
-        <li
-          v-for="(item, evidenceIndex) in speaker.evidence"
-          :key="`${speaker.speaker_id}-evidence-${evidenceIndex}`"
-          class="text-[13px] leading-snug text-muted-foreground"
+      <div
+        v-for="(claim, claimIndex) in speaker.claims"
+        :key="`${speaker.speaker_id}-claim-${claimIndex}`"
+        class="space-y-1 pl-2"
+      >
+        <div class="text-foreground">{{ claim.text }}</div>
+        <ul
+          v-for="(reason, reasonIndex) in claim.reasons || []"
+          :key="`${speaker.speaker_id}-reason-${claimIndex}-${reasonIndex}`"
+          class="space-y-0.5 pl-2"
         >
-          {{ evidenceLabel((item as ArgumentSummaryEvidence).type) }}:
-          {{ (item as ArgumentSummaryEvidence).text }}
-        </li>
-      </ul>
+          <li class="text-[12px] leading-snug text-muted-foreground">
+            {{ reason.text }}
+          </li>
+          <li
+            v-for="(explanation, explanationIndex) in reason.explanations || []"
+            :key="`${speaker.speaker_id}-exp-${claimIndex}-${reasonIndex}-${explanationIndex}`"
+            class="truncate pl-2 text-[11px] leading-snug text-muted-foreground"
+            :title="explanationLine(explanation)"
+          >
+            {{ explanationLabel(explanation.type) }}: {{ explanation.text }}
+          </li>
+        </ul>
+      </div>
     </li>
-    <li v-if="speakers(summary).length === 0" class="text-muted-foreground">
-      No structured arguments yet.
+    <li v-if="speakersFromSummary(summary).length === 0" class="text-muted-foreground">
+      No speaker opinions yet.
     </li>
   </ul>
 </template>

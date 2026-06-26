@@ -35,6 +35,9 @@ from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
+from backend.conversation.services.conversation_phase import should_terminate
+from backend.conversation.services.conversation_phase import user_turns_allowed
+from backend.conversation.services.llm_tracing import conversation_tracing_context
 from backend.conversation.services.session_serialization import can_continue_session
 from backend.conversation.services.session_serialization import turn_record_to_dict
 from backend.conversation.services.user_proficiency import resolve_user_proficiency
@@ -229,6 +232,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     "type": "session_started",
                     "session_id": session.id,
                     "topic": session.topic,
+                    "max_turns": session.max_turns,
+                    "turn_count": session.turn_count,
                 },
             )
             await self.send_json({"type": "participants", "participants": await self._participants_payload(session.id)})
@@ -313,6 +318,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             # Treat "volunteer" as a raise-hand override signal.
             if self.session_id is None:
                 await self.send_json({"type": "error", "message": "No active session"})
+                return
+            session = await self._get_session(self.session_id)
+            if session is not None and not user_turns_allowed(session):
+                await self.send_json({"type": "user_turn_blocked", "reason": "past_max_turns"})
                 return
             await self._set_user_override_requested(self.session_id, requested=True)
             await self.send_json({"type": "user_volunteered"})
@@ -499,15 +508,16 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     )
                     await self.send_json({"type": "agent_status", "status": "finished"})
                     session_after_fail = await self._get_session(self.session_id)
-                    if (
-                        session_after_fail is not None
-                        and int(session_after_fail.turn_count) >= int(session_after_fail.max_turns)
-                    ):
+                    if session_after_fail is not None and should_terminate(session_after_fail):
                         await self._finalize_session(self.session_id)
                         await self.send_json(
                             {"type": "terminated", "reason": "agent_turn_failed_at_max"},
                         )
-                    elif session_after_fail is not None and not session_after_fail.terminate:
+                    elif (
+                        session_after_fail is not None
+                        and not session_after_fail.terminate
+                        and user_turns_allowed(session_after_fail)
+                    ):
                         await self._set_pending_forced_user_turn(session_after_fail.id, pending=True)
                         await self.send_json(
                             {
@@ -797,12 +807,13 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         audio_url: str | None = None,
     ) -> TurnRecord:
         session = ConversationSession.objects.get(id=session_id)
-        processed = process_user_turn(
-            session,
-            utterance,
-            source=source,
-            audio_url=audio_url,
-        )
+        with conversation_tracing_context(session.user):
+            processed = process_user_turn(
+                session,
+                utterance,
+                source=source,
+                audio_url=audio_url,
+            )
         TurnEngineLog.objects.create(
             session=session,
             component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
@@ -840,21 +851,22 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         before the rest of the turn pipeline executes.
         """
         session = ConversationSession.objects.get(id=session_id)
-        if agent_id:
-            agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
-        elif session.turn_count == 0:
-            agents = list(AgentProfile.objects.filter(session=session))
-            if not agents:
-                msg = "Session has no agent profiles configured."
-                raise ValueError(msg)
-            agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
-        else:
-            agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
-            if not agents:
-                msg = "Session has no agent profiles configured."
-                raise ValueError(msg)
-            agent = agents[int(session.turn_count) % len(agents)]
-        plan = build_facilitator_plan(session, agent=agent)
+        with conversation_tracing_context(session.user):
+            if agent_id:
+                agent = AgentProfile.objects.get(session=session, agent_id=agent_id)
+            elif session.turn_count == 0:
+                agents = list(AgentProfile.objects.filter(session=session))
+                if not agents:
+                    msg = "Session has no agent profiles configured."
+                    raise ValueError(msg)
+                agent = max(agents, key=lambda a: float(a.traits.get("leadership", 0.0)))
+            else:
+                agents = list(AgentProfile.objects.filter(session=session).order_by("agent_id"))
+                if not agents:
+                    msg = "Session has no agent profiles configured."
+                    raise ValueError(msg)
+                agent = agents[int(session.turn_count) % len(agents)]
+            plan = build_facilitator_plan(session, agent=agent)
         return agent.agent_id, plan
 
     async def _synthesize_agent_audio(
@@ -941,8 +953,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         agent_id = agent.agent_id
 
         t0 = time.perf_counter()
-        if plan is None:
-            plan = build_facilitator_plan(session, agent=agent)
+        t_utter0 = time.perf_counter()
+        with conversation_tracing_context(session.user):
+            if plan is None:
+                plan = build_facilitator_plan(session, agent=agent)
+            generated = generate_agent_utterance_with_retrieval(session, agent=agent, facilitator_plan=plan)
+        t_utter_ms = int((time.perf_counter() - t_utter0) * 1000)
         TurnEngineLog.objects.create(
             session=session,
             component=TurnEngineLog.COMPONENT_TURN_PROCESSOR,
@@ -958,9 +974,6 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             subturn_index=0,
         )
 
-        t_utter0 = time.perf_counter()
-        generated = generate_agent_utterance_with_retrieval(session, agent=agent, facilitator_plan=plan)
-        t_utter_ms = int((time.perf_counter() - t_utter0) * 1000)
         utterance = generated.utterance
         duplicate_result = detect_duplicate_agent_utterance(session, utterance)
         log_agent_utterance_duplicate_detection(

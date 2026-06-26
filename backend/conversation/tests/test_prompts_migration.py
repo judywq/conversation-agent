@@ -1,6 +1,7 @@
 import pytest
 
 from backend.conversation.consumers import select_agent_personas_for_session
+from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import load_prompts_catalog
 from backend.conversation.prompts import render_prompt_template
 
@@ -11,6 +12,9 @@ def test_prompts_catalog_loads_expected_sections():
     assert "You are the Facilitator" in catalog.facilitator_template
     assert "Personal experience" in catalog.facilitator_template
     assert "personal_experience" in catalog.facilitator_template
+    assert "{experience_steering_hint}" in catalog.facilitator_template
+    assert "{is_winding_down}" in catalog.facilitator_template
+    assert "{personal_experience_priority}" in catalog.agent_prompts[0].template
     assert "{agent_personal_profile}" in catalog.agent_prompts[0].template
     assert "You are a Speech Act Classifier." in catalog.speech_act_classifier_template
 
@@ -59,8 +63,18 @@ def test_agent_persona_template_substitutes_major():
         argument_summary_bullets="- Dorms build community",
         audio_tags="[reflective]",
         is_ending="false",
+        is_winding_down="false",
+        personal_experience_priority="Not applicable.",
     )
     assert "Computer Science" in rendered
-    assert "Discussion summary by speaker" in rendered
+    assert "Speaker opinions" in rendered
     assert "Dorms build community" in rendered
     assert "{major}" not in rendered
+
+
+def test_argument_summary_prompt_emphasizes_salience():
+    template = load_additional_prompt("argument_summary.txt")
+    assert "Salience" in template
+    assert "at most 2–3 claims" in template
+    assert "update that entry's text" in template
+    assert "drop the other" in template

@@ -36,7 +36,7 @@ function formatSessionDate(value: string | null | undefined): string {
 
 function sessionStatusLabel(session: ConversationSessionSummary): string {
   if (session.can_continue) return 'Interrupted'
-  if (session.terminate || session.turn_count >= session.max_turns) return 'Ended'
+  if (session.turn_count > 0) return 'Ended'
   if (session.paused) return 'Paused'
   return 'In progress'
 }
@@ -197,7 +197,7 @@ onMounted(() => {
             </div>
 
             <div class="space-y-2">
-              <h3 class="text-sm font-medium">Argument structure</h3>
+              <h3 class="text-sm font-medium">Speaker opinions</h3>
               <div class="max-h-[min(60vh,28rem)] overflow-y-auto rounded-md border p-3">
                 <ArgumentSummaryReadonly :summary="sessionDetail(session.id)!.argument_summary" />
               </div>
@@ -221,7 +221,7 @@ onMounted(() => {
               :disabled="sessionDetail(session.id)!.argument_summary.status !== 'ready'"
               @click="downloadArguments(sessionDetail(session.id)!)"
             >
-              Download argument structure
+              Download speaker opinions
             </Button>
             <Button
               variant="outline"

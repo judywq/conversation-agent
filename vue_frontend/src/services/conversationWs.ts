@@ -23,7 +23,7 @@ export type ConversationTurn = {
 
 export type ConversationWsEvent =
   | { type: 'connected'; user_id: number }
-  | { type: 'session_started'; session_id: number; topic: string }
+  | { type: 'session_started'; session_id: number; topic: string; max_turns?: number; turn_count?: number }
   | {
       type: 'session_resumed'
       session_id: number
@@ -45,6 +45,7 @@ export type ConversationWsEvent =
   | { type: 'need_user_turn'; reason: string }
   | { type: 'turn'; turn: ConversationTurn }
   | { type: 'agent_status'; status: 'thinking' | 'finished' | 'searching_online'; agent_display_name?: string }
+  | { type: 'user_turn_blocked'; reason: string }
   | { type: 'terminated'; reason: string }
   | { type: 'error'; message: string }
   | { type: string; [k: string]: any }

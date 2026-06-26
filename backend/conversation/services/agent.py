@@ -6,6 +6,7 @@ from langchain_core.messages import SystemMessage
 
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
+from backend.conversation.models import TurnRecord
 from backend.conversation.models import SessionNewsChunk
 from backend.conversation.prompts import load_agent_persona_prompts
 from backend.conversation.prompts import render_prompt_template
@@ -14,8 +15,10 @@ from backend.conversation.services.audio_tags import format_audio_tags_for_promp
 from backend.conversation.services.audio_tags import strip_audio_tags
 from backend.conversation.services.argument_summary import build_numbered_transcript
 from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
-from backend.conversation.services.argument_summary import is_closing_turn
+from backend.conversation.services.conversation_phase import is_closing_turn
+from backend.conversation.services.conversation_phase import is_winding_down_turn
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
@@ -30,6 +33,8 @@ from backend.conversation.services.user_proficiency import resolve_user_proficie
 _AGENT_RETRIEVAL_TOP_K = 5
 _MAX_QUESTIONS_PER_UTTERANCE = 2
 _MAX_SENTENCES_PER_UTTERANCE = 3
+_MAX_SENTENCES_CLOSING = 5
+_MAX_SENTENCES_WINDING_DOWN = 4
 _REQUEST_LIKE_DIRECTIVE_SUBTYPES = frozenset(
     {
         "request_info",
@@ -225,19 +230,28 @@ def _avoid_question_ending_when_not_request(
     return text[:-1].rstrip() + "."
 
 
-def _limit_to_three_sentences(utterance: str) -> str:
-    """
-    Safety clamp: keep at most three sentences.
-    """
+def _limit_sentences(utterance: str, *, max_sentences: int) -> str:
     text = (utterance or "").strip()
     if not text:
         return text
-    # Split on sentence-ending punctuation while keeping the punctuation.
     parts = re.split(r"(?<=[.!?])\s+", text)
     parts = [p.strip() for p in parts if p.strip()]
-    if len(parts) <= _MAX_SENTENCES_PER_UTTERANCE:
+    if len(parts) <= max_sentences:
         return text
-    return " ".join(parts[:_MAX_SENTENCES_PER_UTTERANCE]).strip()
+    return " ".join(parts[:max_sentences]).strip()
+
+
+def _limit_to_three_sentences(utterance: str) -> str:
+    """Safety clamp: keep at most three sentences on normal turns."""
+    return _limit_sentences(utterance, max_sentences=_MAX_SENTENCES_PER_UTTERANCE)
+
+
+def _max_sentences_for_turn(*, closing: bool, winding_down: bool) -> int:
+    if closing:
+        return _MAX_SENTENCES_CLOSING
+    if winding_down:
+        return _MAX_SENTENCES_WINDING_DOWN
+    return _MAX_SENTENCES_PER_UTTERANCE
 
 
 def _build_agent_retrieval_query(
@@ -273,6 +287,11 @@ def _should_retrieve_session_news(
     return sa_type == "ASSERTIVES" and sa_subtype == "inform"
 
 
+def _last_completed_turn_was_user(session: ConversationSession) -> bool:
+    last = session.turns.order_by("-turn_index", "-subturn_index").only("speaker_type").first()
+    return last is not None and last.speaker_type == TurnRecord.SPEAKER_TYPE_USER
+
+
 def resolve_agent_retrieval_sources(
     facilitator_plan: dict,
     *,
@@ -283,7 +302,8 @@ def resolve_agent_retrieval_sources(
     Effective retrieval sources for an agent turn (feat/rag-rules behavior).
 
     Always include Speech Act exemplars from the knowledge corpus. Fact Checker
-    ASSERTIVES turns also get web search regardless of facilitator retrieval_need.
+    ASSERTIVES turns also get web search regardless of facilitator retrieval_need,
+    except when the latest completed turn was from the user (skip web for faster reply).
     Session news is retrieved only on ASSERTIVES/inform turns when session news chunks exist.
     """
     sources = set(map_retrieval_sources(facilitator_plan.get("retrieval_requirement")))
@@ -296,6 +316,8 @@ def resolve_agent_retrieval_sources(
         sources.add("news")
     if is_personal_experience_plan(facilitator_plan):
         sources |= map_retrieval_sources("memory")
+    if session is not None and _last_completed_turn_was_user(session):
+        sources.discard("web")
     return sources
 
 
@@ -356,7 +378,8 @@ def generate_agent_utterance_with_retrieval(
     facilitator_plan: dict,
 ) -> GeneratedAgentUtterance:
     closing = is_closing_turn(session)
-    if closing:
+    winding_down = is_winding_down_turn(session) and not closing
+    if closing or winding_down:
         history = build_numbered_transcript(session)
     else:
         turns = get_short_term_turns(session, limit=3)
@@ -378,8 +401,12 @@ def generate_agent_utterance_with_retrieval(
             agent.agent_id,
             topic=session.topic,
         )
+        personal_experience_priority = (
+            "PRIORITY: This turn MUST include a brief first-person anecdote (1–2 sentences)."
+        )
     else:
         agent_personal_profile = "Not applicable."
+        personal_experience_priority = "Not applicable."
 
     persona_templates = load_agent_persona_prompts()
     selected_persona = str((agent.personality or {}).get("persona_name") or "")
@@ -409,11 +436,13 @@ def generate_agent_utterance_with_retrieval(
         retrieved_context=retrieval_context.rendered_context,
         audio_tags=format_audio_tags_for_prompt(),
         is_ending="true" if closing else "false",
+        is_winding_down="true" if winding_down else "false",
+        personal_experience_priority=personal_experience_priority,
     )
     system = SystemMessage(content=prompt_text)
 
     llm = get_default_chat_llm()
-    result = llm.invoke([system])
+    result = invoke_chat_llm(llm, [system], user=session.user)
     text = result.content if hasattr(result, "content") else str(result)
     speech_act_type = str(facilitator_plan.get("type") or "ASSERTIVES")
     speech_act_subtype = str(facilitator_plan.get("subtype") or "")
@@ -427,7 +456,10 @@ def generate_agent_utterance_with_retrieval(
         speech_act_type=speech_act_type,
         speech_act_subtype=speech_act_subtype,
     )
-    cleaned = _limit_to_three_sentences(cleaned)
+    cleaned = _limit_sentences(
+        cleaned,
+        max_sentences=_max_sentences_for_turn(closing=closing, winding_down=winding_down),
+    )
     cleaned = _normalize_directive_question_punctuation(
         cleaned,
         speech_act_type=speech_act_type,

@@ -1,20 +1,35 @@
-You summarize a classroom discussion grouped by speaker.
+You maintain a live "speaker opinions" map for a classroom discussion.
 
 Discussion topic:
 {topic}
 
-Transcript (each line is one speaking turn):
+Transcript (each line is one speaking turn; turn numbers are for orientation only):
 {transcript}
 
-Previous summary (merge cumulatively; keep all still-valid speakers, claims, and evidence; add new items; remove duplicates only):
+Previous speaker opinions (your starting point — refine in place; do not discard valid content):
 {previous_summary}
 
-For each participant who expressed a substantive position, return one entry with:
-- speaker_id: "user" for the human, or the agent id from the transcript
-- speaker_name: display name used in the discussion
-- speaker_type: "user" or "agent"
-- claim: their overall stance or position (one short phrase)
-- evidence: items supporting that stance, each with type "fact", "data", or "example"
+Task:
+1. Read the latest turn(s) and decide whether they contain valuable argumentation: a position/claim, a reason supporting a position, or a supporting fact, data point, or example.
+2. If the latest turn(s) are only greetings, short acknowledgments, pure questions without a stance, facilitator chatter, or other non-argument content, return the previous summary unchanged.
+3. Otherwise update the summary:
+   - Refine existing claims, reasons, or explanations when new information strengthens or corrects them. "Refine in place" means replace the existing entry's wording — do not append a parallel entry for the same idea.
+   - Add new claims or reasons only when a speaker introduces a genuinely new argumentative line — not a rephrasing of something already captured.
+   - Do NOT add one entry per speaking turn. Skip turns with no argument content.
+   - Do NOT include turn numbers in the JSON output.
+
+Salience (extract only what matters):
+- Capture only major positions a speaker would want remembered at discussion end — not every anecdote, aside, or restatement.
+- Per speaker, aim for at most 2–3 claims, 1–2 reasons per claim, and 0–1 explanation per reason.
+- Use one best example per point. If two examples illustrate the same idea, keep the sharper one and drop the other.
+- When new transcript wording refines an existing claim, reason, or explanation, update that entry's text; do not add a second entry for the same idea.
+- On refresh, drop reasons or explanations that are redundant, overly specific, or no longer central as the discussion evolves.
+- Skip filler, greetings, pure questions, facilitator lines, and color that does not support a clear position.
+
+Structure per speaker (a speaker may have multiple claims):
+- Level 1 — claim: a short position phrase
+- Level 2 — reasons: under each claim, reasons that support it
+- Level 3 — explanations: under each reason, optional supporting fact, data, or example
 
 Return strict JSON only:
 {{
@@ -23,21 +38,29 @@ Return strict JSON only:
       "speaker_id": "user",
       "speaker_name": "Display name",
       "speaker_type": "user",
-      "claim": "Short stance phrase",
-      "evidence": [
-        {{ "type": "fact", "text": "Short phrase" }},
-        {{ "type": "data", "text": "Short phrase" }},
-        {{ "type": "example", "text": "Short phrase" }}
+      "claims": [
+        {{
+          "text": "Short claim phrase",
+          "reasons": [
+            {{
+              "text": "Short reason phrase",
+              "explanations": [
+                {{ "type": "fact", "text": "Brief supporting phrase" }},
+                {{ "type": "example", "text": "Brief example phrase" }}
+              ]
+            }}
+          ]
+        }}
       ]
     }}
   ]
 }}
 
 Rules:
-- Use phrase fragments only; NO full sentences; NO quotes from the transcript
-- Maximum 15 words per text field
-- Include every speaker with a clear stance (user and agents)
-- Up to 6 evidence items per speaker; include only types actually present
-- Summarize ALL turns cumulatively; merge with previous summary; never list only the latest turn
-- Use only content from the transcript; do not invent facts
+- Use phrase fragments only; NO full sentences; NO direct quotes from the transcript
+- Maximum 15 words per claim; maximum 12 words per reason; maximum 10 words per explanation
+- explanation type must be one of: fact, data, example
+- Include only speakers who have at least one substantive claim
+- Return the COMPLETE updated summary (all speakers and all still-valid claims), not a delta
+- Use only content grounded in the transcript; do not invent facts
 - Write all text in English

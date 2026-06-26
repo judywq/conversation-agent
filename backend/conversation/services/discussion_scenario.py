@@ -15,6 +15,7 @@ from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.cefr_levels import normalize_user_cefr_level
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.web_search import build_scenario_knowledge_query
 from backend.conversation.services.web_search import fetch_web_search_context
 from backend.conversation.services.web_search import web_search_context_is_usable
@@ -214,6 +215,7 @@ def generate_scenario_with_llm(
     articles: list[NewsArticle],
     cefr_level: str | None = None,
     reference_utterance: str | None = None,
+    user: Any | None = None,
 ) -> DiscussionScenarioResult:
     category_obj = get_category(category)
     subtopic_obj = get_subtopic(category, subtopic)
@@ -233,7 +235,7 @@ def generate_scenario_with_llm(
         news_context=_build_news_context(articles) if has_articles else "Not applicable.",
     )
     llm = get_default_chat_llm()
-    result = llm.invoke([SystemMessage(content=prompt_text)])
+    result = invoke_chat_llm(llm, [SystemMessage(content=prompt_text)], user=user)
     raw = result.content if hasattr(result, "content") else str(result)
     scenario = _parse_scenario_payload(str(raw))
     primary = articles[0] if articles else None
@@ -267,6 +269,7 @@ def generate_discussion_scenario_from_articles(
     articles: list[NewsArticle],
     cefr_level: str | None = None,
     reference_utterance: str | None = None,
+    user: Any | None = None,
 ) -> DiscussionScenarioResult:
     return generate_scenario_with_llm(
         category=category,
@@ -274,6 +277,7 @@ def generate_discussion_scenario_from_articles(
         articles=articles,
         cefr_level=cefr_level,
         reference_utterance=reference_utterance,
+        user=user,
     )
 
 
@@ -300,6 +304,7 @@ def setup_discussion_context(
     cefr_level: str | None = None,
     reference_utterance: str | None = None,
     limit: int = DISCUSSION_ARTICLE_LIMIT,
+    user: Any | None = None,
 ) -> DiscussionScenarioResult:
     normalized_cefr = normalize_user_cefr_level(cefr_level)
     articles = ensure_articles_for_taxonomy(
@@ -318,6 +323,7 @@ def setup_discussion_context(
                 articles=articles,
                 cefr_level=normalized_cefr,
                 reference_utterance=reference_utterance,
+                user=user,
             )
             fulltext_future = executor.submit(fetch_and_store_full_text, articles)
             result = scenario_future.result()
@@ -350,6 +356,7 @@ def setup_discussion_context(
         articles=[],
         cefr_level=normalized_cefr,
         reference_utterance=reference_utterance,
+        user=user,
     )
     web_context, web_context_fetched = _fetch_web_context_for_scenario(
         category_name=result.category_name,

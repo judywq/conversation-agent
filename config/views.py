@@ -2,6 +2,9 @@ from django.conf import settings
 from django.core.mail import EmailMessage
 from django.core.mail import send_mail
 from django.http import HttpResponse
+from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_GET
 
 
 def test_email(request, method, to):
@@ -22,3 +25,10 @@ def test_email(request, method, to):
         msg.content_subtype = "html"  # Main content is now text/html
         msg.send()
     return HttpResponse("Email sent!")
+
+
+@require_GET
+@ensure_csrf_cookie
+def csrf_cookie(request):
+    """Set the CSRF cookie for SPA clients before their first mutating API call."""
+    return JsonResponse({"detail": "ok"})

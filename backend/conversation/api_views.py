@@ -69,6 +69,7 @@ class DiscussionScenarioView(APIView):
             subtopic=subtopic,
             cefr_level=cefr_level,
             reference_utterance=reference_utterance,
+            user=request.user,
         )
         if hasattr(request.user, "userprofile"):
             profile = request.user.userprofile
@@ -89,7 +90,7 @@ class CefrTopicSamplesView(APIView):
         topic_log = topic[:200]
         logger.info("cefr_samples request_start user_id=%s topic=%s", user_id, topic_log)
         try:
-            samples = generate_cefr_topic_samples(topic=topic)
+            samples = generate_cefr_topic_samples(topic=topic, user=request.user)
             if hasattr(request.user, "userprofile"):
                 logger.info("cefr_samples profile_save_start user_id=%s", user_id)
                 t_save0 = time.perf_counter()

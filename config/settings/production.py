@@ -188,3 +188,5 @@ SPECTACULAR_SETTINGS["SERVERS"] = [
 ]
 # Your stuff...
 # ------------------------------------------------------------------------------
+# Conversation (production default; override via CONVERSATION_MAX_TURNS env var)
+CONVERSATION_MAX_TURNS = env.int("CONVERSATION_MAX_TURNS", default=40)

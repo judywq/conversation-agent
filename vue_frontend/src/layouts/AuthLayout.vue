@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Footer from '@/components/Footer.vue';
 import { defaultAuthenticatedRoute } from '@/lib/authNavigation';
+import { ensureCsrfToken } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import { onMounted } from 'vue';
@@ -10,6 +11,8 @@ const router = useRouter();
 
 // Redirect authenticated users away from auth routes
 onMounted(() => {
+  void ensureCsrfToken().catch(() => {});
+
   if (authStore.isAuthenticated) {
     router.push(defaultAuthenticatedRoute());
   }

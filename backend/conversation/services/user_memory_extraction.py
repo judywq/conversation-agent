@@ -18,6 +18,8 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.models import UserMemory
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import conversation_tracing_context
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
 from backend.conversation.services.memory import turns_to_messages
 
@@ -231,7 +233,7 @@ def extract_memory_candidates(
         return []
     llm = llm or get_default_chat_llm()
     prompt = build_memory_extraction_prompt(session=session, turn=turn)
-    result = llm.invoke([SystemMessage(content=prompt)])
+    result = invoke_chat_llm(llm, [SystemMessage(content=prompt)], user=user)
     raw = result.content if hasattr(result, "content") else str(result)
     return parse_memory_response(raw)
 
@@ -334,13 +336,14 @@ def run_memory_extraction_for_turn(
         return
 
     try:
-        candidates = extract_memory_candidates(user=user, session=session, turn=turn)
-        persist_memory_candidates(
-            user=user,
-            session=session,
-            turn=turn,
-            candidates=candidates,
-        )
+        with conversation_tracing_context(user):
+            candidates = extract_memory_candidates(user=user, session=session, turn=turn)
+            persist_memory_candidates(
+                user=user,
+                session=session,
+                turn=turn,
+                candidates=candidates,
+            )
     except Exception:
         logger.exception(
             "memory_extraction_failed",

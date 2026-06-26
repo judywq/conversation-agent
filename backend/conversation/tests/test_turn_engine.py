@@ -11,8 +11,11 @@ from backend.conversation.services.turn_processor import process_agent_turn
 @pytest.mark.django_db
 def test_termination_when_max_turns_reached(user):
     session = ConversationSession.objects.create(user=user, topic="t", max_turns=2, turn_count=2)
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
     decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=None)
-    assert decision.terminate is True
+    assert decision.terminate is False
+    assert decision.next_speaker_type == "agent"
+    assert decision.reason == "post_max_closing_turn"
 
 
 @pytest.mark.django_db
@@ -108,12 +111,8 @@ def test_weighted_balancing_selects_agent_with_biggest_deficit(user):
 
 
 @pytest.mark.django_db
-def test_last_turn_prefers_agent_wrap_up(user):
-    """
-    Regression: previously, at turn_count == max_turns - 1 the policy could still
-    choose the user, leading to an immediate termination after the user spoke and
-    no final agent wrap-up.
-    """
+def test_winding_down_still_allows_user_volunteer(user):
+    """At turn_count == max_turns - 1, users may still speak; closing waits until post-max."""
     session = ConversationSession.objects.create(user=user, topic="t", turn_count=19, max_turns=20)
     AgentProfile.objects.bulk_create(
         [
@@ -123,9 +122,8 @@ def test_last_turn_prefers_agent_wrap_up(user):
     )
     decision = decide_next_speaker(session, user_volunteered=True, last_user_turn_index=18)
     assert decision.terminate is False
-    assert decision.next_speaker_type == "agent"
-    assert decision.next_speaker_id in {"agent_1", "agent_2"}
-    assert decision.reason == "closing_agent_turn"
+    assert decision.next_speaker_type == "user"
+    assert decision.reason == "user_volunteered"
 
 
 @pytest.mark.django_db
@@ -255,4 +253,113 @@ def test_agent_turn_name_target_fallback_routes_user_via_directive_metadata(user
     assert decision.next_speaker_type == "user"
     assert decision.next_speaker_id == "user"
     assert decision.reason == "directive_target_user"
+
+
+@pytest.mark.django_db
+def test_user_question_at_max_routes_to_agent(user):
+    session = ConversationSession.objects.create(user=user, topic="t", max_turns=10, turn_count=10)
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="Why is housing so expensive on campus?",
+        source="text",
+    )
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=9)
+    assert decision.terminate is False
+    assert decision.next_speaker_type == "agent"
+    assert decision.reason == "user_question_answer"
+
+
+@pytest.mark.django_db
+def test_raise_hand_blocked_post_max(user):
+    session = ConversationSession.objects.create(
+        user=user,
+        topic="t",
+        max_turns=10,
+        turn_count=10,
+        user_override_requested=True,
+    )
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=None)
+    assert decision.next_speaker_type == "agent"
+    assert decision.reason == "post_max_closing_turn"
+
+
+@pytest.mark.django_db
+def test_answer_then_close_then_terminate(user):
+    session = ConversationSession.objects.create(user=user, topic="t", max_turns=10, turn_count=10)
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="What do you think about dorms?",
+        source="text",
+    )
+    answer_decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=9)
+    assert answer_decision.reason == "user_question_answer"
+
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Dorms can be pricey but convenient.",
+        source="text",
+    )
+    session.turn_count = 11
+    session.save(update_fields=["turn_count"])
+
+    close_decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=9)
+    assert close_decision.reason == "post_max_closing_turn"
+
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Thanks everyone for a great chat.",
+        speech_act="DECLARATIONS",
+        subtype="close_session",
+        source="text",
+    )
+    session.turn_count = 12
+    session.save(update_fields=["turn_count"])
+
+    final_decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=9)
+    assert final_decision.terminate is True
+
+
+@pytest.mark.django_db
+def test_hard_cap_terminates_without_clean_close(user):
+    session = ConversationSession.objects.create(user=user, topic="t", max_turns=10, turn_count=14)
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=None)
+    assert decision.terminate is True
+    assert decision.reason == "termination_condition"
+
+
+@pytest.mark.django_db
+def test_user_group_question_routes_to_agent_not_user(user):
+    session = ConversationSession.objects.create(user=user, topic="Campus dorms", turn_count=2)
+    AgentProfile.objects.bulk_create(
+        [
+            AgentProfile(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"}),
+            AgentProfile(session=session, agent_id="agent_2", personality={"persona_name": "Fact Checker"}),
+        ],
+    )
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="What do you all think about living on campus?",
+        source="text",
+    )
+    session.turns.update(target="everyone", speech_act="DIRECTIVES", subtype="request_info")
+
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=1)
+
+    assert decision.terminate is False
+    assert decision.next_speaker_type == "agent"
+    assert decision.next_speaker_id in {"agent_1", "agent_2"}
+    assert decision.reason == "user_group_question"
 

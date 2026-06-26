@@ -16,7 +16,10 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import render_prompt_template
+from backend.conversation.services.conversation_phase import is_closing_turn as is_closing_turn_phase
 from backend.conversation.services.llm import get_default_chat_llm
+from backend.conversation.services.llm_tracing import conversation_tracing_context
+from backend.conversation.services.llm_tracing import invoke_chat_llm
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +30,11 @@ _STATUS_EMPTY = "empty"
 
 _MAX_WORDS = 15
 _MAX_CHARS = 100
+_MAX_REASON_WORDS = 12
+_MAX_REASON_CHARS = 80
+_MAX_EXPLANATION_WORDS = 10
+_MAX_EXPLANATION_CHARS = 60
 _MAX_SPEAKERS = 6
-_MAX_EVIDENCE = 6
 _VALID_EXPLANATION_TYPES = frozenset({"fact", "data", "example"})
 _EXPLANATION_LABELS = {"fact": "Fact", "data": "Data", "example": "Example"}
 
@@ -43,7 +49,7 @@ _scheduler_lock = threading.Lock()
 
 
 def is_closing_turn(session: ConversationSession) -> bool:
-    return int(session.turn_count) + 1 >= int(session.max_turns)
+    return is_closing_turn_phase(session)
 
 
 def _speaker_label(session: ConversationSession, turn: TurnRecord) -> str:
@@ -110,46 +116,207 @@ def _clamp_text(text: str, *, max_words: int = _MAX_WORDS, max_chars: int = _MAX
     return cleaned
 
 
-def _normalize_evidence(items: Any) -> list[dict[str, str]]:
-    if not isinstance(items, list):
-        return []
-    normalized: list[dict[str, str]] = []
-    for item in items:
-        if not isinstance(item, dict):
+def _text_key(text: str) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _normalize_explanation(item: Any) -> dict[str, str] | None:
+    if not isinstance(item, dict):
+        return None
+    explanation_type = str(item.get("type") or "fact").strip().lower()
+    if explanation_type not in _VALID_EXPLANATION_TYPES:
+        explanation_type = "fact"
+    text = _clamp_text(
+        str(item.get("text") or ""),
+        max_words=_MAX_EXPLANATION_WORDS,
+        max_chars=_MAX_EXPLANATION_CHARS,
+    )
+    if not text:
+        return None
+    return {"type": explanation_type, "text": text}
+
+
+def _normalize_reason(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    text = _clamp_text(
+        str(item.get("text") or ""),
+        max_words=_MAX_REASON_WORDS,
+        max_chars=_MAX_REASON_CHARS,
+    )
+    if not text:
+        return None
+    explanations: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in item.get("explanations") or []:
+        normalized = _normalize_explanation(raw)
+        if normalized is None:
             continue
-        evidence_type = str(item.get("type") or "fact").strip().lower()
-        if evidence_type not in _VALID_EXPLANATION_TYPES:
-            evidence_type = "fact"
-        text = _clamp_text(str(item.get("text") or ""))
-        if text:
-            normalized.append({"type": evidence_type, "text": text})
-    return normalized[:_MAX_EVIDENCE]
+        key = (normalized["type"], _text_key(normalized["text"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        explanations.append(normalized)
+    return {"text": text, "explanations": explanations}
+
+
+def _normalize_claim(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    text = _clamp_text(str(item.get("text") or ""))
+    if not text:
+        return None
+    reasons: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in item.get("reasons") or []:
+        normalized = _normalize_reason(raw)
+        if normalized is None:
+            continue
+        key = _text_key(normalized["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        reasons.append(normalized)
+    return {"text": text, "reasons": reasons}
+
+
+def _flat_speaker_to_claims(item: dict[str, Any]) -> list[dict[str, Any]]:
+    claim_text = _clamp_text(str(item.get("claim") or ""))
+    if not claim_text:
+        return []
+    reasons: list[dict[str, Any]] = []
+    seen_reasons: set[str] = set()
+    for raw in item.get("evidence") or []:
+        if not isinstance(raw, dict):
+            continue
+        evidence_text = _clamp_text(
+            str(raw.get("text") or ""),
+            max_words=_MAX_EXPLANATION_WORDS,
+            max_chars=_MAX_EXPLANATION_CHARS,
+        )
+        if not evidence_text:
+            continue
+        explanation_type = str(raw.get("type") or "fact").strip().lower()
+        if explanation_type not in _VALID_EXPLANATION_TYPES:
+            explanation_type = "fact"
+        reason_key = _text_key(evidence_text)
+        if reason_key in seen_reasons:
+            continue
+        seen_reasons.add(reason_key)
+        reasons.append(
+            {
+                "text": evidence_text,
+                "explanations": [{"type": explanation_type, "text": evidence_text}],
+            },
+        )
+    return [{"text": claim_text, "reasons": reasons}]
 
 
 def _normalize_speaker(item: Any) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
     speaker_id = str(item.get("speaker_id") or "").strip()
-    speaker_name = _clamp_text(str(item.get("speaker_name") or ""))
+    if not speaker_id:
+        return None
+    speaker_name = _clamp_text(str(item.get("speaker_name") or "")) or speaker_id
     speaker_type = str(item.get("speaker_type") or "").strip().lower()
     if speaker_type not in {"user", "agent"}:
         speaker_type = "user" if speaker_id == "user" else "agent"
-    claim = _clamp_text(str(item.get("claim") or ""))
-    if not speaker_id or not claim:
+
+    claims_raw = item.get("claims")
+    claims: list[dict[str, Any]] = []
+    if isinstance(claims_raw, list) and claims_raw:
+        for raw_claim in claims_raw:
+            normalized = _normalize_claim(raw_claim)
+            if normalized is not None:
+                claims.append(normalized)
+    elif item.get("claim"):
+        claims = _flat_speaker_to_claims(item)
+
+    if not claims:
         return None
-    if not speaker_name:
-        speaker_name = speaker_id
+
     return {
         "speaker_id": speaker_id,
         "speaker_name": speaker_name,
         "speaker_type": speaker_type,
-        "claim": claim,
-        "evidence": _normalize_evidence(item.get("evidence")),
+        "claims": claims,
     }
 
 
-def _evidence_key(item: dict[str, str]) -> tuple[str, str]:
-    return (str(item.get("type") or "fact").casefold(), str(item.get("text") or "").casefold())
+def _explanation_key(item: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(item.get("type") or "fact").casefold(),
+        _text_key(str(item.get("text") or "")),
+    )
+
+
+def _merge_explanations(
+    existing: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in existing + new:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_explanation(item)
+        if normalized is None:
+            continue
+        key = _explanation_key(normalized)
+        current = merged.get(key)
+        if current is None or len(normalized["text"]) > len(current["text"]):
+            merged[key] = normalized
+    return list(merged.values())
+
+
+def _merge_reasons(
+    existing: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for item in existing + new:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_reason(item)
+        if normalized is None:
+            continue
+        key = _text_key(normalized["text"])
+        current = merged.get(key)
+        if current is None:
+            merged[key] = normalized
+            continue
+        if len(normalized["text"]) > len(str(current.get("text") or "")):
+            current["text"] = normalized["text"]
+        current["explanations"] = _merge_explanations(
+            current.get("explanations") or [],
+            normalized.get("explanations") or [],
+        )
+    return list(merged.values())
+
+
+def _merge_claims(
+    existing: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for item in existing + new:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_claim(item)
+        if normalized is None:
+            continue
+        key = _text_key(normalized["text"])
+        current = merged.get(key)
+        if current is None:
+            merged[key] = normalized
+            continue
+        if len(normalized["text"]) > len(str(current.get("text") or "")):
+            current["text"] = normalized["text"]
+        current["reasons"] = _merge_reasons(
+            current.get("reasons") or [],
+            normalized.get("reasons") or [],
+        )
+    return list(merged.values())
 
 
 def _speaker_sort_key(speaker: dict[str, Any]) -> tuple[int, str]:
@@ -173,54 +340,45 @@ def merge_speaker_summaries(
         if existing is None:
             merged[speaker_id] = normalized
             continue
-        new_claim = normalized["claim"]
-        old_claim = str(existing.get("claim") or "")
-        if len(new_claim) >= len(old_claim):
-            existing["claim"] = new_claim
         if normalized.get("speaker_name"):
             existing["speaker_name"] = normalized["speaker_name"]
-        seen = {_evidence_key(e) for e in existing.get("evidence") or []}
-        for evidence in normalized.get("evidence") or []:
-            key = _evidence_key(evidence)
-            if key in seen:
-                continue
-            seen.add(key)
-            existing["evidence"].append(evidence)
-        existing["evidence"] = existing["evidence"][:_MAX_EVIDENCE]
+        existing["claims"] = _merge_claims(
+            existing.get("claims") or [],
+            normalized.get("claims") or [],
+        )
     speakers = sorted(merged.values(), key=_speaker_sort_key)
     return speakers[:_MAX_SPEAKERS]
 
 
-def _migrate_legacy_claim_to_speakers(claim: dict[str, Any], *, index: int) -> dict[str, Any] | None:
+def _migrate_legacy_topic_claim(claim: dict[str, Any], *, index: int) -> dict[str, Any] | None:
     claim_text = _clamp_text(str(claim.get("text") or ""))
     if not claim_text:
         return None
-    evidence: list[dict[str, str]] = []
+    reasons: list[dict[str, Any]] = []
     for package in claim.get("arguments") or []:
         if not isinstance(package, dict):
             continue
         reason = package.get("reason") if isinstance(package.get("reason"), dict) else {}
-        reason_text = _clamp_text(str(reason.get("text") or ""))
-        package_type = str(package.get("type") or "argument")
-        if reason_text:
-            evidence.append({"type": "fact", "text": f"{package_type}: {reason_text}"})
+        reason_text = _clamp_text(
+            str(reason.get("text") or ""),
+            max_words=_MAX_REASON_WORDS,
+            max_chars=_MAX_REASON_CHARS,
+        )
+        if not reason_text:
+            continue
+        explanations: list[dict[str, str]] = []
         for explanation in package.get("explanations") or []:
             if not isinstance(explanation, dict):
                 continue
-            explanation_text = _clamp_text(str(explanation.get("text") or ""))
-            if explanation_text:
-                evidence.append(
-                    {
-                        "type": str(explanation.get("type") or "fact"),
-                        "text": explanation_text,
-                    },
-                )
+            normalized = _normalize_explanation(explanation)
+            if normalized is not None:
+                explanations.append(normalized)
+        reasons.append({"text": reason_text, "explanations": explanations})
     return {
         "speaker_id": f"legacy_claim_{index}",
         "speaker_name": f"Topic position {index + 1}",
         "speaker_type": "agent",
-        "claim": claim_text,
-        "evidence": evidence[:_MAX_EVIDENCE],
+        "claims": [{"text": claim_text, "reasons": reasons}],
     }
 
 
@@ -240,7 +398,7 @@ def _speakers_from_summary(summary: dict[str, Any]) -> list[dict[str, Any]]:
         for index, claim in enumerate(claims_raw):
             if not isinstance(claim, dict):
                 continue
-            speaker = _migrate_legacy_claim_to_speakers(claim, index=index)
+            speaker = _migrate_legacy_topic_claim(claim, index=index)
             if speaker is not None:
                 migrated.append(speaker)
         return migrated
@@ -267,19 +425,31 @@ def format_argument_summary_bullets(summary: dict[str, Any]) -> str:
     lines: list[str] = []
     for speaker in _speakers_from_summary(summary):
         name = str(speaker.get("speaker_name") or speaker.get("speaker_id") or "Speaker").strip()
-        claim = str(speaker.get("claim") or "").strip()
-        if not claim:
+        claims = speaker.get("claims") or []
+        if not claims:
             continue
-        lines.append(f"- {name}: {claim}")
-        for evidence in speaker.get("evidence") or []:
-            if not isinstance(evidence, dict):
+        lines.append(f"- {name}")
+        for claim in claims:
+            claim_text = str(claim.get("text") or "").strip()
+            if not claim_text:
                 continue
-            evidence_text = str(evidence.get("text") or "").strip()
-            if not evidence_text:
-                continue
-            evidence_type = str(evidence.get("type") or "fact")
-            type_label = _EXPLANATION_LABELS.get(evidence_type, "Fact")
-            lines.append(f"  - {type_label}: {evidence_text}")
+            lines.append(f"  - Claim: {claim_text}")
+            for reason in claim.get("reasons") or []:
+                if not isinstance(reason, dict):
+                    continue
+                reason_text = str(reason.get("text") or "").strip()
+                if not reason_text:
+                    continue
+                lines.append(f"    - Reason: {reason_text}")
+                for explanation in reason.get("explanations") or []:
+                    if not isinstance(explanation, dict):
+                        continue
+                    explanation_text = str(explanation.get("text") or "").strip()
+                    if not explanation_text:
+                        continue
+                    explanation_type = str(explanation.get("type") or "fact")
+                    type_label = _EXPLANATION_LABELS.get(explanation_type, "Fact")
+                    lines.append(f"      - {type_label}: {explanation_text}")
 
     return "\n".join(lines)
 
@@ -342,7 +512,7 @@ def extract_argument_summary(
 ) -> dict[str, Any]:
     llm = llm or get_default_chat_llm()
     prompt = build_argument_summary_prompt(session=session)
-    result = llm.invoke([SystemMessage(content=prompt)])
+    result = invoke_chat_llm(llm, [SystemMessage(content=prompt)], user=session.user)
     raw = result.content if hasattr(result, "content") else str(result)
     return parse_argument_summary_response(raw)
 
@@ -374,12 +544,20 @@ def generate_argument_summary_for_session(session: ConversationSession) -> dict[
                 turn_count=session.turn_count,
             )
         else:
-            payload = _summary_payload(status=_STATUS_FAILED, turn_count=session.turn_count)
+            payload = _summary_payload(
+                status=_STATUS_EMPTY,
+                data={"speakers": []},
+                turn_count=session.turn_count,
+            )
         session.argument_summary = payload
         session.save(update_fields=["argument_summary", "updated_at"])
         return session.argument_summary
 
-    merged = merge_speaker_summaries(previous_speakers, parsed.get("speakers") or [])
+    parsed_speakers = parsed.get("speakers") or []
+    if parsed_speakers:
+        merged = parsed_speakers
+    else:
+        merged = previous_speakers
     if not merged:
         payload = _summary_payload(
             status=_STATUS_EMPTY,
@@ -432,31 +610,38 @@ def _submit_background(func: Any, **kwargs: Any) -> None:
 
 def _run_argument_summary_loop(*, session_id: int) -> None:
     try:
-        while True:
-            session = (
-                ConversationSession.objects.filter(id=session_id)
-                .select_related("user__userprofile")
-                .first()
-            )
-            if session is None:
-                logger.info("argument_summary_missing_session", extra={"session_id": session_id})
-                break
-            try:
-                generate_argument_summary_for_session(session)
-            except Exception:
-                logger.exception(
-                    "argument_summary_background_failed",
-                    extra={"session_id": session_id},
+        initial_session = (
+            ConversationSession.objects.filter(id=session_id)
+            .select_related("user")
+            .first()
+        )
+        tracing_user = initial_session.user if initial_session is not None else None
+        with conversation_tracing_context(tracing_user):
+            while True:
+                session = (
+                    ConversationSession.objects.filter(id=session_id)
+                    .select_related("user__userprofile")
+                    .first()
                 )
-                ConversationSession.objects.filter(id=session_id).update(
-                    argument_summary=_summary_payload(status=_STATUS_FAILED),
-                )
-                break
-
-            with _scheduler_lock:
-                if session_id not in _pending_refresh_sessions:
+                if session is None:
+                    logger.info("argument_summary_missing_session", extra={"session_id": session_id})
                     break
-                _pending_refresh_sessions.discard(session_id)
+                try:
+                    generate_argument_summary_for_session(session)
+                except Exception:
+                    logger.exception(
+                        "argument_summary_background_failed",
+                        extra={"session_id": session_id},
+                    )
+                    ConversationSession.objects.filter(id=session_id).update(
+                        argument_summary=_summary_payload(status=_STATUS_FAILED),
+                    )
+                    break
+
+                with _scheduler_lock:
+                    if session_id not in _pending_refresh_sessions:
+                        break
+                    _pending_refresh_sessions.discard(session_id)
     finally:
         with _scheduler_lock:
             _in_flight_sessions.discard(session_id)

@@ -6,6 +6,7 @@ from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.argument_summary import get_argument_summary_for_session
+from backend.conversation.services.conversation_phase import should_terminate
 
 
 def can_continue_session(session: ConversationSession) -> bool:
@@ -13,7 +14,7 @@ def can_continue_session(session: ConversationSession) -> bool:
         return False
     if session.turn_count <= 0:
         return False
-    return session.turn_count < int(session.max_turns)
+    return not should_terminate(session)
 
 
 def turn_record_to_dict(*, turn: TurnRecord, session: ConversationSession | None = None) -> dict[str, Any]:
