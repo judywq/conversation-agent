@@ -39,3 +39,7 @@ VITE_API_BASE_URL=http://conv.judywang.jp/api
 WEB_SEARCH_ENABLED=True
 WEB_SEARCH_MODEL=gpt-5
 WEB_SEARCH_TIMEOUT_SEC=30
+
+# Conversation
+# ------------------------------------------------------------------------------
+CONVERSATION_MAX_TURNS=40
