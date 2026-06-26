@@ -42,4 +42,4 @@ WEB_SEARCH_TIMEOUT_SEC=30
 
 # Conversation
 # ------------------------------------------------------------------------------
-CONVERSATION_MAX_TURNS=40
+CONVERSATION_MAX_TURNS=25
