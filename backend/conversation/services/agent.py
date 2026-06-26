@@ -15,7 +15,8 @@ from backend.conversation.services.audio_tags import format_audio_tags_for_promp
 from backend.conversation.services.audio_tags import strip_audio_tags
 from backend.conversation.services.argument_summary import build_numbered_transcript
 from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
-from backend.conversation.services.argument_summary import is_closing_turn
+from backend.conversation.services.conversation_phase import is_closing_turn
+from backend.conversation.services.conversation_phase import is_winding_down_turn
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_last_speaker_utterance
@@ -377,12 +378,7 @@ def generate_agent_utterance_with_retrieval(
     facilitator_plan: dict,
 ) -> GeneratedAgentUtterance:
     closing = is_closing_turn(session)
-    next_turn_count = int(session.turn_count) + 1
-    winding_down = (
-        next_turn_count == int(session.max_turns) - 1
-        and next_turn_count > 1
-        and not closing
-    )
+    winding_down = is_winding_down_turn(session) and not closing
     if closing or winding_down:
         history = build_numbered_transcript(session)
     else:

@@ -36,7 +36,7 @@ function formatSessionDate(value: string | null | undefined): string {
 
 function sessionStatusLabel(session: ConversationSessionSummary): string {
   if (session.can_continue) return 'Interrupted'
-  if (session.terminate || session.turn_count >= session.max_turns) return 'Ended'
+  if (session.turn_count > 0) return 'Ended'
   if (session.paused) return 'Paused'
   return 'In progress'
 }

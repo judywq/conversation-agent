@@ -35,6 +35,8 @@ from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
 from backend.conversation.services.turn_processor import set_pending_forced_user_turn
 from backend.conversation.services.turn_processor import set_user_override_requested
+from backend.conversation.services.conversation_phase import should_terminate
+from backend.conversation.services.conversation_phase import user_turns_allowed
 from backend.conversation.services.llm_tracing import conversation_tracing_context
 from backend.conversation.services.session_serialization import can_continue_session
 from backend.conversation.services.session_serialization import turn_record_to_dict
@@ -230,6 +232,8 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     "type": "session_started",
                     "session_id": session.id,
                     "topic": session.topic,
+                    "max_turns": session.max_turns,
+                    "turn_count": session.turn_count,
                 },
             )
             await self.send_json({"type": "participants", "participants": await self._participants_payload(session.id)})
@@ -314,6 +318,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             # Treat "volunteer" as a raise-hand override signal.
             if self.session_id is None:
                 await self.send_json({"type": "error", "message": "No active session"})
+                return
+            session = await self._get_session(self.session_id)
+            if session is not None and not user_turns_allowed(session):
+                await self.send_json({"type": "user_turn_blocked", "reason": "past_max_turns"})
                 return
             await self._set_user_override_requested(self.session_id, requested=True)
             await self.send_json({"type": "user_volunteered"})
@@ -500,15 +508,16 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     )
                     await self.send_json({"type": "agent_status", "status": "finished"})
                     session_after_fail = await self._get_session(self.session_id)
-                    if (
-                        session_after_fail is not None
-                        and int(session_after_fail.turn_count) >= int(session_after_fail.max_turns)
-                    ):
+                    if session_after_fail is not None and should_terminate(session_after_fail):
                         await self._finalize_session(self.session_id)
                         await self.send_json(
                             {"type": "terminated", "reason": "agent_turn_failed_at_max"},
                         )
-                    elif session_after_fail is not None and not session_after_fail.terminate:
+                    elif (
+                        session_after_fail is not None
+                        and not session_after_fail.terminate
+                        and user_turns_allowed(session_after_fail)
+                    ):
                         await self._set_pending_forced_user_turn(session_after_fail.id, pending=True)
                         await self.send_json(
                             {

@@ -5,6 +5,10 @@ from typing import Literal
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
+from backend.conversation.services.conversation_phase import has_unanswered_user_question
+from backend.conversation.services.conversation_phase import should_request_closing_agent
+from backend.conversation.services.conversation_phase import should_terminate
+from backend.conversation.services.conversation_phase import user_turns_allowed
 from backend.conversation.services.facilitator import last_user_group_question_turn
 
 SpeakerType = Literal["agent", "user"]
@@ -26,14 +30,6 @@ class TurnDecision:
     reason: str
 
 
-def should_terminate(session: ConversationSession) -> bool:
-    if session.terminate:
-        return True
-    if session.turn_count >= session.max_turns:
-        return True
-    return False
-
-
 def decide_next_speaker(
     session: ConversationSession,
     *,
@@ -41,31 +37,16 @@ def decide_next_speaker(
     last_user_turn_index: int | None,
 ) -> TurnDecision:
     """
-    Spec-aligned policy (simple v1):
-    - If terminate/max turns: stop.
-    - If pending_forced_user_turn: user must speak next.
-    - If user volunteered: user next (but only once per volunteer signal).
-    - Otherwise, default to agent.
+    Soft max-turn policy:
+    - max_turns is a target, not a hard stop.
+    - After max_turns, user turns are blocked; agents answer open questions then close.
     """
     if should_terminate(session):
         return TurnDecision(terminate=True, next_speaker_type=None, next_speaker_id=None, reason="termination_condition")
 
-    turns_left = int(session.max_turns) - int(session.turn_count)
-    if turns_left <= 1:
-        closing_agent_id = _pick_any_agent(session)
-        if closing_agent_id is not None:
-            return TurnDecision(
-                terminate=False,
-                next_speaker_type="agent",
-                next_speaker_id=closing_agent_id,
-                reason="closing_agent_turn",
-            )
-
-    if session.pending_forced_user_turn:
+    if session.pending_forced_user_turn and user_turns_allowed(session):
         return TurnDecision(terminate=False, next_speaker_type="user", next_speaker_id="user", reason="forced_user_turn")
 
-    # First round: do NOT generate makeshift. If the user wanted to speak first,
-    # the UI already routes them to a user turn. Otherwise, let an agent open.
     if session.turn_count == 0:
         agent_id = _pick_first_agent(session)
         return TurnDecision(
@@ -75,7 +56,27 @@ def decide_next_speaker(
             reason="first_round_agent_open",
         )
 
-    if session.user_override_requested:
+    if has_unanswered_user_question(session):
+        agent_id = _pick_balanced_agent(session) or _pick_any_agent(session)
+        if agent_id is not None:
+            return TurnDecision(
+                terminate=False,
+                next_speaker_type="agent",
+                next_speaker_id=agent_id,
+                reason="user_question_answer",
+            )
+
+    if should_request_closing_agent(session):
+        closing_agent_id = _pick_any_agent(session) or _pick_balanced_agent(session)
+        if closing_agent_id is not None:
+            return TurnDecision(
+                terminate=False,
+                next_speaker_type="agent",
+                next_speaker_id=closing_agent_id,
+                reason="post_max_closing_turn",
+            )
+
+    if session.user_override_requested and user_turns_allowed(session):
         return TurnDecision(
             terminate=False,
             next_speaker_type="user",
@@ -85,17 +86,17 @@ def decide_next_speaker(
 
     directive_override = _directive_target_override(session)
     if directive_override is not None:
-        return directive_override
+        return _maybe_block_user_turn(session, directive_override)
 
     named_question_override = _named_question_target_override(session)
     if named_question_override is not None:
-        return named_question_override
+        return _maybe_block_user_turn(session, named_question_override)
 
     group_question_override = _user_group_question_override(session)
     if group_question_override is not None:
         return group_question_override
 
-    if user_volunteered:
+    if user_volunteered and user_turns_allowed(session):
         return TurnDecision(
             terminate=False,
             next_speaker_type="user",
@@ -104,7 +105,7 @@ def decide_next_speaker(
         )
 
     selected = _pick_balanced_participant(session)
-    if selected == "user":
+    if selected == "user" and user_turns_allowed(session):
         return TurnDecision(
             terminate=False,
             next_speaker_type="user",
@@ -112,11 +113,26 @@ def decide_next_speaker(
             reason="balanced_user_turn",
         )
 
+    agent_id = selected if selected != "user" else (_pick_balanced_agent(session) or _pick_any_agent(session))
     return TurnDecision(
         terminate=False,
         next_speaker_type="agent",
-        next_speaker_id=selected,
-        reason="balanced_agent_turn",
+        next_speaker_id=agent_id,
+        reason="balanced_agent_turn" if selected != "user" else "past_max_no_user_turn",
+    )
+
+
+def _maybe_block_user_turn(session: ConversationSession, decision: TurnDecision) -> TurnDecision:
+    if decision.next_speaker_type != "user" or user_turns_allowed(session):
+        return decision
+    agent_id = _pick_balanced_agent(session) or _pick_any_agent(session)
+    if agent_id is None:
+        return TurnDecision(terminate=True, next_speaker_type=None, next_speaker_id=None, reason="past_max_no_agents")
+    return TurnDecision(
+        terminate=False,
+        next_speaker_type="agent",
+        next_speaker_id=agent_id,
+        reason="past_max_no_user_turn",
     )
 
 
@@ -130,21 +146,11 @@ def _pick_first_agent(session: ConversationSession) -> str | None:
 
 
 def _pick_any_agent(session: ConversationSession) -> str | None:
-    """
-    Pick an agent id that exists for this session.
-
-    Used as a fallback for the closing-turn policy (we only need *an* agent to
-    deliver the final wrap-up).
-    """
     first = AgentProfile.objects.filter(session=session).order_by("agent_id").values_list("agent_id", flat=True).first()
     return str(first) if first else None
 
 
 def _directive_target_override(session: ConversationSession) -> TurnDecision | None:
-    """
-    If the last real turn was a DIRECTIVES speech act targeted at a specific participant,
-    the next speaker should be that target (so they can answer the directive).
-    """
     last = (
         TurnRecord.objects.filter(session=session)
         .exclude(speaker_type=TurnRecord.SPEAKER_TYPE_MAKESHIFT)
@@ -162,7 +168,6 @@ def _directive_target_override(session: ConversationSession) -> TurnDecision | N
         return None
 
     if target == "user":
-        # If the directive is already addressed to the user, do NOT insert makeshift.
         return TurnDecision(
             terminate=False,
             next_speaker_type="user",
@@ -214,12 +219,6 @@ def _named_addressee_in_question(text: str, name: str) -> bool:
 
 
 def _named_question_target_override(session: ConversationSession) -> TurnDecision | None:
-    """
-    If the last real AGENT utterance contains a question explicitly addressed to a participant
-    by DISPLAY NAME (e.g., "Judy ...?" or "Lucas?"), force the next speaker to that participant.
-
-    This is a pragmatic fallback for when facilitator metadata doesn't mark the turn as DIRECTIVES.
-    """
     last = (
         TurnRecord.objects.filter(session=session)
         .exclude(speaker_type=TurnRecord.SPEAKER_TYPE_MAKESHIFT)
@@ -232,7 +231,6 @@ def _named_question_target_override(session: ConversationSession) -> TurnDecisio
     if not text:
         return None
 
-    # Build id -> display name map
     profile = getattr(session.user, "userprofile", None)
     preferred = (getattr(profile, "preferred_name", "") or "").strip() if profile else ""
     user_name = preferred or (getattr(session.user, "name", "") or "").strip()
@@ -261,10 +259,6 @@ def _named_question_target_override(session: ConversationSession) -> TurnDecisio
 
 
 def _user_group_question_override(session: ConversationSession) -> TurnDecision | None:
-    """
-    If the user just asked a question to everyone, the next speaker must be an agent
-    who can answer it (never route back to the user immediately).
-    """
     if last_user_group_question_turn(session) is None:
         return None
     agent_id = _pick_balanced_agent(session)
@@ -315,13 +309,6 @@ def _pick_balanced_participant(session: ConversationSession) -> str:
 
 
 def _participant_weights(agents: list[AgentProfile]) -> dict[str, float]:
-    """
-    Return desired long-run share of turns per participant.
-
-    Important: do NOT allow total agent weights to crowd the user to 0.0.
-    If `agent_count` increases, raw persona weights can sum > 1; we instead
-    reserve a minimum share for the user and normalize agents into the remainder.
-    """
     raw_agent_weights: dict[str, float] = {}
     raw_total = 0.0
     for agent in agents:
@@ -332,17 +319,7 @@ def _participant_weights(agents: list[AgentProfile]) -> dict[str, float]:
         raw_agent_weights[agent.agent_id] = w
         raw_total += w
 
-    # Reserve a minimum portion of turns for the user so they always get the floor,
-    # but make it depend on number of participants.
-    #
-    # Policy: user_weight = ceil((1 / N) to nearest 0.1), where N = agents + user.
-    # Examples:
-    # - N=6 -> 1/6=0.166.. -> 0.2
-    # - N=5 -> 1/5=0.2 -> 0.2
-    # - N=4 -> 1/4=0.25 -> 0.3
     participant_count = max(1, len(raw_agent_weights) + 1)
-    # Round up at the first decimal place (NOT normal rounding).
-    # Equivalent to: ceil((1 / N) * 10) / 10 == ceil(10 / N) / 10
     user_floor = ((10 + participant_count - 1) // participant_count) / 10.0
     user_floor = min(0.9, max(0.1, user_floor))
     remainder = max(0.0, 1.0 - user_floor)
@@ -371,4 +348,3 @@ def _participant_turn_counts(session: ConversationSession, agents: list[AgentPro
         if turn.speaker in counts:
             counts[turn.speaker] += 1
     return counts
-

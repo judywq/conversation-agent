@@ -13,10 +13,18 @@ Task:
 1. Read the latest turn(s) and decide whether they contain valuable argumentation: a position/claim, a reason supporting a position, or a supporting fact, data point, or example.
 2. If the latest turn(s) are only greetings, short acknowledgments, pure questions without a stance, facilitator chatter, or other non-argument content, return the previous summary unchanged.
 3. Otherwise update the summary:
-   - Refine existing claims, reasons, or explanations when new information strengthens or corrects them.
-   - Add new claims or reasons only when a speaker introduces a genuinely new position or supporting line of reasoning.
+   - Refine existing claims, reasons, or explanations when new information strengthens or corrects them. "Refine in place" means replace the existing entry's wording — do not append a parallel entry for the same idea.
+   - Add new claims or reasons only when a speaker introduces a genuinely new argumentative line — not a rephrasing of something already captured.
    - Do NOT add one entry per speaking turn. Skip turns with no argument content.
    - Do NOT include turn numbers in the JSON output.
+
+Salience (extract only what matters):
+- Capture only major positions a speaker would want remembered at discussion end — not every anecdote, aside, or restatement.
+- Per speaker, aim for at most 2–3 claims, 1–2 reasons per claim, and 0–1 explanation per reason.
+- Use one best example per point. If two examples illustrate the same idea, keep the sharper one and drop the other.
+- When new transcript wording refines an existing claim, reason, or explanation, update that entry's text; do not add a second entry for the same idea.
+- On refresh, drop reasons or explanations that are redundant, overly specific, or no longer central as the discussion evolves.
+- Skip filler, greetings, pure questions, facilitator lines, and color that does not support a clear position.
 
 Structure per speaker (a speaker may have multiple claims):
 - Level 1 — claim: a short position phrase

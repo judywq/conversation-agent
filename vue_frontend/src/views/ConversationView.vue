@@ -46,6 +46,8 @@ const router = useRouter()
 const ws = new ConversationWsClient()
 const connected = ref(false)
 const sessionId = ref<number | null>(null)
+const sessionMaxTurns = ref(0)
+const sessionTurnCount = ref(0)
 const topic = ref('')
 const taxonomy = ref<NewsCategory[]>([])
 const selectedCategory = ref('')
@@ -140,6 +142,21 @@ const agentPlaybackBusy = computed(
     turnPlaybackQueue.value.length > 0 ||
     avatarSpeaking.value ||
     liveSpeakingTurnKey.value !== null,
+)
+const userTurnsAllowed = computed(
+  () => {
+    const count = Math.max(sessionTurnCount.value, turns.value.length)
+    return sessionMaxTurns.value <= 0 || count < sessionMaxTurns.value
+  },
+)
+const canStartMic = computed(
+  () =>
+    needUserTurn.value &&
+    !needFirstTurnChoice.value &&
+    userTurnsAllowed.value &&
+    !agentPlaybackBusy.value &&
+    agentStatus.value !== 'thinking' &&
+    agentStatus.value !== 'searching_online',
 )
 /** Turns fully revealed: listed turns minus any agent audio still queued or playing. */
 const effectiveSettledTurnCount = computed(() => {
@@ -702,6 +719,8 @@ function handleEvent(e: ConversationWsEvent) {
   }
   if (e.type === 'session_started') {
     sessionId.value = e.session_id
+    sessionMaxTurns.value = e.max_turns ?? 0
+    sessionTurnCount.value = e.turn_count ?? 0
     // Starting a new session should clear old logs.
     isEnded.value = false
     isPaused.value = false
@@ -721,6 +740,8 @@ function handleEvent(e: ConversationWsEvent) {
   }
   if (e.type === 'session_resumed') {
     sessionId.value = e.session_id
+    sessionMaxTurns.value = e.max_turns ?? 0
+    sessionTurnCount.value = e.turn_count ?? 0
     topic.value = e.topic || topic.value
     isEnded.value = false
     isPaused.value = e.paused ?? false
@@ -803,6 +824,12 @@ function handleEvent(e: ConversationWsEvent) {
     needUserTurn.value = true
     needFirstTurnChoice.value = false
   }
+  if (e.type === 'user_turn_blocked') {
+    toast({
+      title: 'Discussion wrapping up',
+      description: 'Agents are finishing the conversation; your turn is no longer available.',
+    })
+  }
   if (e.type === 'agent_status') {
     agentStatus.value = e.status
     if (e.status === 'searching_online' || e.status === 'thinking') {
@@ -857,6 +884,7 @@ function resumeSession(sessionIdToResume: number) {
 }
 
 function volunteer() {
+  if (!userTurnsAllowed.value) return
   ws.send({ type: 'raise_hand' })
 }
 
@@ -972,7 +1000,7 @@ function toggleRecordingFromKeyboard() {
   if (micState.value !== 'idle' && micState.value !== 'error') {
     return
   }
-  if (!needUserTurn.value || needFirstTurnChoice.value) return
+  if (!canStartMic.value || needFirstTurnChoice.value) return
   void startRecording()
 }
 
@@ -1344,15 +1372,14 @@ onUnmounted(() => {
                   <div class="flex gap-2">
                     <Button
                       :disabled="
-                        !needUserTurn ||
-                        needFirstTurnChoice ||
+                        !canStartMic ||
                         micState === 'recording' ||
                         micState === 'preview' ||
                         micState === 'transcribing'
                       "
                       @click="startRecording"
                     >
-                      Record
+                      Speak
                     </Button>
                     <Button variant="outline" :disabled="micState !== 'recording'" @click="stopRecording">
                       Stop
@@ -1361,14 +1388,14 @@ onUnmounted(() => {
                   <div class="text-xs text-muted-foreground">
                     You may also press
                     <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
-                    to start or stop recording.
+                    to start or stop speaking.
                   </div>
 
                   <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
                     <div class="text-sm font-medium">Preview recording</div>
                     <audio :src="recordedUrl" controls class="w-full" />
                     <div class="flex flex-col gap-2 sm:flex-row">
-                      <Button :disabled="!needUserTurn || needFirstTurnChoice" @click="sendRecording">Send</Button>
+                      <Button :disabled="!canStartMic" @click="sendRecording">Send</Button>
                       <Button variant="outline" @click="redoRecording">Redo</Button>
                     </div>
                   </div>
@@ -1474,15 +1501,14 @@ onUnmounted(() => {
               <div class="flex gap-2">
                 <Button
                   :disabled="
-                    !needUserTurn ||
-                    needFirstTurnChoice ||
+                    !canStartMic ||
                     micState === 'recording' ||
                     micState === 'preview' ||
                     micState === 'transcribing'
                   "
                   @click="startRecording"
                 >
-                  Record
+                  Speak
                 </Button>
                 <Button variant="outline" :disabled="micState !== 'recording'" @click="stopRecording">
                   Stop
@@ -1491,14 +1517,14 @@ onUnmounted(() => {
               <div class="text-xs text-muted-foreground">
                 You may also press
                 <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
-                to start or stop recording.
+                to start or stop speaking.
               </div>
 
               <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
                 <div class="text-sm font-medium">Preview recording</div>
                 <audio :src="recordedUrl" controls class="w-full" />
                 <div class="flex flex-col gap-2 sm:flex-row">
-                  <Button :disabled="!needUserTurn || needFirstTurnChoice" @click="sendRecording">Send</Button>
+                  <Button :disabled="!canStartMic" @click="sendRecording">Send</Button>
                   <Button variant="outline" @click="redoRecording">Redo</Button>
                 </div>
               </div>

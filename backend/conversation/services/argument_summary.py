@@ -16,6 +16,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import render_prompt_template
+from backend.conversation.services.conversation_phase import is_closing_turn as is_closing_turn_phase
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.llm_tracing import conversation_tracing_context
 from backend.conversation.services.llm_tracing import invoke_chat_llm
@@ -48,7 +49,7 @@ _scheduler_lock = threading.Lock()
 
 
 def is_closing_turn(session: ConversationSession) -> bool:
-    return int(session.turn_count) + 1 >= int(session.max_turns)
+    return is_closing_turn_phase(session)
 
 
 def _speaker_label(session: ConversationSession, turn: TurnRecord) -> str:
@@ -552,7 +553,11 @@ def generate_argument_summary_for_session(session: ConversationSession) -> dict[
         session.save(update_fields=["argument_summary", "updated_at"])
         return session.argument_summary
 
-    merged = merge_speaker_summaries(previous_speakers, parsed.get("speakers") or [])
+    parsed_speakers = parsed.get("speakers") or []
+    if parsed_speakers:
+        merged = parsed_speakers
+    else:
+        merged = previous_speakers
     if not merged:
         payload = _summary_payload(
             status=_STATUS_EMPTY,

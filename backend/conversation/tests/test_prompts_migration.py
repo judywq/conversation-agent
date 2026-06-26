@@ -1,6 +1,7 @@
 import pytest
 
 from backend.conversation.consumers import select_agent_personas_for_session
+from backend.conversation.prompts import load_additional_prompt
 from backend.conversation.prompts import load_prompts_catalog
 from backend.conversation.prompts import render_prompt_template
 
@@ -69,3 +70,11 @@ def test_agent_persona_template_substitutes_major():
     assert "Speaker opinions" in rendered
     assert "Dorms build community" in rendered
     assert "{major}" not in rendered
+
+
+def test_argument_summary_prompt_emphasizes_salience():
+    template = load_additional_prompt("argument_summary.txt")
+    assert "Salience" in template
+    assert "at most 2–3 claims" in template
+    assert "update that entry's text" in template
+    assert "drop the other" in template

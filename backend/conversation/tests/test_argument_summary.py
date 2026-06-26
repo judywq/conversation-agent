@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 import pytest
 from django.urls import reverse
@@ -11,11 +12,13 @@ from backend.conversation.services.argument_summary import build_numbered_transc
 from backend.conversation.services.argument_summary import format_argument_summary_bullets
 from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
 from backend.conversation.services.argument_summary import mark_argument_summary_pending
+from backend.conversation.services.argument_summary import generate_argument_summary_for_session
 from backend.conversation.services.argument_summary import merge_speaker_summaries
 from backend.conversation.services.argument_summary import parse_argument_summary_response
 from backend.conversation.services.argument_summary import _normalize_speaker
 from backend.conversation.services.argument_summary import _speakers_from_summary
 from backend.conversation.services.turn_manager import decide_next_speaker
+from backend.conversation.services.turn_processor import append_turn
 
 
 @pytest.mark.django_db
@@ -173,6 +176,72 @@ def test_merge_speaker_summaries_updates_existing_claim_and_reason() -> None:
     assert len(user["claims"]) == 1
     assert len(user["claims"][0]["reasons"]) == 1
     assert len(user["claims"][0]["reasons"][0]["explanations"]) == 2
+
+
+@pytest.mark.django_db
+def test_generate_uses_parsed_speakers_without_remerge(user) -> None:
+    previous_speakers = [
+        {
+            "speaker_id": "agent_1",
+            "speaker_name": "Emma",
+            "speaker_type": "agent",
+            "claims": [
+                {
+                    "text": "Gaming alone still felt stressed",
+                    "reasons": [
+                        {
+                            "text": "Avoiding friends prolongs stress",
+                            "explanations": [
+                                {"type": "example", "text": "gaming alone still felt stressed"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+    session = ConversationSession.objects.create(user=user, topic="Coping methods")
+    session.argument_summary = {"status": "ready", "speakers": previous_speakers}
+    session.save(update_fields=["argument_summary"])
+    TurnRecord.objects.create(
+        session=session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Talking to friends helped me relax more than gaming alone.",
+        turn_index=1,
+    )
+
+    parsed_speakers = [
+        {
+            "speaker_id": "agent_1",
+            "speaker_name": "Emma",
+            "speaker_type": "agent",
+            "claims": [
+                {
+                    "text": "Mixed coping methods work best",
+                    "reasons": [
+                        {
+                            "text": "Talking to others improves relaxation",
+                            "explanations": [
+                                {"type": "example", "text": "felt relaxed after talking"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    with patch(
+        "backend.conversation.services.argument_summary.extract_argument_summary",
+        return_value={"speakers": parsed_speakers},
+    ):
+        payload = generate_argument_summary_for_session(session)
+
+    assert payload["status"] == "ready"
+    assert payload["speakers"] == parsed_speakers
+    assert len(payload["speakers"][0]["claims"]) == 1
+    assert len(merge_speaker_summaries(previous_speakers, parsed_speakers)[0]["claims"]) == 2
 
 
 def test_format_argument_summary_bullets_renders_nested_structure_without_turn_numbers() -> None:
@@ -395,25 +464,23 @@ def test_session_argument_summary_api_returns_ready_payload(user, client) -> Non
 
 
 @pytest.mark.django_db
-def test_named_question_at_turn_19_still_prefers_closing_agent(user) -> None:
-    user.name = "Judy"
-    user.save()
+def test_user_question_at_turn_19_routes_to_agent_not_closing(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="t", turn_count=19, max_turns=20)
     AgentProfile.objects.bulk_create(
         [
             AgentProfile(session=session, agent_id="agent_1", display_name="Jack", personality={"persona_name": "Discussion Driver"}),
         ],
     )
-    TurnRecord.objects.create(
-        session=session,
-        speaker="agent_1",
-        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
-        utterance="Do you like taking the school bus, Judy?",
-        turn_index=18,
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="What do you all think about living on campus?",
+        source="text",
     )
 
-    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=None)
+    decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=18)
 
     assert decision.terminate is False
     assert decision.next_speaker_type == "agent"
-    assert decision.reason == "closing_agent_turn"
+    assert decision.reason == "user_question_answer"

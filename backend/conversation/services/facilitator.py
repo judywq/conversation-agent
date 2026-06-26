@@ -9,6 +9,9 @@ from backend.conversation.models import TurnRecord
 from backend.conversation.prompts import load_facilitator_prompt
 from backend.conversation.prompts import render_prompt_template
 from backend.conversation.services.argument_summary import build_numbered_transcript
+from backend.conversation.services.conversation_phase import has_unanswered_user_question
+from backend.conversation.services.conversation_phase import is_winding_down_turn
+from backend.conversation.services.conversation_phase import should_request_closing_agent
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
@@ -215,9 +218,9 @@ def apply_user_question_answer_plan(
     is_ending: bool,
     is_winding_down: bool,
 ) -> dict:
-    if is_ending or is_winding_down:
+    if is_ending and not has_unanswered_user_question(session):
         return plan
-    if last_user_group_question_turn(session) is None:
+    if not has_unanswered_user_question(session) and last_user_group_question_turn(session) is None:
         return plan
 
     updated = dict(plan)
@@ -632,8 +635,8 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     """
     next_turn_count = int(session.turn_count) + 1
     is_beginning = next_turn_count == 1
-    is_ending = next_turn_count >= int(session.max_turns)
-    is_winding_down = next_turn_count == int(session.max_turns) - 1 and not is_beginning
+    is_ending = should_request_closing_agent(session)
+    is_winding_down = is_winding_down_turn(session) and not is_ending
     if is_ending or is_winding_down:
         history = build_numbered_transcript(session)
     else:

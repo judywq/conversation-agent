@@ -109,6 +109,29 @@ def test_finalize_facilitator_plan_prefers_user_question_over_anecdote(user) -> 
     assert plan["personal_experience"] is False
 
 
+@pytest.mark.django_db
+def test_apply_user_question_answer_plan_during_winding_down(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="Study habits", max_turns=10, turn_count=8)
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="What do you all think about studying in the library?",
+        source="text",
+    )
+    session.turns.update(target="everyone", speech_act="DIRECTIVES", subtype="request_info")
+
+    plan = apply_user_question_answer_plan(
+        session,
+        {"type": "ASSERTIVES", "subtype": "inform", "content_requirement": "Share a fact."},
+        is_ending=False,
+        is_winding_down=True,
+    )
+
+    assert plan["target"] == "user"
+    assert "answer" in plan["content_requirement"].casefold()
+
+
 def test_is_user_group_question_turn_true_for_everyone_question() -> None:
     turn = TurnRecord(
         speaker="user",
