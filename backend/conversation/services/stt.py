@@ -1,3 +1,4 @@
+from django.conf import settings
 from openai import OpenAI
 
 from backend.llm_caller.models import APIKey
@@ -36,15 +37,28 @@ def _as_openai_file_tuple(file_obj) -> tuple[str, bytes, str]:
     return (str(filename), bytes(data), str(content_type))
 
 
-def transcribe_audio_file(file_obj, *, model: str = "whisper-1") -> str:
+def transcribe_audio_file(
+    file_obj,
+    *,
+    model: str = "whisper-1",
+    language: str | None = None,
+) -> str:
     """
     `file_obj` should be a Django UploadedFile (or file-like) with a `.name`.
     """
-    client = OpenAI(api_key=_get_openai_key())
-    result = client.audio.transcriptions.create(
-        model=model,
-        file=_as_openai_file_tuple(file_obj),
+    language_code = (
+        language
+        if language is not None
+        else str(getattr(settings, "CONVERSATION_STT_LANGUAGE", "en") or "").strip()
     )
+    client = OpenAI(api_key=_get_openai_key())
+    request_kwargs: dict[str, object] = {
+        "model": model,
+        "file": _as_openai_file_tuple(file_obj),
+    }
+    if language_code:
+        request_kwargs["language"] = language_code
+    result = client.audio.transcriptions.create(**request_kwargs)
     # openai-python returns a typed object with `.text`
     return str(getattr(result, "text", "")).strip()
 
