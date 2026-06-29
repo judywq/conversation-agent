@@ -4,6 +4,7 @@ from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.facilitator import apply_experience_plan_nudge
+from backend.conversation.services.facilitator import apply_user_closing_request_plan
 from backend.conversation.services.facilitator import apply_user_question_answer_plan
 from backend.conversation.services.facilitator import detect_anecdote_opportunity
 from backend.conversation.services.facilitator import finalize_facilitator_plan
@@ -130,6 +131,30 @@ def test_apply_user_question_answer_plan_during_winding_down(user) -> None:
 
     assert plan["target"] == "user"
     assert "answer" in plan["content_requirement"].casefold()
+
+
+@pytest.mark.django_db
+def test_apply_user_closing_request_plan_forces_close_session(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="Campus life", max_turns=25, turn_count=3)
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="Let's end here.",
+        source="text",
+    )
+    session.turns.update(speech_act="DIRECTIVES", subtype="request_closing", target="everyone")
+
+    plan = apply_user_closing_request_plan(
+        session,
+        {"type": "ASSERTIVES", "subtype": "inform", "content_requirement": "Share a fact."},
+    )
+
+    assert plan["type"] == "DECLARATIONS"
+    assert plan["subtype"] == "close_session"
+    assert plan["target"] == "everyone"
+    assert plan["personal_experience"] is False
+    assert plan["retrieval_requirement"] == "none"
 
 
 def test_is_user_group_question_turn_true_for_everyone_question() -> None:

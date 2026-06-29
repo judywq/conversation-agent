@@ -12,6 +12,7 @@ from backend.conversation.services.argument_summary import build_numbered_transc
 from backend.conversation.services.conversation_phase import has_unanswered_user_question
 from backend.conversation.services.conversation_phase import is_winding_down_turn
 from backend.conversation.services.conversation_phase import should_request_closing_agent
+from backend.conversation.services.conversation_phase import user_close_pending
 from backend.conversation.services.llm import get_default_chat_llm
 from backend.conversation.services.llm_tracing import invoke_chat_llm
 from backend.conversation.services.memory import get_short_term_turns
@@ -235,6 +236,27 @@ def apply_user_question_answer_plan(
     return updated
 
 
+def apply_user_closing_request_plan(
+    session: ConversationSession,
+    plan: dict,
+) -> dict:
+    if not user_close_pending(session):
+        return plan
+    if has_unanswered_user_question(session):
+        return plan
+
+    updated = dict(plan)
+    updated["type"] = "DECLARATIONS"
+    updated["subtype"] = "close_session"
+    updated["target"] = "everyone"
+    updated["content_requirement"] = clamp_facilitator_content_requirement(
+        "Thank the group warmly and sign off naturally.",
+    )
+    updated["personal_experience"] = False
+    updated["retrieval_requirement"] = "none"
+    return updated
+
+
 def finalize_facilitator_plan(
     session: ConversationSession,
     plan: dict,
@@ -250,12 +272,13 @@ def finalize_facilitator_plan(
         is_ending=is_ending,
         is_winding_down=is_winding_down,
     )
-    return apply_user_question_answer_plan(
+    plan = apply_user_question_answer_plan(
         session,
         plan,
         is_ending=is_ending,
         is_winding_down=is_winding_down,
     )
+    return apply_user_closing_request_plan(session, plan)
 
 
 def _parse_plan_bool(value: object) -> bool:
@@ -340,6 +363,11 @@ ALLOWED_TAXONOMY: dict[str, list[dict[str, str]]] = {
             "subtype": "request_permission",
             "definition": "Ask for permission to speak/act",
             "example": "Could I say something while they are thinking?",
+        },
+        {
+            "subtype": "request_closing",
+            "definition": "Ask to end the discussion session early",
+            "example": "I want to finish the conversation.",
         },
     ],
     "COMMISSIVES": [

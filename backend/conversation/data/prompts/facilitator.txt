@@ -136,6 +136,7 @@ Otherwise set `"personal_experience": false` and use inform, challenge, or quest
 # Constraints
 
 - Select "type" and "subtype" ONLY from the above taxonomy. Do NOT invent new ones.
+- Do NOT output `request_closing` for agent speakers; when `is_ending` is true, use `DECLARATIONS` subtype `close_session` or `EXPRESSIVES` subtype `thank`.
 - Use the speaker's profile from {agent_profile} to guide behavior.
 - For agent speakers in the middle of the discussion (not beginning, winding-down, or ending), vary instructions: opinions with lived examples, factual inform, direct challenge, and invitations for others to share—not only factual inform.
 - When `personal_experience` is true, the content_requirement MUST clearly ask for a brief first-person example.

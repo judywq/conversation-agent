@@ -8,7 +8,9 @@ from backend.conversation.services.conversation_phase import is_hard_cap_reached
 from backend.conversation.services.conversation_phase import is_past_max_turns
 from backend.conversation.services.conversation_phase import should_request_closing_agent
 from backend.conversation.services.conversation_phase import should_terminate
+from backend.conversation.services.conversation_phase import user_close_pending
 from backend.conversation.services.conversation_phase import user_turns_allowed
+from backend.conversation.services.turn_processor import TurnMetadata
 from backend.conversation.services.turn_processor import append_turn
 
 
@@ -71,3 +73,65 @@ def test_hard_cap_terminates(user) -> None:
 def test_past_max_does_not_immediately_terminate_without_close(user) -> None:
     session = ConversationSession.objects.create(user=user, topic="t", max_turns=10, turn_count=10)
     assert should_terminate(session) is False
+
+
+@pytest.mark.django_db
+def test_user_close_request_triggers_closing_before_max(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="t", max_turns=25, turn_count=5)
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="I want to finish the conversation.",
+        metadata=TurnMetadata(
+            type="DIRECTIVES",
+            subtype="request_closing",
+            target="everyone",
+            content_requirement="requests to end the session",
+            retrieval_requirement="",
+        ),
+        source="text",
+    )
+
+    assert user_close_pending(session) is True
+    assert should_request_closing_agent(session) is True
+    assert user_turns_allowed(session) is False
+    assert should_terminate(session) is False
+
+
+@pytest.mark.django_db
+def test_user_close_request_terminates_after_agent_close(user) -> None:
+    session = ConversationSession.objects.create(user=user, topic="t", max_turns=25, turn_count=5)
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="Can we wrap up?",
+        metadata=TurnMetadata(
+            type="DIRECTIVES",
+            subtype="request_closing",
+            target="everyone",
+            content_requirement="requests to end the session",
+            retrieval_requirement="",
+        ),
+        source="text",
+    )
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Thanks everyone for a great chat.",
+        metadata=TurnMetadata(
+            type="DECLARATIONS",
+            subtype="close_session",
+            target="everyone",
+            content_requirement="",
+            retrieval_requirement="",
+        ),
+        source="text",
+    )
+
+    assert user_close_pending(session) is False
+    assert should_terminate(session) is True

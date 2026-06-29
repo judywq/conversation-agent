@@ -102,3 +102,36 @@ def test_classify_user_speech_act_picks_matching_sentence_from_array(user):
 
     assert plan.get("type") == "DIRECTIVES"
     assert plan.get("subtype") == "request_action"
+
+
+@pytest.mark.django_db
+def test_process_user_turn_preserves_request_closing_subtype(user):
+    session = ConversationSession.objects.create(user=user, topic="Campus life")
+    plan_json = json.dumps(
+        {
+            "type": "DIRECTIVES",
+            "subtype": "request_closing",
+            "target": "everyone",
+            "content_requirement": "requests to end the session",
+            "retrieval_requirement": "",
+        },
+    )
+    mock_llm = SimpleNamespace(
+        invoke=lambda _messages: SimpleNamespace(content=plan_json),
+    )
+
+    with patch(
+        "backend.conversation.services.turn_processor.get_default_chat_llm",
+        return_value=mock_llm,
+    ):
+        processed = process_user_turn(
+            session,
+            "I want to finish the conversation.",
+            source="text",
+            audio_url=None,
+        )
+
+    turn = processed.turn
+    assert turn.speech_act == "DIRECTIVES"
+    assert turn.subtype == "request_closing"
+    assert turn.target == "everyone"

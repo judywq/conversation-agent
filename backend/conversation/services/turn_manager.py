@@ -8,6 +8,7 @@ from backend.conversation.models import TurnRecord
 from backend.conversation.services.conversation_phase import has_unanswered_user_question
 from backend.conversation.services.conversation_phase import should_request_closing_agent
 from backend.conversation.services.conversation_phase import should_terminate
+from backend.conversation.services.conversation_phase import user_close_pending
 from backend.conversation.services.conversation_phase import user_turns_allowed
 from backend.conversation.services.facilitator import last_user_group_question_turn
 
@@ -69,11 +70,12 @@ def decide_next_speaker(
     if should_request_closing_agent(session):
         closing_agent_id = _pick_any_agent(session) or _pick_balanced_agent(session)
         if closing_agent_id is not None:
+            reason = "user_requested_closing" if user_close_pending(session) else "post_max_closing_turn"
             return TurnDecision(
                 terminate=False,
                 next_speaker_type="agent",
                 next_speaker_id=closing_agent_id,
-                reason="post_max_closing_turn",
+                reason=reason,
             )
 
     if session.user_override_requested and user_turns_allowed(session):

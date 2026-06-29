@@ -4,6 +4,7 @@ from backend.conversation.models import AgentProfile
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.turn_manager import decide_next_speaker
+from backend.conversation.services.turn_processor import TurnMetadata
 from backend.conversation.services.turn_processor import append_turn
 from backend.conversation.services.turn_processor import process_agent_turn
 
@@ -362,4 +363,48 @@ def test_user_group_question_routes_to_agent_not_user(user):
     assert decision.next_speaker_type == "agent"
     assert decision.next_speaker_id in {"agent_1", "agent_2"}
     assert decision.reason == "user_group_question"
+
+
+@pytest.mark.django_db
+def test_user_requested_closing_routes_to_agent_then_terminates(user):
+    session = ConversationSession.objects.create(user=user, topic="t", max_turns=25, turn_count=4)
+    AgentProfile.objects.create(session=session, agent_id="agent_1", personality={"persona_name": "Discussion Driver"})
+    append_turn(
+        session,
+        speaker="user",
+        speaker_type=TurnRecord.SPEAKER_TYPE_USER,
+        utterance="I want to finish the conversation.",
+        metadata=TurnMetadata(
+            type="DIRECTIVES",
+            subtype="request_closing",
+            target="everyone",
+            content_requirement="requests to end the session",
+            retrieval_requirement="",
+        ),
+        source="text",
+    )
+
+    close_decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=4)
+    assert close_decision.terminate is False
+    assert close_decision.next_speaker_type == "agent"
+    assert close_decision.reason == "user_requested_closing"
+
+    append_turn(
+        session,
+        speaker="agent_1",
+        speaker_type=TurnRecord.SPEAKER_TYPE_AGENT,
+        utterance="Thanks everyone, this was a great discussion.",
+        metadata=TurnMetadata(
+            type="DECLARATIONS",
+            subtype="close_session",
+            target="everyone",
+            content_requirement="",
+            retrieval_requirement="",
+        ),
+        source="text",
+    )
+
+    final_decision = decide_next_speaker(session, user_volunteered=False, last_user_turn_index=4)
+    assert final_decision.terminate is True
+    assert final_decision.reason == "termination_condition"
 

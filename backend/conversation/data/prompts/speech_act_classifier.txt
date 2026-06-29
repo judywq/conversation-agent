@@ -44,6 +44,24 @@ Do not include explanations outside JSON.
   - Otherwise use `"everyone"`.
 - `content_requirement` should briefly summarize what the utterance is doing or emphasizing.
 
+# Session-closing requests (`request_closing`)
+
+Use `DIRECTIVES` + `request_closing` when the user asks to **end or wrap up the whole session**, not merely a sub-topic.
+
+Positive examples (use `request_closing`):
+- "I want to finish the conversation"
+- "Can we wrap up?"
+- "Let's end here"
+- "I'm done for today"
+
+Negative examples (do NOT use `request_closing`):
+- "Let's finish this point first" → `suggest` or `request_action` (topic scope, not session end)
+- "Can I say something?" → `request_permission` (permission to speak, not session end)
+
+For `request_closing`:
+- Set `target` to `"everyone"` unless a specific participant is clearly addressed.
+- Set `content_requirement` to a brief note of the closing intent (e.g. "requests to end the session").
+
 # Constraints
 
 - Select one dominant speech act for the given utterance.
