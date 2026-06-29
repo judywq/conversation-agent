@@ -256,7 +256,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if session is None:
                 await self.send_json({"type": "error", "message": "Session not found"})
                 return
-            if not can_continue_session(session):
+            if not await self._can_continue_session(session):
                 await self.send_json({"type": "error", "message": "This discussion cannot be continued"})
                 return
             profile_gate = await self._get_profile_gate_state()
@@ -320,7 +320,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_json({"type": "error", "message": "No active session"})
                 return
             session = await self._get_session(self.session_id)
-            if session is not None and not user_turns_allowed(session):
+            if session is not None and not await self._user_turns_allowed(session):
                 await self.send_json({"type": "user_turn_blocked", "reason": "past_max_turns"})
                 return
             await self._set_user_override_requested(self.session_id, requested=True)
@@ -508,7 +508,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     )
                     await self.send_json({"type": "agent_status", "status": "finished"})
                     session_after_fail = await self._get_session(self.session_id)
-                    if session_after_fail is not None and should_terminate(session_after_fail):
+                    if session_after_fail is not None and await self._should_terminate(session_after_fail):
                         await self._finalize_session(self.session_id)
                         await self.send_json(
                             {"type": "terminated", "reason": "agent_turn_failed_at_max"},
@@ -516,7 +516,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     elif (
                         session_after_fail is not None
                         and not session_after_fail.terminate
-                        and user_turns_allowed(session_after_fail)
+                        and await self._user_turns_allowed(session_after_fail)
                     ):
                         await self._set_pending_forced_user_turn(session_after_fail.id, pending=True)
                         await self.send_json(
@@ -720,6 +720,18 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     def _get_session(self, session_id: int) -> ConversationSession | None:
         user = self.scope["user"]
         return ConversationSession.objects.filter(id=session_id, user=user).first()
+
+    @database_sync_to_async
+    def _can_continue_session(self, session: ConversationSession) -> bool:
+        return can_continue_session(session)
+
+    @database_sync_to_async
+    def _should_terminate(self, session: ConversationSession) -> bool:
+        return should_terminate(session)
+
+    @database_sync_to_async
+    def _user_turns_allowed(self, session: ConversationSession) -> bool:
+        return user_turns_allowed(session)
 
     @database_sync_to_async
     def _session_turns_payload(self, session_id: int) -> list[dict]:
