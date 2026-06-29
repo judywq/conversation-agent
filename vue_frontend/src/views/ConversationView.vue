@@ -194,6 +194,22 @@ const isEnded = ref(false)
 const endedArgumentSummary = ref<ArgumentSummaryResult | null>(null)
 const endedSummaryLoading = ref(false)
 
+let endedSummaryPollTimer: ReturnType<typeof setTimeout> | null = null
+let endedSummaryPollAttempts = 0
+const MAX_ENDED_SUMMARY_POLL_ATTEMPTS = 30
+const ENDED_SUMMARY_POLL_INTERVAL_MS = 2000
+
+function clearEndedSummaryPollTimer() {
+  if (endedSummaryPollTimer !== null) {
+    clearTimeout(endedSummaryPollTimer)
+    endedSummaryPollTimer = null
+  }
+}
+
+function isEndedSummaryTerminal(status: ArgumentSummaryResult['status'] | undefined): boolean {
+  return status === 'ready' || status === 'failed' || status === 'empty'
+}
+
 function onArgumentSummaryUpdated(summary: ArgumentSummaryResult) {
   endedArgumentSummary.value = summary
 }
@@ -210,6 +226,33 @@ async function fetchEndedArgumentSummary(): Promise<ArgumentSummaryResult | null
   } finally {
     endedSummaryLoading.value = false
   }
+}
+
+function scheduleEndedSummaryPoll() {
+  if (endedSummaryPollAttempts >= MAX_ENDED_SUMMARY_POLL_ATTEMPTS) return
+  endedSummaryPollAttempts += 1
+  clearEndedSummaryPollTimer()
+  endedSummaryPollTimer = setTimeout(() => {
+    void pollEndedArgumentSummary()
+  }, ENDED_SUMMARY_POLL_INTERVAL_MS)
+}
+
+async function pollEndedArgumentSummary(): Promise<ArgumentSummaryResult | null> {
+  if (!sessionId.value) return null
+  const result = await fetchEndedArgumentSummary()
+  if (!result || isEndedSummaryTerminal(result.status)) {
+    clearEndedSummaryPollTimer()
+    return result
+  }
+  scheduleEndedSummaryPoll()
+  return result
+}
+
+function startEndedArgumentSummaryPolling() {
+  if (!sessionId.value) return
+  clearEndedSummaryPollTimer()
+  endedSummaryPollAttempts = 0
+  void pollEndedArgumentSummary()
 }
 
 async function resolveEndedArgumentSummary(): Promise<ArgumentSummaryResult | null> {
@@ -259,7 +302,10 @@ const argumentDownloadBlockedReason = computed(() => {
 
 watch(isEnded, (ended) => {
   if (ended && sessionId.value) {
-    void fetchEndedArgumentSummary()
+    startEndedArgumentSummaryPolling()
+  } else {
+    clearEndedSummaryPollTimer()
+    endedSummaryPollAttempts = 0
   }
 })
 
@@ -1102,6 +1148,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleRecordShortcut)
   window.removeEventListener('pointerdown', handleConversationInteraction)
+  clearEndedSummaryPollTimer()
   clearRecordingPreview()
   stopAllAudioPlayback()
   resetAvatars()
@@ -1417,6 +1464,7 @@ onUnmounted(() => {
             :session-id="sessionId"
             :settled-turn-count="effectiveSettledTurnCount"
             :playback-busy="agentPlaybackBusy"
+            :session-ended="isEnded"
             :visible="showArgumentSummary"
             @summary-updated="onArgumentSummaryUpdated"
           />
@@ -1547,6 +1595,7 @@ onUnmounted(() => {
           :session-id="sessionId"
           :settled-turn-count="effectiveSettledTurnCount"
           :playback-busy="agentPlaybackBusy"
+          :session-ended="isEnded"
           :visible="showArgumentSummary"
           @summary-updated="onArgumentSummaryUpdated"
         />

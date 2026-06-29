@@ -171,7 +171,10 @@ onMounted(() => {
           Loading details…
         </div>
         <template v-else-if="sessionDetail(session.id)">
-          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+          <div
+            class="grid gap-6"
+            :class="session.can_continue ? '' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]'"
+          >
             <div class="space-y-2">
               <h3 class="text-sm font-medium">Transcript</h3>
               <div class="max-h-[min(60vh,28rem)] space-y-4 overflow-y-auto rounded-md border p-3">
@@ -196,13 +199,17 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="space-y-2">
+            <div v-if="!session.can_continue" class="space-y-2">
               <h3 class="text-sm font-medium">Speaker opinions</h3>
               <div class="max-h-[min(60vh,28rem)] overflow-y-auto rounded-md border p-3">
                 <ArgumentSummaryReadonly :summary="sessionDetail(session.id)!.argument_summary" />
               </div>
             </div>
           </div>
+
+          <p v-if="session.can_continue" class="text-xs text-muted-foreground">
+            End the discussion to generate speaker opinions.
+          </p>
 
           <div class="flex flex-wrap gap-2">
             <Button
@@ -215,22 +222,24 @@ onMounted(() => {
             <Button variant="outline" size="sm" @click="downloadTranscript(sessionDetail(session.id)!)">
               Download transcript
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="sessionDetail(session.id)!.argument_summary.status !== 'ready'"
-              @click="downloadArguments(sessionDetail(session.id)!)"
-            >
-              Download speaker opinions
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="sessionDetail(session.id)!.argument_summary.status !== 'ready'"
-              @click="downloadCombined(sessionDetail(session.id)!)"
-            >
-              Download both
-            </Button>
+            <template v-if="!session.can_continue">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="sessionDetail(session.id)!.argument_summary.status !== 'ready'"
+                @click="downloadArguments(sessionDetail(session.id)!)"
+              >
+                Download speaker opinions
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="sessionDetail(session.id)!.argument_summary.status !== 'ready'"
+                @click="downloadCombined(sessionDetail(session.id)!)"
+              >
+                Download both
+              </Button>
+            </template>
           </div>
         </template>
       </div>

@@ -6,6 +6,7 @@ from django.urls import reverse
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.session_serialization import can_continue_session
+from backend.conversation.services.session_serialization import is_session_concluded
 from backend.conversation.services.session_serialization import session_detail_to_dict
 from backend.conversation.services.session_serialization import session_summary_to_dict
 
@@ -27,6 +28,39 @@ def test_session_summary_to_dict_includes_metadata(user) -> None:
     assert payload["topic"] == "Campus housing"
     assert payload["turn_count"] == 3
     assert payload["argument_summary_status"] == "ready"
+    assert payload["session_concluded"] is True
+
+
+@pytest.mark.django_db
+def test_session_concluded_flags(user) -> None:
+    stopped = ConversationSession.objects.create(
+        user=user,
+        topic="Stopped",
+        turn_count=2,
+        max_turns=25,
+        terminate=True,
+    )
+    interrupted = ConversationSession.objects.create(
+        user=user,
+        topic="Interrupted",
+        turn_count=2,
+        max_turns=25,
+        terminate=False,
+    )
+    empty = ConversationSession.objects.create(
+        user=user,
+        topic="Empty",
+        turn_count=0,
+        max_turns=25,
+        terminate=False,
+    )
+
+    assert is_session_concluded(stopped) is True
+    assert is_session_concluded(interrupted) is False
+    assert is_session_concluded(empty) is False
+    assert session_summary_to_dict(stopped)["session_concluded"] is True
+    assert session_summary_to_dict(interrupted)["session_concluded"] is False
+    assert session_detail_to_dict(stopped)["session_concluded"] is True
 
 
 @pytest.mark.django_db

@@ -690,3 +690,11 @@ def schedule_argument_summary_refresh_for_session_id(session_id: int) -> None:
 
 
 schedule_argument_summary_for_session = schedule_argument_summary_refresh
+
+
+def finalize_argument_summary_on_conclusion(session: ConversationSession) -> None:
+    from backend.conversation.services.session_serialization import is_session_concluded
+
+    if not is_session_concluded(session):
+        return
+    schedule_argument_summary_for_session(session)

@@ -10,6 +10,7 @@ from backend.conversation.services.conversation_phase import should_request_clos
 from backend.conversation.services.conversation_phase import should_terminate
 from backend.conversation.services.conversation_phase import user_close_pending
 from backend.conversation.services.conversation_phase import user_turns_allowed
+from backend.conversation.services.session_serialization import is_session_concluded
 from backend.conversation.services.turn_processor import TurnMetadata
 from backend.conversation.services.turn_processor import append_turn
 
@@ -135,3 +136,4 @@ def test_user_close_request_terminates_after_agent_close(user) -> None:
 
     assert user_close_pending(session) is False
     assert should_terminate(session) is True
+    assert is_session_concluded(session) is True

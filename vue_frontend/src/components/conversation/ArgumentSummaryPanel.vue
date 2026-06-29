@@ -18,6 +18,8 @@ const props = defineProps<{
   settledTurnCount: number
   /** Agent turn audio is playing or queued. */
   playbackBusy: boolean
+  /** When true, show the latest summary regardless of playback/settled turn deferral. */
+  sessionEnded?: boolean
   embedded?: boolean
 }>()
 
@@ -51,6 +53,7 @@ function summaryTurnCount(result: ArgumentSummaryResult): number {
 }
 
 function canRevealSummary(result: ArgumentSummaryResult): boolean {
+  if (props.sessionEnded) return true
   if (props.playbackBusy) return false
   if (typeof result.turn_count !== 'number') {
     return true
@@ -113,7 +116,7 @@ function schedulePendingPoll() {
 
 async function loadSummary() {
   if (!props.sessionId || !props.visible) return
-  if (props.playbackBusy) {
+  if (!props.sessionEnded && props.playbackBusy) {
     refreshQueued = true
     return
   }
@@ -183,6 +186,17 @@ watch(
     }
     if (!busy) {
       tryApplyDeferred()
+    }
+  },
+)
+
+watch(
+  () => props.sessionEnded,
+  (ended) => {
+    if (!ended) return
+    tryApplyDeferred()
+    if (refreshQueued || summary.value?.status === 'pending') {
+      void loadSummary()
     }
   },
 )

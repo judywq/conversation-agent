@@ -29,7 +29,7 @@ from backend.conversation.services.tts import synthesize_speech_with_lipsync
 from backend.conversation.services.tts import tts_provider_timeouts
 from backend.conversation.services.turn_manager import decide_next_speaker
 from backend.conversation.services.turn_processor import append_turn
-from backend.conversation.services.argument_summary import schedule_argument_summary_for_session
+from backend.conversation.services.argument_summary import finalize_argument_summary_on_conclusion
 from backend.conversation.services.turn_processor import mark_terminate
 from backend.conversation.services.turn_processor import process_agent_turn
 from backend.conversation.services.turn_processor import process_user_turn
@@ -714,7 +714,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         if session is None:
             return
         update_proficiency_from_session(session)
-        schedule_argument_summary_for_session(session)
+        finalize_argument_summary_on_conclusion(session)
 
     @database_sync_to_async
     def _get_session(self, session_id: int) -> ConversationSession | None:
@@ -789,7 +789,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             return
         mark_terminate(session)
         update_proficiency_from_session(session)
-        schedule_argument_summary_for_session(session)
+        finalize_argument_summary_on_conclusion(session)
 
     @database_sync_to_async
     def _set_paused(self, session_id: int, *, paused: bool) -> None:

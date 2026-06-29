@@ -98,6 +98,7 @@ export interface ConversationSessionSummary {
   updated_at: string | null
   argument_summary_status: string | null
   can_continue: boolean
+  session_concluded?: boolean
 }
 
 export interface ConversationSessionDetail extends ConversationSessionSummary {

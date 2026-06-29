@@ -17,6 +17,10 @@ def can_continue_session(session: ConversationSession) -> bool:
     return not should_terminate(session)
 
 
+def is_session_concluded(session: ConversationSession) -> bool:
+    return int(session.turn_count) > 0 and not can_continue_session(session)
+
+
 def turn_record_to_dict(*, turn: TurnRecord, session: ConversationSession | None = None) -> dict[str, Any]:
     speaker_display_name = (turn.speaker or "").strip()
     if turn.speaker_type in (TurnRecord.SPEAKER_TYPE_AGENT, TurnRecord.SPEAKER_TYPE_MAKESHIFT):
@@ -73,6 +77,7 @@ def session_summary_to_dict(session: ConversationSession) -> dict[str, Any]:
         "updated_at": session.updated_at.isoformat() if session.updated_at else None,
         "argument_summary_status": summary_status,
         "can_continue": can_continue_session(session),
+        "session_concluded": is_session_concluded(session),
     }
 
 

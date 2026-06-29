@@ -9,6 +9,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import TurnRecord
 from backend.conversation.services.argument_summary import build_argument_summary_prompt
 from backend.conversation.services.argument_summary import build_numbered_transcript
+from backend.conversation.services.argument_summary import finalize_argument_summary_on_conclusion
 from backend.conversation.services.argument_summary import format_argument_summary_bullets
 from backend.conversation.services.argument_summary import get_argument_summary_bullets_for_agent
 from backend.conversation.services.argument_summary import mark_argument_summary_pending
@@ -431,6 +432,39 @@ def test_argument_summary_signal_schedules_refresh(user, monkeypatch) -> None:
     )
 
     assert scheduled == [session.id]
+
+
+@pytest.mark.django_db
+def test_finalize_argument_summary_on_conclusion_schedules_only_when_concluded(user, monkeypatch) -> None:
+    scheduled: list[int] = []
+
+    def _capture(session: ConversationSession) -> None:
+        scheduled.append(session.id)
+
+    monkeypatch.setattr(
+        "backend.conversation.services.argument_summary.schedule_argument_summary_for_session",
+        _capture,
+    )
+
+    concluded = ConversationSession.objects.create(
+        user=user,
+        topic="Ended",
+        turn_count=3,
+        max_turns=25,
+        terminate=True,
+    )
+    interrupted = ConversationSession.objects.create(
+        user=user,
+        topic="Interrupted",
+        turn_count=3,
+        max_turns=25,
+        terminate=False,
+    )
+
+    finalize_argument_summary_on_conclusion(concluded)
+    finalize_argument_summary_on_conclusion(interrupted)
+
+    assert scheduled == [concluded.id]
 
 
 @pytest.mark.django_db
