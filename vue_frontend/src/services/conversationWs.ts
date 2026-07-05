@@ -152,6 +152,11 @@ export class ConversationWsClient {
     socket.send(JSON.stringify(payload))
   }
 
+  async sendWhenOpen(payload: unknown): Promise<void> {
+    await this.ready()
+    this.send(payload)
+  }
+
   close(): void {
     this.teardownSocket()
     this.notifyConnectionChange(false)

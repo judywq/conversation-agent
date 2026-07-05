@@ -45,6 +45,10 @@ const router = useRouter()
 
 const ws = new ConversationWsClient()
 const connected = ref(false)
+const wsSessionBound = ref(false)
+const wsReconnecting = ref(false)
+let silentResumeInProgress = false
+const SESSION_RESUME_TIMEOUT_MS = 10000
 const sessionId = ref<number | null>(null)
 const sessionMaxTurns = ref(0)
 const sessionTurnCount = ref(0)
@@ -783,6 +787,7 @@ function handleEvent(e: ConversationWsEvent) {
     endedSummaryLoading.value = false
     stopAllAudioPlayback()
     resetAvatars()
+    wsSessionBound.value = true
   }
   if (e.type === 'session_resumed') {
     sessionId.value = e.session_id
@@ -804,10 +809,14 @@ function handleEvent(e: ConversationWsEvent) {
     stopAllAudioPlayback()
     resetAvatars()
     loadResumedTurns(e.turns ?? [])
-    toast({
-      title: 'Discussion resumed',
-      description: 'Pick up where you left off.',
-    })
+    wsSessionBound.value = true
+    if (!silentResumeInProgress) {
+      toast({
+        title: 'Discussion resumed',
+        description: 'Pick up where you left off.',
+      })
+    }
+    silentResumeInProgress = false
   }
   if (e.type === 'participants') {
     participants.value = e.participants ?? []
@@ -833,6 +842,7 @@ function handleEvent(e: ConversationWsEvent) {
       needFirstTurnChoice.value = false
       agentStatus.value = 'idle'
       liveSpeakingTurnKey.value = null
+      wsSessionBound.value = false
       flushTurnPlaybackQueueToDisplay()
       markAllAgentPlaybackComplete()
     }
@@ -890,8 +900,64 @@ function handleEvent(e: ConversationWsEvent) {
     handleIncomingTurn(e.turn)
   }
   if (e.type === 'error') {
-    toast({ title: 'Error', description: e.message, variant: 'destructive' })
+    if (!silentResumeInProgress) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' })
+    }
   }
+}
+
+function waitForSessionResumed(targetSessionId: number, options?: { silent?: boolean }): Promise<void> {
+  const silent = options?.silent ?? true
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      off()
+      silentResumeInProgress = false
+      reject(new Error('Session resume timeout'))
+    }, SESSION_RESUME_TIMEOUT_MS)
+
+    const off = ws.onEvent((e) => {
+      if (e.type === 'session_resumed' && e.session_id === targetSessionId) {
+        window.clearTimeout(timeout)
+        off()
+        resolve()
+      } else if (e.type === 'error') {
+        window.clearTimeout(timeout)
+        off()
+        silentResumeInProgress = false
+        reject(new Error(e.message))
+      }
+    })
+
+    if (silent) {
+      silentResumeInProgress = true
+    }
+    try {
+      ws.send({ type: 'resume_session', session_id: targetSessionId })
+    } catch (err) {
+      window.clearTimeout(timeout)
+      off()
+      silentResumeInProgress = false
+      reject(err)
+    }
+  })
+}
+
+async function ensureSessionReady(options?: { silent?: boolean }): Promise<void> {
+  await ws.ready()
+  if (!sessionId.value || isEnded.value || wsSessionBound.value) return
+
+  wsReconnecting.value = true
+  try {
+    await waitForSessionResumed(sessionId.value, { silent: options?.silent ?? true })
+    wsSessionBound.value = true
+  } finally {
+    wsReconnecting.value = false
+  }
+}
+
+async function sendSessionMessage(payload: Record<string, unknown>): Promise<void> {
+  await ensureSessionReady({ silent: true })
+  ws.send(payload)
 }
 
 function startSession() {
@@ -931,37 +997,87 @@ function resumeSession(sessionIdToResume: number) {
 
 function volunteer() {
   if (!userTurnsAllowed.value) return
-  ws.send({ type: 'raise_hand' })
+  void (async () => {
+    try {
+      await sendSessionMessage({ type: 'raise_hand' })
+    } catch (err: any) {
+      toast({
+        title: 'Could not send message',
+        description: err?.message ?? 'Connection lost. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 function pauseOrResume() {
-  ws.send({ type: isPaused.value ? 'resume' : 'pause' })
+  void (async () => {
+    try {
+      await sendSessionMessage({ type: isPaused.value ? 'resume' : 'pause' })
+    } catch (err: any) {
+      toast({
+        title: 'Connection error',
+        description: err?.message ?? 'Connection lost. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 function stopConversation() {
   if (!sessionId.value) return
   const ok = window.confirm('End the conversation?')
   if (!ok) return
-  ws.send({ type: 'end_session' })
+  void (async () => {
+    try {
+      await sendSessionMessage({ type: 'end_session' })
+    } catch (err: any) {
+      toast({
+        title: 'Connection error',
+        description: err?.message ?? 'Connection lost. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 function sendTextTurn() {
   const text = inputText.value.trim()
   if (!text) return
-  pushLocalUserTurn(text)
-  ws.send({ type: 'user_turn', utterance: text, source: 'text' })
-  inputText.value = ''
-  needUserTurn.value = false
+  void (async () => {
+    try {
+      await sendSessionMessage({ type: 'user_turn', utterance: text, source: 'text' })
+      pushLocalUserTurn(text)
+      inputText.value = ''
+      needUserTurn.value = false
+    } catch (err: any) {
+      toast({
+        title: 'Could not send message',
+        description: err?.message ?? 'Connection lost. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 function chooseFirstTurn(speakFirst: boolean) {
-  ws.send({ type: 'first_turn_choice', speak_first: speakFirst })
-  needFirstTurnChoice.value = false
-  if (speakFirst) {
-    needUserTurn.value = true
-  } else {
-    agentStatus.value = 'thinking'
-  }
+  void (async () => {
+    try {
+      await sendSessionMessage({ type: 'first_turn_choice', speak_first: speakFirst })
+      needFirstTurnChoice.value = false
+      if (speakFirst) {
+        needUserTurn.value = true
+      } else {
+        agentStatus.value = 'thinking'
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Connection error',
+        description: err?.message ?? 'Connection lost. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 async function startRecording() {
@@ -1006,27 +1122,48 @@ function stopRecording() {
 async function sendRecording() {
   if (!recordedBlob.value) return
   micState.value = 'transcribing'
+
+  let text: string
+  let upload: { audio_url: string } | null = null
+
   try {
     const currentSessionId = sessionId.value ? String(sessionId.value) : null
-    const [text, upload] = await Promise.all([
-      ConversationService.speechToText(recordedBlob.value),
-      currentSessionId ? ConversationService.uploadUserAudio(currentSessionId, recordedBlob.value) : Promise.resolve(null),
-    ])
-    pushLocalUserTurn(text)
+    text = await ConversationService.speechToText(recordedBlob.value)
+    if (currentSessionId) {
+      try {
+        upload = await ConversationService.uploadUserAudio(currentSessionId, recordedBlob.value)
+      } catch {
+        // Audio upload is optional; STT result can still be sent.
+      }
+    }
+  } catch (err: any) {
+    micState.value = 'error'
+    toast({
+      title: 'Transcription failed',
+      description: err?.message ?? 'Failed to transcribe audio',
+      variant: 'destructive',
+    })
+    return
+  }
+
+  try {
+    await ensureSessionReady({ silent: true })
     ws.send({
       type: 'user_turn',
       utterance: text,
       source: 'mic',
       audio_url: upload?.audio_url ?? null,
     })
+    pushLocalUserTurn(text)
     needUserTurn.value = false
     clearRecordingPreview()
     micState.value = 'idle'
   } catch (err: any) {
-    micState.value = 'error'
+    micState.value = 'preview'
+    inputText.value = text
     toast({
-      title: 'Transcription failed',
-      description: err?.message ?? 'Failed to transcribe audio',
+      title: 'Could not send message',
+      description: err?.message ?? 'Connection lost. Try Send again or edit the text below.',
       variant: 'destructive',
     })
   }
@@ -1113,8 +1250,11 @@ onMounted(async () => {
   ws.connect()
   const off = ws.onEvent(handleEvent)
   const offConnection = ws.onConnectionChange((open) => {
-    if (!open) {
+    if (open) {
+      connected.value = true
+    } else {
       connected.value = false
+      wsSessionBound.value = false
     }
   })
   window.addEventListener('keydown', handleRecordShortcut)
@@ -1153,6 +1293,7 @@ onUnmounted(() => {
   stopAllAudioPlayback()
   resetAvatars()
   connected.value = false
+  wsSessionBound.value = false
   ws.close()
 })
 </script>
@@ -1267,6 +1408,8 @@ onUnmounted(() => {
         <div class="text-sm text-muted-foreground">
           Status:
           <span v-if="isEnded">Ended</span>
+          <span v-else-if="wsReconnecting">Reconnecting…</span>
+          <span v-else-if="sessionInProgress && !connected">Connection lost — retry send or refresh</span>
           <span v-else-if="isPaused">Paused</span>
           <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
           <span v-else-if="agentStatus === 'searching_online' || agentStatus === 'thinking'">Waiting…</span>
@@ -1442,7 +1585,7 @@ onUnmounted(() => {
                     <div class="text-sm font-medium">Preview recording</div>
                     <audio :src="recordedUrl" controls class="w-full" />
                     <div class="flex flex-col gap-2 sm:flex-row">
-                      <Button :disabled="!canStartMic" @click="sendRecording">Send</Button>
+                      <Button :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
                       <Button variant="outline" @click="redoRecording">Redo</Button>
                     </div>
                   </div>
@@ -1572,7 +1715,7 @@ onUnmounted(() => {
                 <div class="text-sm font-medium">Preview recording</div>
                 <audio :src="recordedUrl" controls class="w-full" />
                 <div class="flex flex-col gap-2 sm:flex-row">
-                  <Button :disabled="!canStartMic" @click="sendRecording">Send</Button>
+                  <Button :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
                   <Button variant="outline" @click="redoRecording">Redo</Button>
                 </div>
               </div>

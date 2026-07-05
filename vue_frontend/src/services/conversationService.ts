@@ -142,6 +142,7 @@ export class ConversationService {
         // Let the browser set the correct multipart boundary
         'Content-Type': 'multipart/form-data',
       },
+      timeout: 60000,
     })
     return res.data.text
   }
@@ -155,6 +156,7 @@ export class ConversationService {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout: 60000,
     })
     return res.data
   }
