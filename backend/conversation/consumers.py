@@ -247,6 +247,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             if self.session_id is not None:
                 await self.send_json({"type": "error", "message": "Already in a session on this connection"})
                 return
+            rebind = bool(content.get("rebind"))
             try:
                 session_id = int(content.get("session_id"))
             except (TypeError, ValueError):
@@ -273,11 +274,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     },
                 )
                 return
-            if session.paused:
+            if session.paused and not rebind:
                 await self._set_paused(session_id, paused=False)
                 session.paused = False
             self.session_id = session.id
-            self.first_turn_choice = False if session.turn_count > 0 else None
+            await self._restore_first_turn_choice(session)
             self.user_volunteered = False
             turns_payload = await self._session_turns_payload(session.id)
             need_user_turn = bool(session.pending_forced_user_turn)
@@ -288,9 +289,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     "topic": session.topic,
                     "max_turns": session.max_turns,
                     "turn_count": session.turn_count,
-                    "paused": False,
+                    "paused": session.paused,
                     "turns": turns_payload,
                     "need_user_turn": need_user_turn,
+                    "rebind": rebind,
                 },
             )
             await self.send_json(
@@ -298,8 +300,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             )
             if need_user_turn:
                 await self.send_json({"type": "need_user_turn", "reason": "resume_pending_user_turn"})
-            else:
-                self._ensure_advance_loop_running()
+            elif not session.paused:
+                if self.first_turn_choice is None:
+                    await self.send_json({"type": "need_first_turn_choice"})
+                else:
+                    self._ensure_advance_loop_running()
             return
 
         if msg_type == "first_turn_choice":
@@ -309,6 +314,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             speak_first = bool(content.get("speak_first"))
             self.first_turn_choice = speak_first
             if speak_first:
+                await self._set_pending_forced_user_turn(self.session_id, pending=True)
                 await self.send_json({"type": "need_user_turn", "reason": "first_turn_user"})
                 return
             self._ensure_advance_loop_running()
@@ -1095,6 +1101,22 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             turn_index=turn_index,
             subturn_index=subturn_index,
         )
+
+    @database_sync_to_async
+    def _session_has_turn_records(self, session_id: int) -> bool:
+        return TurnRecord.objects.filter(session_id=session_id).exists()
+
+    async def _restore_first_turn_choice(self, session: ConversationSession) -> None:
+        if session.turn_count > 0:
+            self.first_turn_choice = False
+            return
+        if session.pending_forced_user_turn:
+            self.first_turn_choice = True
+            return
+        if await self._session_has_turn_records(session.id):
+            self.first_turn_choice = False
+            return
+        self.first_turn_choice = None
 
     @database_sync_to_async
     def _set_pending_forced_user_turn(self, session_id: int, *, pending: bool) -> None:

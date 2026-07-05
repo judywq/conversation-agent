@@ -33,6 +33,7 @@ export type ConversationWsEvent =
       paused: boolean
       turns: ConversationTurn[]
       need_user_turn: boolean
+      rebind?: boolean
     }
   | {
       type: 'participants'
@@ -49,6 +50,8 @@ export type ConversationWsEvent =
   | { type: 'terminated'; reason: string }
   | { type: 'error'; message: string }
   | { type: string; [k: string]: any }
+
+const WS_READY_TIMEOUT_MS = 10000
 
 function toWsUrl(apiBaseUrl: string, path: string): string {
   const url = new URL(apiBaseUrl)
@@ -74,7 +77,7 @@ export class ConversationWsClient {
       return
     }
 
-    this.teardownSocket()
+    this.teardownSocket(false)
 
     const apiBase = import.meta.env.VITE_API_BASE_URL as string
     const wsUrl = toWsUrl(apiBase, '/ws/conversation/')
@@ -109,20 +112,38 @@ export class ConversationWsClient {
     }
 
     return new Promise((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
+      let settled = false
+
+      const finish = (action: () => void) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeout)
         offConn()
-        reject(new Error('WebSocket connection timeout'))
-      }, 10000)
+        action()
+      }
+
+      const timeout = window.setTimeout(() => {
+        finish(() => reject(new Error('WebSocket connection timeout')))
+      }, WS_READY_TIMEOUT_MS)
 
       const offConn = this.onConnectionChange((open) => {
         if (open) {
-          window.clearTimeout(timeout)
-          offConn()
-          resolve()
+          finish(() => resolve())
         }
       })
 
       this.connect()
+      const socket = this.ws
+      if (!socket) {
+        finish(() => reject(new Error('WebSocket connection failed')))
+        return
+      }
+
+      const priorOnClose = socket.onclose
+      socket.onclose = (event) => {
+        priorOnClose?.call(socket, event)
+        finish(() => reject(new Error('WebSocket connection failed')))
+      }
     })
   }
 
@@ -152,17 +173,12 @@ export class ConversationWsClient {
     socket.send(JSON.stringify(payload))
   }
 
-  async sendWhenOpen(payload: unknown): Promise<void> {
-    await this.ready()
-    this.send(payload)
-  }
-
   close(): void {
-    this.teardownSocket()
+    this.teardownSocket(true)
     this.notifyConnectionChange(false)
   }
 
-  private teardownSocket(): void {
+  private teardownSocket(notifyDisconnect: boolean): void {
     const socket = this.ws
     if (!socket) return
 
@@ -174,6 +190,10 @@ export class ConversationWsClient {
 
     if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
       socket.close()
+    }
+
+    if (notifyDisconnect) {
+      this.notifyConnectionChange(false)
     }
   }
 }

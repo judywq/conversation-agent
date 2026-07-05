@@ -1,6 +1,8 @@
 import api from '@/services/api'
 import type { ConversationTurn } from '@/services/conversationWs'
 
+const MIC_AUDIO_UPLOAD_TIMEOUT_MS = 60000
+
 export interface CefrSample {
   level: string
   text: string
@@ -142,7 +144,7 @@ export class ConversationService {
         // Let the browser set the correct multipart boundary
         'Content-Type': 'multipart/form-data',
       },
-      timeout: 60000,
+      timeout: MIC_AUDIO_UPLOAD_TIMEOUT_MS,
     })
     return res.data.text
   }
@@ -156,7 +158,7 @@ export class ConversationService {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      timeout: 60000,
+      timeout: MIC_AUDIO_UPLOAD_TIMEOUT_MS,
     })
     return res.data
   }

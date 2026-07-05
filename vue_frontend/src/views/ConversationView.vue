@@ -47,7 +47,9 @@ const ws = new ConversationWsClient()
 const connected = ref(false)
 const wsSessionBound = ref(false)
 const wsReconnecting = ref(false)
-let silentResumeInProgress = false
+let pendingSilentResumeSessionId: number | null = null
+let sessionResumePromise: Promise<void> | null = null
+let wsWaitCancel: (() => void) | null = null
 const SESSION_RESUME_TIMEOUT_MS = 10000
 const sessionId = ref<number | null>(null)
 const sessionMaxTurns = ref(0)
@@ -318,6 +320,7 @@ const mediaRecorder = ref<MediaRecorder | null>(null)
 const recordedChunks = ref<Blob[]>([])
 const recordedBlob = ref<Blob | null>(null)
 const recordedUrl = ref<string | null>(null)
+const pendingMicSend = ref<{ text: string; audioUrl: string | null } | null>(null)
 const autoSendRecordingAfterStop = ref(false)
 const currentAudio = ref<HTMLAudioElement | null>(null)
 
@@ -471,6 +474,7 @@ function clearRecordingPreview() {
   recordedUrl.value = null
   recordedBlob.value = null
   recordedChunks.value = []
+  pendingMicSend.value = null
 }
 
 function maybeFirePendingTermination() {
@@ -790,33 +794,44 @@ function handleEvent(e: ConversationWsEvent) {
     wsSessionBound.value = true
   }
   if (e.type === 'session_resumed') {
+    const silent = pendingSilentResumeSessionId === e.session_id
+    if (silent) {
+      pendingSilentResumeSessionId = null
+    }
+
     sessionId.value = e.session_id
     sessionMaxTurns.value = e.max_turns ?? 0
     sessionTurnCount.value = e.turn_count ?? 0
     topic.value = e.topic || topic.value
     isEnded.value = false
     isPaused.value = e.paused ?? false
-    needFirstTurnChoice.value = false
     needUserTurn.value = e.need_user_turn ?? false
     agentStatus.value = 'idle'
-    liveSpeakingTurnKey.value = null
-    completedAgentPlaybackKeys.value = []
-    participants.value = []
-    endedArgumentSummary.value = null
-    endedSummaryLoading.value = false
-    turnPlaybackQueue.value = []
-    isProcessingTurnPlayback.value = false
-    stopAllAudioPlayback()
-    resetAvatars()
-    loadResumedTurns(e.turns ?? [])
     wsSessionBound.value = true
-    if (!silentResumeInProgress) {
-      toast({
-        title: 'Discussion resumed',
-        description: 'Pick up where you left off.',
-      })
+
+    if (e.rebind) {
+      if (!e.need_user_turn) {
+        needFirstTurnChoice.value = false
+      }
+    } else {
+      needFirstTurnChoice.value = false
+      liveSpeakingTurnKey.value = null
+      completedAgentPlaybackKeys.value = []
+      participants.value = []
+      endedArgumentSummary.value = null
+      endedSummaryLoading.value = false
+      turnPlaybackQueue.value = []
+      isProcessingTurnPlayback.value = false
+      stopAllAudioPlayback()
+      resetAvatars()
+      loadResumedTurns(e.turns ?? [])
+      if (!silent) {
+        toast({
+          title: 'Discussion resumed',
+          description: 'Pick up where you left off.',
+        })
+      }
     }
-    silentResumeInProgress = false
   }
   if (e.type === 'participants') {
     participants.value = e.participants ?? []
@@ -900,64 +915,107 @@ function handleEvent(e: ConversationWsEvent) {
     handleIncomingTurn(e.turn)
   }
   if (e.type === 'error') {
-    if (!silentResumeInProgress) {
+    if (pendingSilentResumeSessionId === null) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' })
     }
   }
 }
 
-function waitForSessionResumed(targetSessionId: number, options?: { silent?: boolean }): Promise<void> {
-  const silent = options?.silent ?? true
+function cancelWsWaits() {
+  wsWaitCancel?.()
+  wsWaitCancel = null
+  pendingSilentResumeSessionId = null
+  sessionResumePromise = null
+}
+
+function waitForSessionResumed(targetSessionId: number): Promise<void> {
   return new Promise((resolve, reject) => {
+    let settled = false
+
+    const finish = (action: () => void) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      offEvent()
+      offConn()
+      if (wsWaitCancel === cleanup) {
+        wsWaitCancel = null
+      }
+      action()
+    }
+
+    const cleanup = () => {
+      finish(() => {})
+    }
+
     const timeout = window.setTimeout(() => {
-      off()
-      silentResumeInProgress = false
-      reject(new Error('Session resume timeout'))
+      pendingSilentResumeSessionId = null
+      finish(() => reject(new Error('Session resume timeout')))
     }, SESSION_RESUME_TIMEOUT_MS)
 
-    const off = ws.onEvent((e) => {
-      if (e.type === 'session_resumed' && e.session_id === targetSessionId) {
-        window.clearTimeout(timeout)
-        off()
-        resolve()
-      } else if (e.type === 'error') {
-        window.clearTimeout(timeout)
-        off()
-        silentResumeInProgress = false
-        reject(new Error(e.message))
+    const offEvent = ws.onEvent((event) => {
+      if (event.type === 'session_resumed' && event.session_id === targetSessionId) {
+        finish(() => resolve())
+      } else if (event.type === 'error') {
+        pendingSilentResumeSessionId = null
+        finish(() => reject(new Error(event.message)))
       }
     })
 
-    if (silent) {
-      silentResumeInProgress = true
-    }
+    const offConn = ws.onConnectionChange((open) => {
+      if (!open) {
+        pendingSilentResumeSessionId = null
+        finish(() => reject(new Error('WebSocket connection lost')))
+      }
+    })
+
+    wsWaitCancel = cleanup
+    pendingSilentResumeSessionId = targetSessionId
+
     try {
-      ws.send({ type: 'resume_session', session_id: targetSessionId })
+      ws.send({ type: 'resume_session', session_id: targetSessionId, rebind: true })
     } catch (err) {
-      window.clearTimeout(timeout)
-      off()
-      silentResumeInProgress = false
-      reject(err)
+      pendingSilentResumeSessionId = null
+      finish(() => reject(err))
     }
   })
 }
 
-async function ensureSessionReady(options?: { silent?: boolean }): Promise<void> {
+async function ensureSessionReady(): Promise<void> {
   await ws.ready()
   if (!sessionId.value || isEnded.value || wsSessionBound.value) return
 
-  wsReconnecting.value = true
-  try {
-    await waitForSessionResumed(sessionId.value, { silent: options?.silent ?? true })
-    wsSessionBound.value = true
-  } finally {
-    wsReconnecting.value = false
+  if (!sessionResumePromise) {
+    wsReconnecting.value = true
+    sessionResumePromise = waitForSessionResumed(sessionId.value)
+      .then(() => {
+        wsSessionBound.value = true
+      })
+      .finally(() => {
+        wsReconnecting.value = false
+        sessionResumePromise = null
+      })
   }
+  await sessionResumePromise
 }
 
 async function sendSessionMessage(payload: Record<string, unknown>): Promise<void> {
-  await ensureSessionReady({ silent: true })
+  await ensureSessionReady()
   ws.send(payload)
+}
+
+function sendOrToast(action: () => Promise<void>) {
+  void (async () => {
+    try {
+      await action()
+    } catch (err: any) {
+      toast({
+        title: 'Could not send message',
+        description: err?.message ?? 'Connection lost. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  })()
 }
 
 function startSession() {
@@ -997,87 +1055,41 @@ function resumeSession(sessionIdToResume: number) {
 
 function volunteer() {
   if (!userTurnsAllowed.value) return
-  void (async () => {
-    try {
-      await sendSessionMessage({ type: 'raise_hand' })
-    } catch (err: any) {
-      toast({
-        title: 'Could not send message',
-        description: err?.message ?? 'Connection lost. Please try again.',
-        variant: 'destructive',
-      })
-    }
-  })()
+  sendOrToast(() => sendSessionMessage({ type: 'raise_hand' }))
 }
 
 function pauseOrResume() {
-  void (async () => {
-    try {
-      await sendSessionMessage({ type: isPaused.value ? 'resume' : 'pause' })
-    } catch (err: any) {
-      toast({
-        title: 'Connection error',
-        description: err?.message ?? 'Connection lost. Please try again.',
-        variant: 'destructive',
-      })
-    }
-  })()
+  sendOrToast(() => sendSessionMessage({ type: isPaused.value ? 'resume' : 'pause' }))
 }
 
 function stopConversation() {
   if (!sessionId.value) return
   const ok = window.confirm('End the conversation?')
   if (!ok) return
-  void (async () => {
-    try {
-      await sendSessionMessage({ type: 'end_session' })
-    } catch (err: any) {
-      toast({
-        title: 'Connection error',
-        description: err?.message ?? 'Connection lost. Please try again.',
-        variant: 'destructive',
-      })
-    }
-  })()
+  sendOrToast(() => sendSessionMessage({ type: 'end_session' }))
 }
 
 function sendTextTurn() {
   const text = inputText.value.trim()
   if (!text) return
-  void (async () => {
-    try {
-      await sendSessionMessage({ type: 'user_turn', utterance: text, source: 'text' })
-      pushLocalUserTurn(text)
-      inputText.value = ''
-      needUserTurn.value = false
-    } catch (err: any) {
-      toast({
-        title: 'Could not send message',
-        description: err?.message ?? 'Connection lost. Please try again.',
-        variant: 'destructive',
-      })
-    }
-  })()
+  sendOrToast(async () => {
+    await sendSessionMessage({ type: 'user_turn', utterance: text, source: 'text' })
+    pushLocalUserTurn(text)
+    inputText.value = ''
+    needUserTurn.value = false
+  })
 }
 
 function chooseFirstTurn(speakFirst: boolean) {
-  void (async () => {
-    try {
-      await sendSessionMessage({ type: 'first_turn_choice', speak_first: speakFirst })
-      needFirstTurnChoice.value = false
-      if (speakFirst) {
-        needUserTurn.value = true
-      } else {
-        agentStatus.value = 'thinking'
-      }
-    } catch (err: any) {
-      toast({
-        title: 'Connection error',
-        description: err?.message ?? 'Connection lost. Please try again.',
-        variant: 'destructive',
-      })
+  sendOrToast(async () => {
+    await sendSessionMessage({ type: 'first_turn_choice', speak_first: speakFirst })
+    needFirstTurnChoice.value = false
+    if (speakFirst) {
+      needUserTurn.value = true
+    } else {
+      agentStatus.value = 'thinking'
     }
-  })()
+  })
 }
 
 async function startRecording() {
@@ -1120,50 +1132,61 @@ function stopRecording() {
 }
 
 async function sendRecording() {
-  if (!recordedBlob.value) return
+  if (!recordedBlob.value && !pendingMicSend.value) return
   micState.value = 'transcribing'
 
   let text: string
-  let upload: { audio_url: string } | null = null
+  let audioUrl: string | null = null
 
-  try {
+  if (pendingMicSend.value) {
+    text = pendingMicSend.value.text
+    audioUrl = pendingMicSend.value.audioUrl
+  } else {
+    const blob = recordedBlob.value!
     const currentSessionId = sessionId.value ? String(sessionId.value) : null
-    text = await ConversationService.speechToText(recordedBlob.value)
-    if (currentSessionId) {
-      try {
-        upload = await ConversationService.uploadUserAudio(currentSessionId, recordedBlob.value)
-      } catch {
-        // Audio upload is optional; STT result can still be sent.
-      }
+    const uploadPromise = currentSessionId
+      ? ConversationService.uploadUserAudio(currentSessionId, blob).catch((err: unknown) => {
+          console.warn('User audio upload failed; sending turn without audio_url', err)
+          return null
+        })
+      : Promise.resolve(null)
+
+    try {
+      const [sttText, upload] = await Promise.all([
+        ConversationService.speechToText(blob),
+        uploadPromise,
+      ])
+      text = sttText
+      audioUrl = upload?.audio_url ?? null
+      pendingMicSend.value = { text, audioUrl }
+    } catch (err: any) {
+      micState.value = 'error'
+      toast({
+        title: 'Transcription failed',
+        description: err?.message ?? 'Failed to transcribe audio',
+        variant: 'destructive',
+      })
+      return
     }
-  } catch (err: any) {
-    micState.value = 'error'
-    toast({
-      title: 'Transcription failed',
-      description: err?.message ?? 'Failed to transcribe audio',
-      variant: 'destructive',
-    })
-    return
   }
 
   try {
-    await ensureSessionReady({ silent: true })
-    ws.send({
+    await sendSessionMessage({
       type: 'user_turn',
       utterance: text,
       source: 'mic',
-      audio_url: upload?.audio_url ?? null,
+      audio_url: audioUrl,
     })
     pushLocalUserTurn(text)
+    pendingMicSend.value = null
     needUserTurn.value = false
     clearRecordingPreview()
     micState.value = 'idle'
   } catch (err: any) {
     micState.value = 'preview'
-    inputText.value = text
     toast({
       title: 'Could not send message',
-      description: err?.message ?? 'Connection lost. Try Send again or edit the text below.',
+      description: err?.message ?? 'Connection lost. Tap Send again to retry.',
       variant: 'destructive',
     })
   }
@@ -1289,6 +1312,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleRecordShortcut)
   window.removeEventListener('pointerdown', handleConversationInteraction)
   clearEndedSummaryPollTimer()
+  cancelWsWaits()
   clearRecordingPreview()
   stopAllAudioPlayback()
   resetAvatars()
@@ -1449,8 +1473,8 @@ onUnmounted(() => {
             </CardDescription>
           </CardHeader>
           <CardContent class="flex flex-col gap-2 sm:flex-row">
-            <Button @click="chooseFirstTurn(true)">I’ll speak first</Button>
-            <Button variant="outline" @click="chooseFirstTurn(false)">Let a partner start</Button>
+            <Button :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
+            <Button variant="outline" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">Let a partner start</Button>
           </CardContent>
         </Card>
 
