@@ -9,6 +9,7 @@ const fakeModel = {
   position: { set: vi.fn() },
   speak: vi.fn(),
   stopSpeaking: vi.fn(),
+  destroy: vi.fn(),
 }
 
 const appInstance = {
@@ -106,5 +107,27 @@ describe('useLive2D', () => {
     dispose()
     expect(appInstance.destroy).toHaveBeenCalled()
     expect(status.value).toBe('idle')
+  })
+
+  it('setIdle settles an in-flight speak() with false when the engine never calls onFinish/onError', async () => {
+    // stopSpeaking() (called by setIdle) does not invoke onFinish/onError, so the engine
+    // mock here intentionally never calls either — mirrors a barge-in/stop mid-utterance.
+    fakeModel.speak.mockImplementation(() => {})
+    const { init, speak, setIdle, status } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const speakPromise = speak('/audio.mp3')
+    expect(status.value).toBe('speaking')
+    setIdle()
+    await expect(speakPromise).resolves.toBe(false)
+    expect(fakeModel.stopSpeaking).toHaveBeenCalled()
+  })
+
+  it('dispose settles an in-flight speak() with false when the engine never calls onFinish/onError', async () => {
+    fakeModel.speak.mockImplementation(() => {})
+    const { init, speak, dispose } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const speakPromise = speak('/audio.mp3')
+    dispose()
+    await expect(speakPromise).resolves.toBe(false)
   })
 })
