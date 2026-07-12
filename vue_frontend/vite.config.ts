@@ -9,9 +9,6 @@ import pkg from './package.json'
 
 // https://vite.dev/config/
 export default defineConfig({
-  optimizeDeps: {
-    exclude: ['@met4citizen/talkinghead'],
-  },
   server: {
     watch: {
       usePolling: true,
