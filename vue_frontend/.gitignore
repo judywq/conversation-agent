@@ -28,3 +28,7 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# Live2D runtime + sample models: licensed, must not be redistributed (see public/live2d/README.md)
+public/live2d/*
+!public/live2d/README.md
