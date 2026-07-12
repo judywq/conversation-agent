@@ -53,6 +53,9 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
           resolution: window.devicePixelRatio,
           backgroundAlpha: 0,
         })
+
+        // dispose() ran while we were awaiting app.init(); bail before touching app.
+        if (disposed || !app) return false
         stage.appendChild(app.canvas)
 
         const instance = await Live2DModel.from(preset.url)
@@ -94,6 +97,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     const instance = model.value
     if (!instance) return false
 
+    settlePendingSpeak(false) // supersede any still-pending speak from this instance
     status.value = 'speaking'
     return new Promise<boolean>((resolve) => {
       pendingSpeakResolve = resolve
@@ -123,9 +127,15 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     disposed = true
     initPromise = null
     settlePendingSpeak(false)
-    model.value?.destroy({ children: true, texture: true, baseTexture: true })
+    // Teardown may race an in-flight init() (renderer mid-init); never let a
+    // throw here abort a disposeAll() loop over sibling panels.
+    try {
+      model.value?.destroy({ children: true, texture: true, baseTexture: true })
+      app?.destroy(true)
+    } catch (error) {
+      console.error('Live2D dispose failed:', error)
+    }
     model.value = null
-    app?.destroy(true)
     app = null
     status.value = 'idle'
     errorMessage.value = ''

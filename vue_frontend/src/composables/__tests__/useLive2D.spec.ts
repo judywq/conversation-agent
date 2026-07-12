@@ -130,4 +130,12 @@ describe('useLive2D', () => {
     dispose()
     await expect(speakPromise).resolves.toBe(false)
   })
+
+  it('dispose during in-flight init bails cleanly without error state', async () => {
+    const { init, dispose, status } = useLive2D(makeStage())
+    const initPromise = init({ url: '/m.model3.json' })
+    dispose() // lands while init is still awaiting app.init()/model load
+    await expect(initPromise).resolves.toBe(false)
+    expect(status.value).toBe('idle') // not overwritten with 'error'
+  })
 })
