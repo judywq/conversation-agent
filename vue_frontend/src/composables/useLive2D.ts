@@ -1,6 +1,9 @@
 import { ref, shallowRef, type Ref } from 'vue'
 import { Application, extensions } from 'pixi.js'
-import { Live2DModel, Live2DPlugin } from 'untitled-pixi-live2d-engine'
+// Modern-only bundle (Cubism 3/4/5): needs just live2dcubismcore.min.js.
+// The bare entry point also pulls in the Cubism 2 runtime and throws
+// "requires live2d.min.js" at import time.
+import { Live2DModel, Live2DPlugin } from 'untitled-pixi-live2d-engine/cubism'
 
 extensions.add(Live2DPlugin)
 

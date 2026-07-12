@@ -28,12 +28,12 @@ vi.mock('pixi.js', () => ({
   extensions: { add: vi.fn() },
 }))
 
-vi.mock('untitled-pixi-live2d-engine', () => ({
+vi.mock('untitled-pixi-live2d-engine/cubism', () => ({
   Live2DPlugin: {},
   Live2DModel: { from: vi.fn() },
 }))
 
-import { Live2DModel } from 'untitled-pixi-live2d-engine'
+import { Live2DModel } from 'untitled-pixi-live2d-engine/cubism'
 import { useLive2D } from '../useLive2D'
 
 function makeStage() {
