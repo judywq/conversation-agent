@@ -48,8 +48,7 @@ async function loadAll() {
           v-for="preset in FEMALE_AVATAR_PRESETS"
           :key="`F-${preset.url}`"
           :ref="setCardRef"
-          :url="preset.url"
-          :body="preset.body"
+          :preset="preset"
         />
       </div>
     </section>
@@ -61,8 +60,7 @@ async function loadAll() {
           v-for="preset in MALE_AVATAR_PRESETS"
           :key="`M-${preset.url}`"
           :ref="setCardRef"
-          :url="preset.url"
-          :body="preset.body"
+          :preset="preset"
         />
       </div>
     </section>

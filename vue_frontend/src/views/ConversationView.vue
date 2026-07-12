@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast/use-toast'
-import { clearAudioBufferCache } from '@/composables/useTalkingHead'
 import {
   ConversationService,
   type ArgumentSummaryResult,
@@ -591,7 +590,6 @@ function stopAllAudioPlayback() {
 
 function resetAvatars() {
   avatarGridRef.value?.disposeAll()
-  clearAudioBufferCache()
   avatarSpeaking.value = false
 }
 

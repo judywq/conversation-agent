@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref } from 'vue'
-import type { AvatarBody } from '@/config/avatarPresets'
-import { useTalkingHead } from '@/composables/useTalkingHead'
+import type { AvatarPreset } from '@/config/avatarPresets'
+import { useLive2D } from '@/composables/useLive2D'
 import { Button } from '@/components/ui/button'
 
-const props = defineProps<{
-  url: string
-  body: AvatarBody
-}>()
+const props = defineProps<{ preset: AvatarPreset }>()
 
 const stageRef = ref<HTMLElement | null>(null)
-const { status, errorMessage, init, dispose } = useTalkingHead(stageRef)
+const { status, errorMessage, init, speak, dispose } = useLive2D(stageRef)
 
-const fileName = computed(() => props.url.split('/').pop() ?? props.url)
+const testAudioUrl = ref('')
+const fileName = computed(() => props.preset.url.split('/').slice(-3).join('/'))
 
 const statusLabel = computed(() => {
   if (status.value === 'loading') return 'Loading…'
@@ -24,7 +22,7 @@ const statusLabel = computed(() => {
 async function load(): Promise<boolean> {
   if (status.value === 'ready' || status.value === 'loading') return true
   await nextTick()
-  return init(props.url, props.body)
+  return init(props.preset)
 }
 
 async function reload() {
@@ -43,8 +41,8 @@ defineExpose({ load, status })
   <div class="rounded-lg border border-border bg-card overflow-hidden">
     <div class="flex items-center justify-between gap-2 border-b px-3 py-2">
       <div class="min-w-0">
-        <div class="truncate text-sm font-medium" :title="url">{{ fileName }}</div>
-        <div class="text-xs text-muted-foreground">body: {{ body }} · {{ statusLabel }}</div>
+        <div class="truncate text-sm font-medium" :title="preset.url">{{ fileName }}</div>
+        <div class="text-xs text-muted-foreground">{{ statusLabel }}</div>
       </div>
       <Button
         variant="outline"
@@ -54,6 +52,21 @@ defineExpose({ load, status })
         @click="status === 'idle' ? load() : reload()"
       >
         {{ status === 'idle' ? 'Load' : 'Reload' }}
+      </Button>
+    </div>
+    <div class="flex items-center gap-2 border-b px-3 py-2">
+      <input
+        v-model="testAudioUrl"
+        placeholder="Audio URL for speak test"
+        class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="status !== 'ready' || !testAudioUrl"
+        @click="speak(testAudioUrl)"
+      >
+        Speak
       </Button>
     </div>
     <div class="relative h-[240px] bg-muted/30">

@@ -1,29 +1,18 @@
+import type { Live2DPresetInput } from '@/composables/useLive2D'
+
 export type AvatarBody = 'M' | 'F'
 
-export type AvatarPreset = {
-  url: string
-  body: AvatarBody
-}
+export type AvatarPreset = Live2DPresetInput
 
-const AVATAR_BASE = '/avatars'
-
+// Live2D official sample models (see public/live2d/README.md for setup + license).
+// zoom/anchorY left at useLive2D defaults; per-model framing tune deferred (Task 6).
 export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
-  { url: `${AVATAR_BASE}/brunette.glb`, body: 'F' },
-  // { url: `${AVATAR_BASE}/brunette-t.glb`, body: 'F' },
-  { url: `${AVATAR_BASE}/mpfb.glb`, body: 'F' },
-  // { url: `${AVATAR_BASE}/avatarsdk.glb`, body: 'F' },
-  { url: `${AVATAR_BASE}/avaturn.glb`, body: 'F' },
-  // { url: `${AVATAR_BASE}/vroid.glb`, body: 'F' }, // Loading error for vroid.glb: THREE.GLTFLoader: setMeshoptDecoder must be called before loading compressed files
+  { url: '/live2d/hiyori/Hiyori.model3.json' },
+  { url: '/live2d/haru/Haru.model3.json' },
+  { url: '/live2d/mao/Mao.model3.json' },
 ]
 
-export const MALE_AVATAR_PRESETS: AvatarPreset[] = [
-  // { url: `${AVATAR_BASE}/brunette.glb`, body: 'M' },
-  // { url: `${AVATAR_BASE}/brunette-t.glb`, body: 'M' },
-  // { url: `${AVATAR_BASE}/mpfb.glb`, body: 'M' },
-  { url: `${AVATAR_BASE}/avatarsdk.glb`, body: 'M' },
-  // { url: `${AVATAR_BASE}/avaturn.glb`, body: 'M' },
-  // { url: `${AVATAR_BASE}/vroid.glb`, body: 'M' },
-]
+export const MALE_AVATAR_PRESETS: AvatarPreset[] = [{ url: '/live2d/natori/Natori.model3.json' }]
 
 export function normalizeAvatarBody(gender?: string | null): AvatarBody {
   const value = (gender || '').trim().toLowerCase()
@@ -31,7 +20,10 @@ export function normalizeAvatarBody(gender?: string | null): AvatarBody {
   return 'F'
 }
 
-export function avatarPresetForAgent(gender: string | undefined | null, index: number): AvatarPreset {
+export function avatarPresetForAgent(
+  gender: string | undefined | null,
+  index: number,
+): AvatarPreset {
   const body = normalizeAvatarBody(gender)
   const presets = body === 'M' ? MALE_AVATAR_PRESETS : FEMALE_AVATAR_PRESETS
   return presets[index % presets.length]!

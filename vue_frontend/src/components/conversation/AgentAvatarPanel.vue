@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { avatarPresetForAgent, type AvatarBody } from '@/config/avatarPresets'
-import { useTalkingHead } from '@/composables/useTalkingHead'
+import { avatarPresetForAgent } from '@/config/avatarPresets'
+import { useLive2D } from '@/composables/useLive2D'
 import type { LipSyncPayload } from '@/types/lipsync'
 
 const props = defineProps<{
@@ -15,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
-const { status, errorMessage, init, speak, setIdle, dispose } = useTalkingHead(stageRef)
+const { status, errorMessage, init, speak, setIdle, dispose } = useLive2D(stageRef)
 
 const preset = computed(() => avatarPresetForAgent(props.gender, props.index))
 
@@ -39,7 +39,7 @@ async function ensureInit() {
   if (status.value === 'ready' || status.value === 'loading') return
   await nextTick()
   if (!stageRef.value) return
-  await init(preset.value.url, preset.value.body as AvatarBody)
+  await init(preset.value)
 }
 
 watch(
@@ -57,10 +57,13 @@ onUnmounted(() => {
   dispose()
 })
 
-async function speakTurn(audioUrl: string, lipsync: LipSyncPayload): Promise<boolean> {
+// ponytail: word-timing lipsync unused — Live2D mouth is audio-amplitude driven;
+// param kept so AgentAvatarGrid/ConversationView stay untouched
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function speakTurn(audioUrl: string, _lipsync: LipSyncPayload): Promise<boolean> {
   await ensureInit()
   if (status.value === 'error') return false
-  return speak(audioUrl, lipsync)
+  return speak(audioUrl)
 }
 
 defineExpose({
