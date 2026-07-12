@@ -446,7 +446,7 @@ REST_FRAMEWORK = {
 }
 
 # django-cors-headers - https://github.com/adamchainz/django-cors-headers#setup
-# Include /media/ so the Vue dev server can fetch TTS audio into Web Audio (TalkingHead lip-sync).
+# Include /media/ so the Vue dev server can fetch TTS audio cross-origin (Live2D lip-sync).
 CORS_URLS_REGEX = r"^(/api/|/media/).*$"
 CORS_ALLOW_CREDENTIALS = True
 
