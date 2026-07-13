@@ -70,7 +70,10 @@ describe('useLive2D', () => {
     const { init, status } = useLive2D(makeStage())
     await expect(init({ url: '/live2d/x/runtime/x.model3.json' })).resolves.toBe(true)
     expect(status.value).toBe('ready')
-    expect(Live2DModel.from).toHaveBeenCalledWith('/live2d/x/runtime/x.model3.json')
+    expect(Live2DModel.from).toHaveBeenCalledWith('/live2d/x/runtime/x.model3.json', {
+      lipSyncGain: 2.5,
+      lipSyncWeight: 1.0,
+    })
   })
 
   it('init returns false when stage element is missing', async () => {

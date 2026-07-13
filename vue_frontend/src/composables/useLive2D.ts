@@ -97,7 +97,11 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         if (disposed || !app) return false
         stage.appendChild(app.canvas)
 
-        const instance = await Live2DModel.from(preset.url)
+        // Defaults (1.5 / 0.4) keep mouths too closed; weight 1.0 applies full open amount.
+        const instance = await Live2DModel.from(preset.url, {
+          lipSyncGain: 2.5,
+          lipSyncWeight: 1.0,
+        })
 
         // dispose() ran while we were awaiting Live2DModel.from(); bail out cleanly.
         if (disposed || !app) {
