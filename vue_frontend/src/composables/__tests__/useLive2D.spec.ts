@@ -25,6 +25,8 @@ const fakeModel = {
         definitions: [{ Name: 'F01' }, { Name: 'F02' }],
         resetExpression: resetExpressionMock,
       },
+      once: vi.fn(),
+      off: vi.fn(),
     },
   },
 }
@@ -194,17 +196,26 @@ describe('useLive2D', () => {
     expect(capabilities.value?.expressions).toEqual([])
   })
 
-  it('playMotion resolves true when the motion finishes', async () => {
-    fakeModel.motion.mockImplementation(
-      (_g: string, _i: number, _p: number, opts: { onFinish: () => void }) => {
-        opts.onFinish()
-        return Promise.resolve(true)
-      },
-    )
+  it('playMotion resolves true when motionFinish fires', async () => {
+    // Honest mock: motion() never calls any callback, matching the real engine
+    // for motions with no Sound field (every motion in our sample models).
+    fakeModel.motion.mockResolvedValue(true)
     const { init, playMotion } = useLive2D(makeStage())
     await init({ url: '/m.model3.json' })
-    await expect(playMotion('TapBody', 0)).resolves.toBe(true)
+
+    const promise = playMotion('TapBody', 0)
+    await Promise.resolve()
+    await Promise.resolve()
     expect(fakeModel.motion).toHaveBeenCalledWith('TapBody', 0, 3, expect.any(Object))
+
+    const onceCall = fakeModel.internalModel.motionManager.once.mock.calls.find(
+      (call) => call[0] === 'motionFinish',
+    )
+    expect(onceCall).toBeDefined()
+    const handler = onceCall![1] as () => void
+    handler()
+
+    await expect(promise).resolves.toBe(true)
   })
 
   it('playMotion resolves false when the engine refuses to start the motion', async () => {
@@ -212,6 +223,47 @@ describe('useLive2D', () => {
     const { init, playMotion } = useLive2D(makeStage())
     await init({ url: '/m.model3.json' })
     await expect(playMotion('TapBody', 0)).resolves.toBe(false)
+    // refused: no motionFinish subscription should have been made
+    expect(fakeModel.internalModel.motionManager.once).not.toHaveBeenCalled()
+  })
+
+  it('a second playMotion supersedes the first', async () => {
+    fakeModel.motion.mockResolvedValue(true)
+    const { init, playMotion } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const manager = fakeModel.internalModel.motionManager
+
+    const first = playMotion('TapBody', 0)
+    await Promise.resolve()
+    await Promise.resolve()
+    const firstHandler = manager.once.mock.calls.find((call) => call[0] === 'motionFinish')![1] as () => void
+
+    const second = playMotion('TapBody', 0)
+    await expect(first).resolves.toBe(false)
+    expect(manager.off).toHaveBeenCalledWith('motionFinish', firstHandler)
+
+    await Promise.resolve()
+    await Promise.resolve()
+    const secondHandler = manager.once.mock.calls.filter((call) => call[0] === 'motionFinish').at(-1)![1] as () => void
+    secondHandler()
+    await expect(second).resolves.toBe(true)
+  })
+
+  it('dispose settles a pending motion with false', async () => {
+    fakeModel.motion.mockResolvedValue(true)
+    const { init, playMotion, dispose } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const manager = fakeModel.internalModel.motionManager
+
+    const promise = playMotion('TapBody', 0)
+    await Promise.resolve()
+    await Promise.resolve()
+    const handler = manager.once.mock.calls.find((call) => call[0] === 'motionFinish')![1] as () => void
+
+    dispose()
+
+    await expect(promise).resolves.toBe(false)
+    expect(manager.off).toHaveBeenCalledWith('motionFinish', handler)
   })
 
   it('playMotion and setExpression resolve false before init', async () => {

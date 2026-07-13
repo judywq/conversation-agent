@@ -52,6 +52,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   let app: Application | null = null
   let initPromise: Promise<boolean> | null = null
   let pendingSpeakResolve: ((value: boolean) => void) | null = null
+  let pendingMotionSettle: ((value: boolean) => void) | null = null
   let disposed = false
 
   function settlePendingSpeak(value: boolean) {
@@ -59,6 +60,14 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
       const resolve = pendingSpeakResolve
       pendingSpeakResolve = null
       resolve(value)
+    }
+  }
+
+  function settlePendingMotion(value: boolean) {
+    if (pendingMotionSettle) {
+      const settle = pendingMotionSettle
+      pendingMotionSettle = null
+      settle(value)
     }
   }
 
@@ -146,24 +155,45 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     })
   }
 
-  function playMotion(group: string, index: number): Promise<boolean> {
+  async function playMotion(group: string, index: number): Promise<boolean> {
     const instance = model.value
-    if (!instance) return Promise.resolve(false)
+    if (!instance) return false
+
+    settlePendingMotion(false) // supersede any still-pending motion (e.g. a second Play click)
+
+    // FORCE so debug clicks always preempt the idle loop. motion() only reports
+    // whether the motion STARTED; onFinish is audio-gated and never fires for our
+    // sample models (no Sound field), and a later FORCE preemption can drop it
+    // even when audio is present — so completion comes from the motion manager's
+    // 'motionFinish' event instead (see below).
+    let started: boolean
+    try {
+      started = await instance.motion(group, index, MotionPriority.FORCE, {
+        onError: (error: Error) => {
+          console.error('Live2D motion failed:', error)
+          settlePendingMotion(false)
+        },
+      })
+    } catch {
+      return false
+    }
+    if (!started) return false
+
     return new Promise<boolean>((resolve) => {
-      // FORCE so debug clicks always preempt the idle loop. The motion()
-      // promise reports whether the motion STARTED; onFinish fires on completion.
-      instance
-        .motion(group, index, MotionPriority.FORCE, {
-          onFinish: () => resolve(true),
-          onError: (error: Error) => {
-            console.error('Live2D motion failed:', error)
-            resolve(false)
-          },
-        })
-        .then((started) => {
-          if (!started) resolve(false) // refused: onFinish will never fire
-        })
-        .catch(() => resolve(false))
+      // 'motionFinish' is emitted by MotionManager.update() when the current motion
+      // completes, but is absent from the typed event map — hence the local cast.
+      const manager = instance.internalModel.motionManager as unknown as {
+        once(event: string, fn: () => void): void
+        off(event: string, fn: () => void): void
+      }
+      const onMotionFinish = () => settle(true)
+      function settle(value: boolean) {
+        pendingMotionSettle = null
+        manager.off('motionFinish', onMotionFinish)
+        resolve(value)
+      }
+      pendingMotionSettle = settle
+      manager.once('motionFinish', onMotionFinish)
     })
   }
 
@@ -189,6 +219,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     disposed = true
     initPromise = null
     settlePendingSpeak(false)
+    settlePendingMotion(false)
     // Teardown may race an in-flight init() (renderer mid-init); never let a
     // throw here abort a disposeAll() loop over sibling panels.
     try {
