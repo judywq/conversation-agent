@@ -169,6 +169,10 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     let started: boolean
     try {
       started = await instance.motion(group, index, MotionPriority.FORCE, {
+        // Every official sample motion has Loop:true in its motion3.json; a looping
+        // motion never finishes, so 'motionFinish' would never fire. loop:false
+        // overrides the JSON metadata → play once, then resolve.
+        loop: false,
         onError: (error: Error) => {
           console.error('Live2D motion failed:', error)
           settlePendingMotion(false)

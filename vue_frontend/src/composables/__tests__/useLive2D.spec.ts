@@ -206,7 +206,13 @@ describe('useLive2D', () => {
     const promise = playMotion('TapBody', 0)
     await Promise.resolve()
     await Promise.resolve()
-    expect(fakeModel.motion).toHaveBeenCalledWith('TapBody', 0, 3, expect.any(Object))
+    expect(fakeModel.motion).toHaveBeenCalledWith(
+      'TapBody',
+      0,
+      3,
+      // loop:false is load-bearing: sample motions ship Loop:true and would never finish
+      expect.objectContaining({ loop: false }),
+    )
 
     const onceCall = fakeModel.internalModel.motionManager.once.mock.calls.find(
       (call) => call[0] === 'motionFinish',
