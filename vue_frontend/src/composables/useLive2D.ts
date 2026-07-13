@@ -166,6 +166,10 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     // sample models (no Sound field), and a later FORCE preemption can drop it
     // even when audio is present — so completion comes from the motion manager's
     // 'motionFinish' event instead (see below).
+    // This call's own settle; onError must not touch the shared slot, or a stale
+    // audio error from a superseded motion would settle the NEWER call's promise.
+    let localSettle: ((value: boolean) => void) | null = null
+
     let started: boolean
     try {
       started = await instance.motion(group, index, MotionPriority.FORCE, {
@@ -175,7 +179,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         loop: false,
         onError: (error: Error) => {
           console.error('Live2D motion failed:', error)
-          settlePendingMotion(false)
+          localSettle?.(false)
         },
       })
     } catch {
@@ -193,10 +197,12 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
       const onMotionFinish = () => settle(true)
       function settle(value: boolean) {
         pendingMotionSettle = null
+        localSettle = null
         manager.off('motionFinish', onMotionFinish)
         resolve(value)
       }
       pendingMotionSettle = settle
+      localSettle = settle
       manager.once('motionFinish', onMotionFinish)
     })
   }
