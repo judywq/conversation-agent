@@ -3,7 +3,7 @@ import { Application, extensions } from 'pixi.js'
 // Modern-only bundle (Cubism 3/4/5): needs just live2dcubismcore.min.js.
 // The bare entry point also pulls in the Cubism 2 runtime and throws
 // "requires live2d.min.js" at import time.
-import { Live2DModel, Live2DPlugin } from 'untitled-pixi-live2d-engine/cubism'
+import { Live2DModel, Live2DPlugin, MotionPriority } from 'untitled-pixi-live2d-engine/cubism'
 
 extensions.add(Live2DPlugin)
 
@@ -15,9 +15,39 @@ export type Live2DPresetInput = {
   anchorY?: number // vertical anchor 0..1 from model top; default 0.05
 }
 
+export type Live2DMotionEntry = { index: number; name: string }
+
+export type Live2DCapabilities = {
+  motionGroups: { group: string; motions: Live2DMotionEntry[] }[]
+  expressions: string[]
+  idleGroup: string
+}
+
+// The abstract managers type their specs as `unknown`; these are the Cubism 3/4/5 manifest shapes.
+type MotionSpec = { File: string; Name?: string }
+type ExpressionSpec = { Name: string }
+
+function readCapabilities(instance: Live2DModel): Live2DCapabilities {
+  const manager = instance.internalModel.motionManager
+  const definitions = manager.definitions as Partial<Record<string, MotionSpec[]>>
+  const motionGroups = Object.entries(definitions).map(([group, specs]) => ({
+    group,
+    motions: (specs ?? []).map((spec, index) => ({
+      index,
+      // Manifest motion entries rarely carry a Name; fall back to the file basename.
+      name: spec.Name ?? spec.File.replace(/^.*\//, '').replace(/\.motion3\.json$/, ''),
+    })),
+  }))
+  const expressions = (
+    (manager.expressionManager?.definitions ?? []) as ExpressionSpec[]
+  ).map((spec) => spec.Name)
+  return { motionGroups, expressions, idleGroup: manager.groups.idle }
+}
+
 export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   const status = ref<Live2DStatus>('idle')
   const errorMessage = ref('')
+  const capabilities = ref<Live2DCapabilities | null>(null)
   const model = shallowRef<Live2DModel | null>(null)
   let app: Application | null = null
   let initPromise: Promise<boolean> | null = null
@@ -74,6 +104,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         app.stage.addChild(instance)
 
         model.value = instance
+        capabilities.value = readCapabilities(instance)
         status.value = 'ready'
         return true
       } catch (error) {
@@ -115,6 +146,37 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     })
   }
 
+  function playMotion(group: string, index: number): Promise<boolean> {
+    const instance = model.value
+    if (!instance) return Promise.resolve(false)
+    return new Promise<boolean>((resolve) => {
+      // FORCE so debug clicks always preempt the idle loop. The motion()
+      // promise reports whether the motion STARTED; onFinish fires on completion.
+      instance
+        .motion(group, index, MotionPriority.FORCE, {
+          onFinish: () => resolve(true),
+          onError: (error: Error) => {
+            console.error('Live2D motion failed:', error)
+            resolve(false)
+          },
+        })
+        .then((started) => {
+          if (!started) resolve(false) // refused: onFinish will never fire
+        })
+        .catch(() => resolve(false))
+    })
+  }
+
+  async function setExpression(id: string | number): Promise<boolean> {
+    const instance = model.value
+    if (!instance) return false
+    return instance.expression(id)
+  }
+
+  function resetExpression() {
+    model.value?.internalModel.motionManager.expressionManager?.resetExpression()
+  }
+
   function setIdle() {
     if (status.value === 'speaking') {
       model.value?.stopSpeaking()
@@ -136,11 +198,23 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
       console.error('Live2D dispose failed:', error)
     }
     model.value = null
+    capabilities.value = null
     app = null
     status.value = 'idle'
     errorMessage.value = ''
     stageRef.value?.replaceChildren()
   }
 
-  return { status, errorMessage, init, speak, setIdle, dispose }
+  return {
+    status,
+    errorMessage,
+    capabilities,
+    init,
+    speak,
+    playMotion,
+    setExpression,
+    resetExpression,
+    setIdle,
+    dispose,
+  }
 }

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
 
+const resetExpressionMock = vi.fn()
+
 const fakeModel = {
   width: 1000,
   height: 2000,
@@ -10,6 +12,21 @@ const fakeModel = {
   speak: vi.fn(),
   stopSpeaking: vi.fn(),
   destroy: vi.fn(),
+  motion: vi.fn(),
+  expression: vi.fn(),
+  internalModel: {
+    motionManager: {
+      definitions: {
+        Idle: [{ File: 'motions/Hiyori_m01.motion3.json' }, { File: 'motions/Hiyori_m02.motion3.json' }],
+        TapBody: [{ File: 'motions/Hiyori_m04.motion3.json', Name: 'Wave' }],
+      },
+      groups: { idle: 'Idle' },
+      expressionManager: {
+        definitions: [{ Name: 'F01' }, { Name: 'F02' }],
+        resetExpression: resetExpressionMock,
+      },
+    },
+  },
 }
 
 const appInstance = {
@@ -31,6 +48,7 @@ vi.mock('pixi.js', () => ({
 vi.mock('untitled-pixi-live2d-engine/cubism', () => ({
   Live2DPlugin: {},
   Live2DModel: { from: vi.fn() },
+  MotionPriority: { NONE: 0, IDLE: 1, NORMAL: 2, FORCE: 3 },
 }))
 
 import { Live2DModel } from 'untitled-pixi-live2d-engine/cubism'
@@ -137,5 +155,93 @@ describe('useLive2D', () => {
     dispose() // lands while init is still awaiting app.init()/model load
     await expect(initPromise).resolves.toBe(false)
     expect(status.value).toBe('idle') // not overwritten with 'error'
+  })
+
+  it('exposes capabilities after init, named from Name or file basename', async () => {
+    const { init, capabilities } = useLive2D(makeStage())
+    expect(capabilities.value).toBeNull()
+    await init({ url: '/m.model3.json' })
+    expect(capabilities.value).toEqual({
+      motionGroups: [
+        {
+          group: 'Idle',
+          motions: [
+            { index: 0, name: 'Hiyori_m01' },
+            { index: 1, name: 'Hiyori_m02' },
+          ],
+        },
+        { group: 'TapBody', motions: [{ index: 0, name: 'Wave' }] },
+      ],
+      expressions: ['F01', 'F02'],
+      idleGroup: 'Idle',
+    })
+  })
+
+  it('reports empty expressions when the model has no expressionManager', async () => {
+    const bare = {
+      ...fakeModel,
+      internalModel: {
+        motionManager: {
+          definitions: { Idle: [{ File: 'a.motion3.json' }] },
+          groups: { idle: 'Idle' },
+          expressionManager: undefined,
+        },
+      },
+    }
+    ;(Live2DModel.from as ReturnType<typeof vi.fn>).mockResolvedValue(bare)
+    const { init, capabilities } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    expect(capabilities.value?.expressions).toEqual([])
+  })
+
+  it('playMotion resolves true when the motion finishes', async () => {
+    fakeModel.motion.mockImplementation(
+      (_g: string, _i: number, _p: number, opts: { onFinish: () => void }) => {
+        opts.onFinish()
+        return Promise.resolve(true)
+      },
+    )
+    const { init, playMotion } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    await expect(playMotion('TapBody', 0)).resolves.toBe(true)
+    expect(fakeModel.motion).toHaveBeenCalledWith('TapBody', 0, 3, expect.any(Object))
+  })
+
+  it('playMotion resolves false when the engine refuses to start the motion', async () => {
+    fakeModel.motion.mockResolvedValue(false) // never calls onFinish
+    const { init, playMotion } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    await expect(playMotion('TapBody', 0)).resolves.toBe(false)
+  })
+
+  it('playMotion and setExpression resolve false before init', async () => {
+    const { playMotion, setExpression } = useLive2D(makeStage())
+    await expect(playMotion('Idle', 0)).resolves.toBe(false)
+    await expect(setExpression('F01')).resolves.toBe(false)
+  })
+
+  it('setExpression delegates to model.expression', async () => {
+    fakeModel.expression.mockResolvedValue(true)
+    const { init, setExpression } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    await expect(setExpression('F02')).resolves.toBe(true)
+    expect(fakeModel.expression).toHaveBeenCalledWith('F02')
+  })
+
+  it('resetExpression calls the expression manager and tolerates models without one', async () => {
+    const { init, resetExpression } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    resetExpression()
+    expect(resetExpressionMock).toHaveBeenCalled()
+    // no model loaded → must be a silent no-op, not a throw
+    const { resetExpression: resetBeforeInit } = useLive2D(makeStage())
+    expect(() => resetBeforeInit()).not.toThrow()
+  })
+
+  it('dispose clears capabilities', async () => {
+    const { init, dispose, capabilities } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    dispose()
+    expect(capabilities.value).toBeNull()
   })
 })
