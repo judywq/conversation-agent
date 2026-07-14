@@ -132,6 +132,8 @@ function canShowReplayButton(item: TurnDisplayItem): boolean {
 
 function canShowPauseButton(item: TurnDisplayItem): boolean {
   if (!canShowTurnAudioControls(item)) return false
+  // Avatar replay has stop, not pause — only offer pause for plain HTML Audio.
+  if (manualReplayUsesAvatar.value) return false
   return manualReplayTurnKey.value === item.key && manualReplayActive.value && !manualReplayPaused.value
 }
 const agentStatus = ref<'idle' | 'thinking' | 'finished' | 'searching_online'>('idle')
@@ -510,6 +512,8 @@ let manualReplayAbortController: AbortController | null = null
 const manualReplayTurnKey = ref<string | null>(null)
 const manualReplayPaused = ref(false)
 const manualReplayActive = ref(false)
+/** True while replaying via avatar speak (word lipsync); no pause support. */
+const manualReplayUsesAvatar = ref(false)
 
 function stopManualTurnAudio() {
   manualReplayAbortController?.abort()
@@ -523,10 +527,12 @@ function stopManualTurnAudio() {
   manualReplayTurnKey.value = null
   manualReplayPaused.value = false
   manualReplayActive.value = false
+  manualReplayUsesAvatar.value = false
 }
 
 function pauseTurnAudioManual() {
   if (!manualReplayTurnKey.value || manualReplayPaused.value || !manualReplayActive.value) return
+  if (manualReplayUsesAvatar.value) return
   if (currentAudio.value && !currentAudio.value.paused) {
     currentAudio.value.pause()
     manualReplayPaused.value = true
@@ -536,7 +542,13 @@ function pauseTurnAudioManual() {
 async function playTurnAudioManual(turn: Turn, key: string) {
   if (!turn.audio_url) return
 
-  if (manualReplayTurnKey.value === key && manualReplayPaused.value && currentAudio.value) {
+  // Resume only applies to paused plain-audio replay.
+  if (
+    manualReplayTurnKey.value === key &&
+    manualReplayPaused.value &&
+    currentAudio.value &&
+    !manualReplayUsesAvatar.value
+  ) {
     manualReplayPaused.value = false
     manualReplayActive.value = true
     await currentAudio.value.play()
@@ -553,10 +565,32 @@ async function playTurnAudioManual(turn: Turn, key: string) {
   const abort = new AbortController()
   manualReplayAbortController = abort
 
-  // Manual replay uses plain audio so pause/resume works reliably (avatar lip-sync has no pause).
-  await playPlainAudioAndWait(turn.audio_url, abort.signal)
+  const useAvatar =
+    isAgentTurn(turn) &&
+    avatarsEnabled.value &&
+    avatarWarmedUp.value &&
+    isLipSyncPayload(turn.lipsync)
+
+  if (useAvatar) {
+    manualReplayUsesAvatar.value = true
+    const played = await playAgentTurnAudio(turn)
+    if (abort.signal.aborted) {
+      manualReplayActive.value = false
+      manualReplayUsesAvatar.value = false
+      manualReplayAbortController = null
+      return
+    }
+    if (!played) {
+      manualReplayUsesAvatar.value = false
+      await playPlainAudioAndWait(turn.audio_url, abort.signal)
+    }
+  } else {
+    manualReplayUsesAvatar.value = false
+    await playPlainAudioAndWait(turn.audio_url, abort.signal)
+  }
 
   manualReplayAbortController = null
+  manualReplayUsesAvatar.value = false
 
   if (abort.signal.aborted) {
     manualReplayActive.value = false
