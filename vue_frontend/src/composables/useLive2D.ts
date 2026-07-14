@@ -4,8 +4,27 @@ import { Application, extensions } from 'pixi.js'
 // The bare entry point also pulls in the Cubism 2 runtime and throws
 // "requires live2d.min.js" at import time.
 import { Live2DModel, Live2DPlugin, MotionPriority } from 'untitled-pixi-live2d-engine/cubism'
+import { isLipSyncPayload, type LipSyncPayload } from '@/types/lipsync'
+import { mouthOpenFromWords } from '@/lib/wordMouthSync'
 
 extensions.add(Live2DPlugin)
+
+/** Minimal shape of @pixi/sound Sound used for word-timed mouth sync. */
+type PlayingSound = {
+  isPlaying: boolean
+  duration: number
+  instances: { progress: number }[]
+}
+
+type MouthSyncMotionManager = {
+  mouthSync: () => number
+  currentAudio?: PlayingSound
+}
+
+type LipSyncOptions = {
+  lipSyncGain?: number
+  lipSyncWeight?: number
+}
 
 export type Live2DStatus = 'idle' | 'loading' | 'ready' | 'speaking' | 'error'
 
@@ -53,7 +72,42 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   let initPromise: Promise<boolean> | null = null
   let pendingSpeakResolve: ((value: boolean) => void) | null = null
   let pendingMotionSettle: ((value: boolean) => void) | null = null
+  let restoreMouthSync: (() => void) | null = null
   let disposed = false
+
+  function clearWordMouthSync() {
+    restoreMouthSync?.()
+    restoreMouthSync = null
+  }
+
+  /** Drive engine mouthSync() from word timings instead of audio amplitude. */
+  function installWordMouthSync(instance: Live2DModel, lipsync: LipSyncPayload) {
+    clearWordMouthSync()
+    const mm = instance.internalModel.motionManager as unknown as MouthSyncMotionManager
+    const options = instance.internalModel.options as LipSyncOptions
+    const prevGain = options.lipSyncGain
+    const prevWeight = options.lipSyncWeight
+    const originalMouthSync = mm.mouthSync
+
+    // Word pulses are already 0..1; amplitude defaults (2.5 / 1.0) would clamp wide open.
+    options.lipSyncGain = 1.0
+    options.lipSyncWeight = 1.0
+
+    mm.mouthSync = () => {
+      const audio = mm.currentAudio
+      if (!audio?.isPlaying) return 0
+      const inst = audio.instances[0]
+      if (!inst) return 0
+      const tMs = inst.progress * (audio.duration || 0) * 1000
+      return mouthOpenFromWords(tMs, lipsync)
+    }
+
+    restoreMouthSync = () => {
+      mm.mouthSync = originalMouthSync
+      options.lipSyncGain = prevGain
+      options.lipSyncWeight = prevWeight
+    }
+  }
 
   function settlePendingSpeak(value: boolean) {
     if (pendingSpeakResolve) {
@@ -137,21 +191,28 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     return initPromise
   }
 
-  async function speak(audioUrl: string): Promise<boolean> {
+  async function speak(audioUrl: string, lipsync?: LipSyncPayload | null): Promise<boolean> {
     const instance = model.value
     if (!instance) return false
 
     settlePendingSpeak(false) // supersede any still-pending speak from this instance
+    clearWordMouthSync()
+    if (lipsync && isLipSyncPayload(lipsync)) {
+      installWordMouthSync(instance, lipsync)
+    }
+
     status.value = 'speaking'
     return new Promise<boolean>((resolve) => {
       pendingSpeakResolve = resolve
       instance.speak(audioUrl, {
         onFinish: () => {
+          clearWordMouthSync()
           settlePendingSpeak(true) // no-op if already settled by setIdle()/dispose()
           status.value = 'ready'
         },
         onError: (error: Error) => {
           console.error('Live2D speak failed:', error)
+          clearWordMouthSync()
           settlePendingSpeak(false)
           status.value = 'ready'
         },
@@ -224,6 +285,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   function setIdle() {
     if (status.value === 'speaking') {
       model.value?.stopSpeaking()
+      clearWordMouthSync()
       settlePendingSpeak(false) // stopSpeaking() never fires onFinish/onError; unblock the awaiter
       status.value = model.value ? 'ready' : 'idle'
     }
@@ -232,6 +294,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   function dispose() {
     disposed = true
     initPromise = null
+    clearWordMouthSync()
     settlePendingSpeak(false)
     settlePendingMotion(false)
     // Teardown may race an in-flight init() (renderer mid-init); never let a

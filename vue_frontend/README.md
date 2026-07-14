@@ -69,5 +69,5 @@ The conversation view renders one Live2D panel per agent when a session is activ
   via a script tag in `index.html` — see `public/live2d/README.md` for setup.
 - **Models:** Official Live2D sample models (not committed — license); presets and framing
   tuning live in `src/config/avatarPresets.ts`.
-- **Lip-sync:** audio-amplitude driven via `model.speak()`; the backend's word-timing
-  payload is still sent and gates avatar playback, but is not used for mouth shapes.
+- **Lip-sync:** word timings from the backend (`words` / `wtimes` / `wdurations`) drive
+  mouth open/close via `mouthSync()`; falls back to audio-amplitude when timings are absent.

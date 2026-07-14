@@ -15,6 +15,7 @@ const fakeModel = {
   motion: vi.fn(),
   expression: vi.fn(),
   internalModel: {
+    options: { lipSyncGain: 2.5, lipSyncWeight: 1.0 },
     motionManager: {
       definitions: {
         Idle: [{ File: 'motions/Hiyori_m01.motion3.json' }, { File: 'motions/Hiyori_m02.motion3.json' }],
@@ -25,6 +26,10 @@ const fakeModel = {
         definitions: [{ Name: 'F01' }, { Name: 'F02' }],
         resetExpression: resetExpressionMock,
       },
+      mouthSync: vi.fn(() => 0.42),
+      currentAudio: undefined as
+        | { isPlaying: boolean; duration: number; instances: { progress: number }[] }
+        | undefined,
       once: vi.fn(),
       off: vi.fn(),
     },
@@ -103,6 +108,55 @@ describe('useLive2D', () => {
     await init({ url: '/m.model3.json' })
     await expect(speak('/audio.mp3')).resolves.toBe(true)
     expect(status.value).toBe('ready')
+  })
+
+  it('speak with lipsync overrides mouthSync from word timings and restores after finish', async () => {
+    let finish: (() => void) | undefined
+    fakeModel.speak.mockImplementation((_url: string, opts: { onFinish: () => void }) => {
+      finish = opts.onFinish
+    })
+    const mm = fakeModel.internalModel.motionManager
+    const originalMouthSync = mm.mouthSync
+    const { init, speak } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+
+    const lipsync = { words: ['Hi'], wtimes: [0], wdurations: [200] }
+    const speakPromise = speak('/audio.mp3', lipsync)
+
+    mm.currentAudio = { isPlaying: true, duration: 1, instances: [{ progress: 0.1 }] }
+    expect(mm.mouthSync).not.toBe(originalMouthSync)
+    expect(mm.mouthSync()).toBeGreaterThan(0)
+    expect(fakeModel.internalModel.options.lipSyncGain).toBe(1.0)
+
+    finish!()
+    await expect(speakPromise).resolves.toBe(true)
+    expect(mm.mouthSync).toBe(originalMouthSync)
+    expect(fakeModel.internalModel.options.lipSyncGain).toBe(2.5)
+  })
+
+  it('speak without lipsync leaves amplitude mouthSync alone', async () => {
+    fakeModel.speak.mockImplementation((_url: string, opts: { onFinish: () => void }) =>
+      opts.onFinish(),
+    )
+    const mm = fakeModel.internalModel.motionManager
+    const originalMouthSync = mm.mouthSync
+    const { init, speak } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    await speak('/audio.mp3')
+    expect(mm.mouthSync).toBe(originalMouthSync)
+  })
+
+  it('setIdle restores mouthSync while stopping speech', async () => {
+    fakeModel.speak.mockImplementation(() => {})
+    const mm = fakeModel.internalModel.motionManager
+    const originalMouthSync = mm.mouthSync
+    const { init, speak, setIdle } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const speakPromise = speak('/audio.mp3', { words: ['Hi'], wtimes: [0], wdurations: [200] })
+    expect(mm.mouthSync).not.toBe(originalMouthSync)
+    setIdle()
+    await expect(speakPromise).resolves.toBe(false)
+    expect(mm.mouthSync).toBe(originalMouthSync)
   })
 
   it('speak resolves false on onError', async () => {

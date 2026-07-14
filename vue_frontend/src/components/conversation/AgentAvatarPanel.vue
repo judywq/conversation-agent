@@ -57,13 +57,10 @@ onUnmounted(() => {
   dispose()
 })
 
-// ponytail: word-timing lipsync unused — Live2D mouth is audio-amplitude driven;
-// param kept so AgentAvatarGrid/ConversationView stay untouched
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function speakTurn(audioUrl: string, _lipsync: LipSyncPayload): Promise<boolean> {
+async function speakTurn(audioUrl: string, lipsync: LipSyncPayload): Promise<boolean> {
   await ensureInit()
   if (status.value === 'error') return false
-  return speak(audioUrl)
+  return speak(audioUrl, lipsync)
 }
 
 defineExpose({
