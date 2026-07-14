@@ -1,7 +1,7 @@
 import type { LipSyncPayload } from '@/types/lipsync'
 
 /** One jaw flap roughly every this many ms for long words. */
-const FLAP_MS = 160
+const FLAP_MS = 300
 const PEAK_OPEN = 0.9
 
 /**
