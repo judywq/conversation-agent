@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown } from 'lucide-vue-next'
+import { useStorage } from '@vueuse/core'
+import { Loader2, LogOut, Mic, NotebookPen, Settings, Square } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -103,41 +105,11 @@ function loadResumedTurns(turnList: Turn[]) {
   markAllAgentPlaybackComplete()
 }
 
-type TurnDisplayItem = {
-  key: string
-  turn: Turn | null
-  number: number
-  showTranscript: boolean
-  isCurrent: boolean
-  userTurnPrompt: boolean
-  statusHint: string
-}
-
-function canShowTurnAudioControls(item: TurnDisplayItem): boolean {
-  if (!item.turn?.audio_url) return false
-  if (liveSpeakingTurnKey.value === item.key) return false
-  if (item.turn.speaker_type === 'agent') {
-    return completedAgentPlaybackKeys.value.includes(item.key)
-  }
-  return true
-}
-
-function canShowReplayButton(item: TurnDisplayItem): boolean {
-  if (!canShowTurnAudioControls(item)) return false
-  if (manualReplayTurnKey.value === item.key && manualReplayActive.value && !manualReplayPaused.value) {
-    return false
-  }
-  return true
-}
-
-function canShowPauseButton(item: TurnDisplayItem): boolean {
-  if (!canShowTurnAudioControls(item)) return false
-  return manualReplayTurnKey.value === item.key && manualReplayActive.value && !manualReplayPaused.value
-}
 const agentStatus = ref<'idle' | 'thinking' | 'finished' | 'searching_online'>('idle')
 const activeAgentName = ref('')
 
-const avatarsEnabled = ref(true)
+const avatarsEnabled = useStorage('conv-game-avatars', true)
+const showSpeechBubble = useStorage('conv-game-show-bubble', true)
 const avatarWarmedUp = ref(false)
 const avatarGridRef = ref<InstanceType<typeof AgentAvatarGrid> | null>(null)
 const avatarSpeaking = ref(false)
@@ -171,11 +143,6 @@ const effectiveSettledTurnCount = computed(() => {
 })
 const agentParticipants = computed(() => participants.value.filter((p) => p.type === 'agent'))
 
-function participantRoleLabel(type: Participant['type']): string {
-  if (type === 'agent') return 'Discussion partner'
-  if (type === 'user') return 'You'
-  return type
-}
 const activeSpeakerId = computed(() => {
   if (liveSpeakingTurnKey.value) {
     const speakingTurn = turns.value.find((t) => turnKey(t) === liveSpeakingTurnKey.value)
@@ -332,100 +299,6 @@ let playbackAbortController: AbortController | null = null
 const showConversationPanel = computed(() => !!sessionId.value || isEnded.value)
 const sessionInProgress = computed(() => !!sessionId.value && !isEnded.value)
 
-const turnDisplayList = computed((): TurnDisplayItem[] => {
-  const items: TurnDisplayItem[] = turns.value.map((turn, index) => {
-    const key = turnKey(turn)
-    return {
-      key,
-      turn,
-      number: index + 1,
-      showTranscript: turn.speaker_type === 'user',
-      isCurrent: liveSpeakingTurnKey.value === key,
-      userTurnPrompt: false,
-      statusHint: '',
-    }
-  })
-
-  const userTurnActive =
-    needUserTurn.value &&
-    !needFirstTurnChoice.value &&
-    !isPaused.value &&
-    !isProcessingTurnPlayback.value &&
-    turnPlaybackQueue.value.length === 0
-  const partnerTurnActive =
-    sessionInProgress.value &&
-    !userTurnActive &&
-    !isProcessingTurnPlayback.value &&
-    turnPlaybackQueue.value.length === 0 &&
-    (agentStatus.value === 'thinking' || agentStatus.value === 'searching_online')
-
-  if (!isEnded.value) {
-    if (userTurnActive) {
-      items.push({
-        key: 'current-turn',
-        turn: null,
-        number: items.length + 1,
-        showTranscript: false,
-        isCurrent: true,
-        userTurnPrompt: true,
-        statusHint: '',
-      })
-    } else if (partnerTurnActive) {
-      items.push({
-        key: 'current-turn',
-        turn: null,
-        number: items.length + 1,
-        showTranscript: false,
-        isCurrent: true,
-        userTurnPrompt: false,
-        statusHint: agentStatus.value === 'searching_online' ? 'Checking online…' : 'Thinking…',
-      })
-    }
-  }
-
-  return items
-})
-
-const hasCurrentTurnHighlight = computed(() => turnDisplayList.value.some((item) => item.isCurrent))
-
-const turnListScrollRef = ref<HTMLElement | null>(null)
-
-function scrollTurnListToCurrent() {
-  void nextTick(() => {
-    const container = turnListScrollRef.value
-    if (!container || typeof container.querySelector !== 'function') return
-    const target =
-      container.querySelector<HTMLElement>('[data-turn-current="true"]') ??
-      container.querySelector<HTMLElement>('[data-turn-item]:last-of-type')
-    target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  })
-}
-
-function turnItemClass(isCurrent: boolean): string {
-  return isCurrent
-    ? 'rounded-md border border-emerald-300 bg-emerald-50/50 px-3 py-2 space-y-1 text-sm'
-    : 'border rounded-md p-3 space-y-1'
-}
-
-function currentTurnSpeakerLabel(item: TurnDisplayItem): string {
-  if (item.userTurnPrompt) return 'You'
-  if (item.isCurrent && item.statusHint) return activeAgentName.value || 'A partner'
-  if (!item.turn) return ''
-  return turnSpeakerLabel(item.turn)
-}
-
-watch(
-  () => [
-    turns.value.length,
-    liveSpeakingTurnKey.value,
-    agentStatus.value,
-    turnDisplayList.value.map((item) => `${item.key}:${item.isCurrent}`).join('|'),
-  ],
-  () => {
-    scrollTurnListToCurrent()
-  },
-)
-
 const showArgumentSummary = computed(() => !!sessionId.value && turns.value.length > 0)
 
 const canStart = computed(
@@ -530,20 +403,6 @@ function stopManualTurnAudio() {
   manualReplayPaused.value = false
   manualReplayActive.value = false
   manualReplayUsesAvatar.value = false
-}
-
-function pauseTurnAudioManual() {
-  if (!manualReplayTurnKey.value || manualReplayPaused.value || !manualReplayActive.value) return
-  if (manualReplayUsesAvatar.value) {
-    // Live2D speak has no mid-utterance pause — stop speak/mouth; Replay restarts from start.
-    avatarGridRef.value?.setIdleAll?.()
-    manualReplayPaused.value = true
-    return
-  }
-  if (currentAudio.value && !currentAudio.value.paused) {
-    currentAudio.value.pause()
-    manualReplayPaused.value = true
-  }
 }
 
 async function playTurnAudioManual(turn: Turn, key: string) {
@@ -811,6 +670,44 @@ function playAudioNow(url: string) {
   if (!turn?.audio_url) return
   void playTurnAudioManual(turn, turnKey(turn))
 }
+
+function lastAudioTurnForAgent(agentId: string): Turn | undefined {
+  return [...turns.value].reverse().find((t) => t.speaker === agentId && !!t.audio_url)
+}
+
+/** Agents whose last turn finished playing and can be replayed via the character menu. */
+const replayableAgentIds = computed(() =>
+  agentParticipants.value
+    .filter((p) => {
+      const turn = lastAudioTurnForAgent(p.id)
+      return !!turn && completedAgentPlaybackKeys.value.includes(turnKey(turn))
+    })
+    .map((p) => p.id),
+)
+
+/** Agent whose turn is currently replaying via the character menu. */
+const replayingAgentId = computed(() => {
+  if (!manualReplayActive.value || manualReplayPaused.value || !manualReplayTurnKey.value) return null
+  const turn = turns.value.find((t) => turnKey(t) === manualReplayTurnKey.value)
+  return turn && isAgentTurn(turn) ? turn.speaker : null
+})
+
+function replayAgentLastTurn(agentId: string) {
+  const turn = lastAudioTurnForAgent(agentId)
+  if (!turn) return
+  void playTurnAudioManual(turn, turnKey(turn))
+}
+
+/** Utterance shown in the speech bubble over the speaking character. */
+const speakingBubbleText = computed(() => {
+  if (!showSpeechBubble.value) return null
+  const key =
+    liveSpeakingTurnKey.value ??
+    (manualReplayActive.value && !manualReplayPaused.value ? manualReplayTurnKey.value : null)
+  if (!key) return null
+  const turn = turns.value.find((t) => turnKey(t) === key)
+  return turn && isAgentTurn(turn) ? turn.utterance : null
+})
 
 function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'connected') {
@@ -1107,12 +1004,58 @@ function pauseOrResume() {
   sendOrToast(() => sendSessionMessage({ type: isPaused.value ? 'resume' : 'pause' }))
 }
 
-function stopConversation() {
+const exitConfirmOpen = ref(false)
+const notebookOpen = ref(false)
+
+function onExitClick() {
+  if (isEnded.value) {
+    exitToSetup()
+    return
+  }
   if (!sessionId.value) return
-  const ok = window.confirm('End the conversation?')
-  if (!ok) return
+  exitConfirmOpen.value = true
+}
+
+function confirmEndSession() {
+  exitConfirmOpen.value = false
   sendOrToast(() => sendSessionMessage({ type: 'end_session' }))
 }
+
+/** Leave the game phase and return to session setup. */
+function exitToSetup() {
+  stopAllAudioPlayback()
+  resetAvatars()
+  clearRecordingPreview()
+  sessionId.value = null
+  isEnded.value = false
+  turns.value = []
+  participants.value = []
+  endedArgumentSummary.value = null
+  needUserTurn.value = false
+  needFirstTurnChoice.value = false
+  agentStatus.value = 'idle'
+  micState.value = 'idle'
+  notebookOpen.value = false
+  exitConfirmOpen.value = false
+  wsSessionBound.value = false
+}
+
+const statusText = computed(() => {
+  if (isEnded.value) return 'Ended'
+  if (wsReconnecting.value) return 'Reconnecting…'
+  if (sessionInProgress.value && !connected.value) return 'Connection lost — refresh if this persists'
+  if (isPaused.value) return 'Paused'
+  if (agentStatus.value === 'searching_online' || agentStatus.value === 'thinking') {
+    return activeAgentName.value ? `${activeAgentName.value} is thinking…` : 'Partner is thinking…'
+  }
+  if (liveSpeakingTurnKey.value) {
+    const turn = turns.value.find((t) => turnKey(t) === liveSpeakingTurnKey.value)
+    if (turn && isAgentTurn(turn)) return `${turnSpeakerLabel(turn)} is speaking…`
+  }
+  if (needFirstTurnChoice.value) return 'Choose who speaks first'
+  if (needUserTurn.value) return 'Your turn'
+  return 'Listening…'
+})
 
 function sendTextTurn() {
   const text = inputText.value.trim()
@@ -1242,6 +1185,19 @@ function redoRecording() {
   micState.value = 'idle'
 }
 
+const micButtonEnabled = computed(() => {
+  if (micState.value === 'recording') return true
+  return (micState.value === 'idle' || micState.value === 'error') && canStartMic.value
+})
+
+function onMicClick() {
+  if (micState.value === 'recording') {
+    stopRecording()
+    return
+  }
+  if (micButtonEnabled.value) void startRecording()
+}
+
 function toggleRecordingFromKeyboard() {
   if (micState.value === 'recording') {
     autoSendRecordingAfterStop.value = true
@@ -1368,10 +1324,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="container mx-auto py-8 px-4 space-y-6">
+  <div v-if="!showConversationPanel" class="container mx-auto py-8 px-4 space-y-6">
     <Card>
       <CardHeader>
-        <CardTitle>Conversation</CardTitle>
+        <CardTitle>Session Setup</CardTitle>
         <CardDescription>
           Choose a topic, set up your discussion group, then start speaking with your partners.
         </CardDescription>
@@ -1472,356 +1428,214 @@ onUnmounted(() => {
             </div>
           </CardContent>
         </Card>
+      </CardContent>
+    </Card>
+  </div>
 
-        <template v-if="showConversationPanel">
-        <div class="text-sm text-muted-foreground">
-          Status:
-          <span v-if="isEnded">Ended</span>
-          <span v-else-if="wsReconnecting">Reconnecting…</span>
-          <span v-else-if="sessionInProgress && !connected">Connection lost — retry send or refresh</span>
-          <span v-else-if="isPaused">Paused</span>
-          <span v-else-if="!authStore.user?.profile_completed">Complete your profile first</span>
-          <span v-else-if="agentStatus === 'searching_online' || agentStatus === 'thinking'">Waiting…</span>
-          <span v-else-if="needFirstTurnChoice">Choose who speaks first</span>
-          <span v-else-if="needUserTurn">Your turn</span>
-          <span v-else>Idle</span>
-        </div>
+  <!-- Game phase: immersive fullscreen scene. z-[60] covers the NavBar (z-50);
+       portaled popover/menu content gets z-[70] to stay above this overlay. -->
+  <div v-else class="fixed inset-0 z-[60] overflow-hidden">
+    <!-- ponytail: swap this div's classes for bg-[url('/classroom.jpg')] bg-cover bg-center when the asset lands -->
+    <div class="absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-100 to-amber-100" />
 
-        <Card v-if="participants.length > 0" class="border">
-          <CardHeader>
-            <CardTitle class="text-base">Speakers</CardTitle>
-          </CardHeader>
-          <CardContent class="space-y-2">
-            <div class="text-sm text-muted-foreground">
-              Here’s everyone in this discussion.
-            </div>
-            <div v-for="p in participants" :key="p.id" class="flex items-center justify-between rounded-md border px-3 py-2">
-              <div class="text-sm">
-                <span class="font-medium">{{ p.name }}</span>
-                <span class="text-xs text-muted-foreground" v-if="p.type === 'agent' && p.persona_name">
-                  · {{ p.persona_name }}
-                </span>
-                <span class="text-xs text-muted-foreground" v-if="p.type === 'agent' && p.gender">
-                  · {{ p.gender }}
-                </span>
-              </div>
-              <div class="text-xs text-muted-foreground">{{ participantRoleLabel(p.type) }}</div>
-            </div>
-          </CardContent>
-        </Card>
+    <!-- Stage: partner characters side-by-side -->
+    <div class="absolute inset-x-0 bottom-6 top-16">
+      <AgentAvatarGrid
+        ref="avatarGridRef"
+        game
+        class="h-full"
+        :participants="participants"
+        :active-speaker-id="activeSpeakerId"
+        :agent-status="agentStatus"
+        :warmed-up="avatarWarmedUp && avatarsEnabled"
+        :bubble-text="speakingBubbleText"
+        :replayable-agent-ids="replayableAgentIds"
+        :replaying-agent-id="replayingAgentId"
+        @replay="replayAgentLastTurn"
+        @stop-replay="stopManualTurnAudio"
+      />
+    </div>
 
-        <Card v-if="needFirstTurnChoice && !isEnded" class="border">
-          <CardHeader>
-            <CardTitle class="text-base">Who speaks first?</CardTitle>
-            <CardDescription>
-              Decide whether you open the discussion or let one of your partners begin.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="flex flex-col gap-2 sm:flex-row">
-            <Button :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
-            <Button variant="outline" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">Let a partner start</Button>
-          </CardContent>
-        </Card>
+    <!-- Exit (top-left) -->
+    <Button
+      variant="secondary"
+      size="icon"
+      class="absolute left-4 top-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+      aria-label="Exit session"
+      @click="onExitClick"
+    >
+      <LogOut class="h-5 w-5" />
+    </Button>
 
-        <div class="flex flex-wrap items-center gap-2">
-          <Button
-            v-if="sessionInProgress && agentParticipants.length > 0"
-            variant="outline"
-            size="sm"
-            @click="toggleAvatarsEnabled"
-          >
-            {{ avatarsEnabled ? 'Avatars On' : 'Avatars Off' }}
-          </Button>
-          <span v-if="sessionInProgress && avatarsEnabled && !avatarWarmedUp" class="text-xs text-muted-foreground">
-            Click anywhere to show your partners
-          </span>
-        </div>
+    <!-- Status pill (top-center) -->
+    <div
+      class="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/50 px-4 py-1.5 text-sm text-white shadow backdrop-blur"
+    >
+      <span class="whitespace-nowrap">{{ statusText }}</span>
+      <button
+        v-if="sessionInProgress"
+        type="button"
+        class="rounded-full bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30"
+        @click="pauseOrResume"
+      >
+        {{ isPaused ? 'Resume' : 'Pause' }}
+      </button>
+    </div>
 
-        <div
-          v-if="agentParticipants.length > 0"
-          class="grid grid-cols-1 gap-4"
-          :class="
-            showArgumentSummary
-              ? 'lg:grid-cols-[minmax(360px,28rem)_minmax(12rem,1fr)_minmax(12rem,1fr)] lg:items-stretch lg:gap-3'
-              : 'lg:grid-cols-[minmax(360px,28rem)_minmax(0,1fr)]'
-          "
+    <!-- Settings (top-right) -->
+    <Popover>
+      <PopoverTrigger as-child>
+        <Button
+          variant="secondary"
+          size="icon"
+          class="absolute right-4 top-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+          aria-label="Settings"
         >
-          <div class="w-full min-w-[min(100%,360px)] shrink-0 lg:min-w-[360px] lg:max-w-[28rem]">
-            <AgentAvatarGrid
-              ref="avatarGridRef"
-              stacked
-              :participants="participants"
-              :active-speaker-id="activeSpeakerId"
-              :agent-status="agentStatus"
-              :warmed-up="avatarWarmedUp && avatarsEnabled"
-            />
-          </div>
+          <Settings class="h-5 w-5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" class="z-[70] w-64 space-y-3">
+        <div class="text-sm font-medium">Settings</div>
+        <label class="flex items-center justify-between gap-3 text-sm">
+          Show speech bubble
+          <input v-model="showSpeechBubble" type="checkbox" class="h-4 w-4 accent-primary" />
+        </label>
+        <label class="flex items-center justify-between gap-3 text-sm">
+          Show avatars
+          <input
+            type="checkbox"
+            class="h-4 w-4 accent-primary"
+            :checked="avatarsEnabled"
+            @change="toggleAvatarsEnabled()"
+          />
+        </label>
+      </PopoverContent>
+    </Popover>
 
-          <div class="min-w-0 space-y-4">
-            <Card class="border">
-              <CardHeader>
-                <CardTitle>Turns</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div
-                  ref="turnListScrollRef"
-                  class="max-h-[min(50vh,24rem)] space-y-3 overflow-y-auto lg:max-h-[min(50vh,22rem)]"
-                >
-                  <div
-                    v-if="turnDisplayList.length === 0 && !hasCurrentTurnHighlight"
-                    class="text-sm text-muted-foreground"
-                  >
-                    No turns yet.
-                  </div>
-                  <div
-                    v-for="item in turnDisplayList"
-                    :key="item.key"
-                    data-turn-item
-                    :data-turn-current="item.isCurrent ? 'true' : undefined"
-                    :class="turnItemClass(item.isCurrent)"
-                  >
-                  <div class="text-xs text-muted-foreground">
-                    Turn {{ item.number }} ·
-                    <span class="font-medium text-foreground">{{ currentTurnSpeakerLabel(item) }}</span>
-                  </div>
-                  <template v-if="item.userTurnPrompt">
-                    <div class="font-medium">Your turn to speak</div>
-                    <div class="text-muted-foreground">
-                      Use the microphone to respond.
-                    </div>
-                  </template>
-                  <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
-                  <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
-                    {{ item.turn.utterance }}
-                  </div>
-                  <div
-                    v-if="canShowTurnAudioControls(item)"
-                    class="flex flex-wrap gap-2 pt-1"
-                  >
-                    <Button
-                      v-if="canShowReplayButton(item)"
-                      variant="outline"
-                      size="sm"
-                      @click="playTurnAudioManual(item.turn!, item.key)"
-                    >
-                      Replay
-                    </Button>
-                    <Button
-                      v-if="canShowPauseButton(item)"
-                      variant="outline"
-                      size="sm"
-                      @click="pauseTurnAudioManual"
-                    >
-                      Pause
-                    </Button>
-                  </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+    <!-- Who speaks first? -->
+    <div
+      v-if="needFirstTurnChoice && !isEnded"
+      class="pointer-events-none absolute inset-0 z-10 grid place-items-center p-4"
+    >
+      <Card class="pointer-events-auto w-[min(24rem,100%)] shadow-xl">
+        <CardHeader>
+          <CardTitle class="text-base">Who speaks first?</CardTitle>
+          <CardDescription>
+            Decide whether you open the discussion or let one of your partners begin.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="flex flex-col gap-2 sm:flex-row">
+          <Button :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
+          <Button variant="outline" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">
+            Let a partner start
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
 
-            <template v-if="!isEnded">
-            <div class="grid grid-cols-1 gap-3">
-              <Card class="border">
-                <CardHeader>
-                  <CardTitle class="text-base">Speak (microphone)</CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-3">
-                  <div class="text-sm text-muted-foreground">Mic state: {{ micState }}</div>
-                  <div class="flex gap-2">
-                    <Button
-                      :disabled="
-                        !canStartMic ||
-                        micState === 'recording' ||
-                        micState === 'preview' ||
-                        micState === 'transcribing'
-                      "
-                      @click="startRecording"
-                    >
-                      Speak
-                    </Button>
-                    <Button variant="outline" :disabled="micState !== 'recording'" @click="stopRecording">
-                      Stop
-                    </Button>
-                  </div>
-                  <div class="text-xs text-muted-foreground">
-                    You may also press
-                    <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
-                    to start or stop speaking.
-                  </div>
+    <!-- Mic cluster (bottom-center) -->
+    <div
+      v-if="!isEnded"
+      class="absolute bottom-6 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2"
+    >
+      <div
+        v-if="micState === 'preview' && recordedUrl"
+        class="w-[min(20rem,calc(100vw-2rem))] space-y-2 rounded-lg border bg-background p-3 shadow-xl"
+      >
+        <div class="text-sm font-medium">Preview recording</div>
+        <audio :src="recordedUrl" controls class="w-full" />
+        <div class="flex gap-2">
+          <Button size="sm" :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
+          <Button size="sm" variant="outline" @click="redoRecording">Redo</Button>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-xl transition-colors"
+        :class="
+          micState === 'recording'
+            ? 'animate-pulse bg-red-500 ring-4 ring-red-300/70'
+            : micButtonEnabled
+              ? 'animate-pulse bg-rose-400 ring-4 ring-rose-300/60 shadow-[0_0_30px_rgba(251,113,133,0.8)] hover:bg-rose-500'
+              : 'cursor-not-allowed bg-gray-400/70'
+        "
+        :disabled="!micButtonEnabled"
+        aria-label="Speak"
+        @click="onMicClick"
+      >
+        <Square v-if="micState === 'recording'" class="h-6 w-6" />
+        <Loader2
+          v-else-if="micState === 'transcribing' || micState === 'requesting'"
+          class="h-6 w-6 animate-spin"
+        />
+        <Mic v-else class="h-7 w-7" />
+      </button>
+      <div
+        v-if="micButtonEnabled"
+        class="rounded-full bg-black/40 px-3 py-0.5 text-xs text-white backdrop-blur"
+      >
+        {{ micState === 'recording' ? 'Recording… click or press Space to stop' : 'Your turn — click or press Space to talk' }}
+      </div>
+    </div>
 
-                  <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
-                    <div class="text-sm font-medium">Preview recording</div>
-                    <audio :src="recordedUrl" controls class="w-full" />
-                    <div class="flex flex-col gap-2 sm:flex-row">
-                      <Button :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
-                      <Button variant="outline" @click="redoRecording">Redo</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+    <!-- Notebook: speaker opinions (bottom-right) -->
+    <Button
+      variant="secondary"
+      size="icon"
+      class="absolute bottom-6 right-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+      aria-label="Speaker opinions"
+      @click="notebookOpen = !notebookOpen"
+    >
+      <NotebookPen class="h-5 w-5" />
+    </Button>
+    <ArgumentSummaryPanel
+      class="!bottom-20"
+      :session-id="sessionId"
+      :settled-turn-count="effectiveSettledTurnCount"
+      :playback-busy="agentPlaybackBusy"
+      :session-ended="isEnded"
+      :visible="notebookOpen && showArgumentSummary"
+      @summary-updated="onArgumentSummaryUpdated"
+    />
 
-            <div class="flex flex-wrap gap-2 pt-2 border-t">
-              <Button variant="destructive" @click="stopConversation">
-                End
+    <!-- Results overlay -->
+    <div v-if="isEnded" class="absolute inset-0 z-20 overflow-y-auto bg-background/95 p-6">
+      <Card class="mx-auto max-w-3xl">
+        <CardHeader>
+          <CardTitle>Session complete</CardTitle>
+          <CardDescription>Review the discussion and download your results.</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <div v-if="turns.length > 0" class="space-y-2">
+            <div class="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" @click="downloadTranscript">
+                Download transcript
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="!canDownloadArgumentStructure"
+                @click="downloadArgumentStructure"
+              >
+                Download speaker opinions
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="!canDownloadArgumentStructure"
+                @click="downloadCombinedExport"
+              >
+                Download both
               </Button>
             </div>
-            </template>
+            <p v-if="argumentDownloadBlockedReason" class="text-xs text-muted-foreground">
+              {{ argumentDownloadBlockedReason }}
+            </p>
           </div>
-
-          <ArgumentSummaryPanel
-            embedded
-            class="h-[min(50vh,24rem)] max-h-[min(50vh,24rem)] min-h-0"
-            :session-id="sessionId"
-            :settled-turn-count="effectiveSettledTurnCount"
-            :playback-busy="agentPlaybackBusy"
-            :session-ended="isEnded"
-            :visible="showArgumentSummary"
-            @summary-updated="onArgumentSummaryUpdated"
-          />
-        </div>
-
-        <template v-else>
-        <div
-          class="grid grid-cols-1 gap-4"
-          :class="showArgumentSummary ? 'lg:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)] lg:items-stretch lg:gap-3' : ''"
-        >
-        <div class="min-w-0 space-y-4">
-        <Card class="border">
-          <CardHeader>
-            <CardTitle>Turns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div
-              ref="turnListScrollRef"
-              class="max-h-[min(50vh,24rem)] space-y-3 overflow-y-auto"
-            >
-              <div
-                v-if="turnDisplayList.length === 0 && !hasCurrentTurnHighlight"
-                class="text-sm text-muted-foreground"
-              >
-                No turns yet.
-              </div>
-              <div
-                v-for="item in turnDisplayList"
-                :key="item.key"
-                data-turn-item
-                :data-turn-current="item.isCurrent ? 'true' : undefined"
-                :class="turnItemClass(item.isCurrent)"
-              >
-              <div class="text-xs text-muted-foreground">
-                Turn {{ item.number }} ·
-                <span class="font-medium text-foreground">{{ currentTurnSpeakerLabel(item) }}</span>
-              </div>
-              <template v-if="item.userTurnPrompt">
-                <div class="font-medium">Your turn to speak</div>
-                <div class="text-muted-foreground">
-                  Use the microphone to respond.
-                </div>
-              </template>
-              <div v-else-if="item.statusHint" class="text-muted-foreground">{{ item.statusHint }}</div>
-              <div v-else-if="item.showTranscript && item.turn" class="whitespace-pre-wrap text-sm">
-                {{ item.turn.utterance }}
-              </div>
-              <div
-                v-if="canShowTurnAudioControls(item)"
-                class="flex flex-wrap gap-2 pt-1"
-              >
-                <Button
-                  v-if="canShowReplayButton(item)"
-                  variant="outline"
-                  size="sm"
-                  @click="playTurnAudioManual(item.turn!, item.key)"
-                >
-                  Replay
-                </Button>
-                <Button
-                  v-if="canShowPauseButton(item)"
-                  variant="outline"
-                  size="sm"
-                  @click="pauseTurnAudioManual"
-                >
-                  Pause
-                </Button>
-              </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <template v-if="!isEnded">
-        <div class="grid grid-cols-1 gap-3">
-          <Card class="border">
-            <CardHeader>
-              <CardTitle class="text-base">Speak (microphone)</CardTitle>
-            </CardHeader>
-            <CardContent class="space-y-3">
-              <div class="text-sm text-muted-foreground">Mic state: {{ micState }}</div>
-              <div class="flex gap-2">
-                <Button
-                  :disabled="
-                    !canStartMic ||
-                    micState === 'recording' ||
-                    micState === 'preview' ||
-                    micState === 'transcribing'
-                  "
-                  @click="startRecording"
-                >
-                  Speak
-                </Button>
-                <Button variant="outline" :disabled="micState !== 'recording'" @click="stopRecording">
-                  Stop
-                </Button>
-              </div>
-              <div class="text-xs text-muted-foreground">
-                You may also press
-                <kbd class="mx-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">Space</kbd>
-                to start or stop speaking.
-              </div>
-
-              <div v-if="micState === 'preview' && recordedUrl" class="space-y-2 rounded-md border p-3">
-                <div class="text-sm font-medium">Preview recording</div>
-                <audio :src="recordedUrl" controls class="w-full" />
-                <div class="flex flex-col gap-2 sm:flex-row">
-                  <Button :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
-                  <Button variant="outline" @click="redoRecording">Redo</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div class="flex flex-wrap gap-2 pt-2 border-t">
-          <Button variant="destructive" @click="stopConversation">
-            End
-          </Button>
-        </div>
-        </template>
-        </div>
-
-        <ArgumentSummaryPanel
-          v-if="sessionId"
-          embedded
-          class="h-[min(50vh,24rem)] max-h-[min(50vh,24rem)] min-h-0"
-          :session-id="sessionId"
-          :settled-turn-count="effectiveSettledTurnCount"
-          :playback-busy="agentPlaybackBusy"
-          :session-ended="isEnded"
-          :visible="showArgumentSummary"
-          @summary-updated="onArgumentSummaryUpdated"
-        />
-        </div>
-        </template>
-
-        <details v-if="isEnded && turns.length > 0" class="group rounded-md border">
-          <summary
-            class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-base font-medium [&::-webkit-details-marker]:hidden"
+          <div
+            v-if="turns.length > 0"
+            class="max-h-[50vh] space-y-4 overflow-y-auto rounded-md border p-4"
           >
-            <span>Full transcript</span>
-            <ChevronDown class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-          </summary>
-          <div class="space-y-4 border-t px-4 py-3">
             <div v-for="(turn, index) in turns" :key="turnKey(turn)" class="space-y-1">
               <div class="text-xs text-muted-foreground">
                 Turn {{ index + 1 }} ·
@@ -1830,36 +1644,30 @@ onUnmounted(() => {
               <div class="whitespace-pre-wrap text-sm">{{ turn.utterance }}</div>
             </div>
           </div>
-        </details>
+          <div v-else class="text-sm text-muted-foreground">No turns were recorded.</div>
+          <Button @click="exitToSetup">Done</Button>
+        </CardContent>
+      </Card>
+    </div>
 
-        <div v-if="isEnded && turns.length > 0" class="space-y-2">
-          <div class="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" @click="downloadTranscript">
-              Download transcript
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="!canDownloadArgumentStructure"
-              @click="downloadArgumentStructure"
-            >
-              Download speaker opinions
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="!canDownloadArgumentStructure"
-              @click="downloadCombinedExport"
-            >
-              Download both
-            </Button>
-          </div>
-          <p v-if="argumentDownloadBlockedReason" class="text-xs text-muted-foreground">
-            {{ argumentDownloadBlockedReason }}
-          </p>
-        </div>
-        </template>
-      </CardContent>
-    </Card>
+    <!-- Exit confirmation (in-overlay: portaled dialogs z-fight with this fullscreen layer) -->
+    <div
+      v-if="exitConfirmOpen"
+      class="absolute inset-0 z-30 grid place-items-center bg-black/60 p-4"
+      @click.self="exitConfirmOpen = false"
+    >
+      <Card class="w-[min(26rem,100%)] shadow-xl">
+        <CardHeader>
+          <CardTitle class="text-base">End this session?</CardTitle>
+          <CardDescription>
+            The discussion will end, and you can download the transcript and speaker opinions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="flex justify-end gap-2">
+          <Button variant="outline" @click="exitConfirmOpen = false">Cancel</Button>
+          <Button variant="destructive" @click="confirmEndSession">End session</Button>
+        </CardContent>
+      </Card>
+    </div>
   </div>
 </template>

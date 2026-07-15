@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import AgentAvatarPanel from '@/components/conversation/AgentAvatarPanel.vue'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { LipSyncPayload } from '@/types/lipsync'
 
 export type AgentParticipant = {
@@ -20,6 +26,19 @@ const props = defineProps<{
   warmedUp: boolean
   /** When true, stack avatars in one column (better for the sidebar partner column). */
   stacked?: boolean
+  /** Immersive game-phase rendering: characters side-by-side, bubble + click menu. */
+  game?: boolean
+  /** Utterance shown in a speech bubble over the active speaker (game mode only). */
+  bubbleText?: string | null
+  /** Agents whose last turn can be replayed via the character click menu. */
+  replayableAgentIds?: string[]
+  /** Agent whose replay is currently playing (shows a Stop item instead). */
+  replayingAgentId?: string | null
+}>()
+
+const emit = defineEmits<{
+  replay: [agentId: string]
+  stopReplay: []
 }>()
 
 const panelRefs = ref<Record<string, InstanceType<typeof AgentAvatarPanel> | null>>({})
@@ -77,7 +96,57 @@ defineExpose({
 </script>
 
 <template>
-  <div class="space-y-3" aria-live="polite">
+  <div v-if="game" class="flex h-full items-end justify-center gap-[4vw]" aria-live="polite">
+    <div
+      v-for="(agent, index) in agents"
+      :key="agent.id"
+      class="relative h-[min(72vh,720px)] w-[min(30vw,420px)] transition-[filter]"
+      :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
+    >
+      <AgentAvatarPanel
+        game
+        :ref="(el) => setPanelRef(agent.id, el as InstanceType<typeof AgentAvatarPanel> | null)"
+        :agent-id="agent.id"
+        :name="agent.name"
+        :gender="agent.avatar_body || agent.gender"
+        :index="index"
+        :active="activeSpeakerId === agent.id"
+        :agent-status="agentStatus"
+        :warmed-up="warmedUp"
+        class="h-full"
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          class="absolute inset-0 z-[5] cursor-pointer"
+          :aria-label="`${agent.name} options`"
+        />
+        <!-- z-[70]: the game overlay sits at z-[60], above the default portal z-50 -->
+        <DropdownMenuContent align="center" class="z-[70]">
+          <DropdownMenuItem v-if="replayingAgentId === agent.id" @click="emit('stopReplay')">
+            Stop replay
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            v-else
+            :disabled="!(replayableAgentIds ?? []).includes(agent.id)"
+            @click="emit('replay', agent.id)"
+          >
+            Replay {{ agent.name }}&rsquo;s last turn
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <div
+        v-if="bubbleText && activeSpeakerId === agent.id"
+        class="pointer-events-none absolute -top-2 left-1/2 z-10 w-[min(24rem,70vw)] -translate-x-1/2 -translate-y-full"
+      >
+        <div class="max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">
+          <div class="mb-0.5 font-semibold">{{ agent.name }}</div>
+          <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
+        </div>
+        <div class="mx-auto -mt-1.5 h-3 w-3 rotate-45 border-b border-r bg-white/95" />
+      </div>
+    </div>
+  </div>
+  <div v-else class="space-y-3" aria-live="polite">
     <div class="text-sm font-medium">Discussion partners</div>
     <div class="grid gap-3" :class="gridClass">
       <AgentAvatarPanel

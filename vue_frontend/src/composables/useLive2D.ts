@@ -73,7 +73,19 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   let pendingSpeakResolve: ((value: boolean) => void) | null = null
   let pendingMotionSettle: ((value: boolean) => void) | null = null
   let restoreMouthSync: (() => void) | null = null
+  let resizeObserver: ResizeObserver | null = null
   let disposed = false
+
+  /** Fit-to-stage plus preset zoom; safe to re-run whenever the stage resizes. */
+  function fitModel(instance: Live2DModel, preset: Live2DPresetInput) {
+    if (!app) return
+    // PIXI width/height are scale-dependent; measure at scale 1 so refits don't compound.
+    instance.scale.set(1)
+    const fit = Math.min(app.screen.width / instance.width, app.screen.height / instance.height)
+    instance.scale.set(fit * (preset.zoom ?? 2.4))
+    instance.anchor.set(0.5, preset.anchorY ?? 0.05)
+    instance.position.set(app.screen.width / 2, 0)
+  }
 
   function clearWordMouthSync() {
     restoreMouthSync?.()
@@ -163,12 +175,18 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
           return false
         }
 
-        // ponytail: fit once at init; the panel is a fixed 240px box, no resize observer
-        const fit = Math.min(app.screen.width / instance.width, app.screen.height / instance.height)
-        instance.scale.set(fit * (preset.zoom ?? 2.4))
-        instance.anchor.set(0.5, preset.anchorY ?? 0.05)
-        instance.position.set(app.screen.width / 2, 0)
+        fitModel(instance, preset)
         app.stage.addChild(instance)
+
+        // The game stage is viewport-sized; refit on stage resize. resizeTo only
+        // tracks window resize, so sync the renderer first for element-only resizes.
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(() => {
+            app?.resize()
+            fitModel(instance, preset)
+          })
+          resizeObserver.observe(stage)
+        }
 
         model.value = instance
         capabilities.value = readCapabilities(instance)
@@ -294,6 +312,8 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   function dispose() {
     disposed = true
     initPromise = null
+    resizeObserver?.disconnect()
+    resizeObserver = null
     clearWordMouthSync()
     settlePendingSpeak(false)
     settlePendingMotion(false)

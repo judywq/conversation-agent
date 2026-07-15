@@ -12,6 +12,8 @@ const props = defineProps<{
   active: boolean
   agentStatus?: 'idle' | 'thinking' | 'finished' | 'searching_online'
   warmedUp: boolean
+  /** Immersive game-phase rendering: no card chrome/header, stage fills the parent. */
+  game?: boolean
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -74,11 +76,18 @@ defineExpose({
 
 <template>
   <div
-    class="rounded-lg border bg-card overflow-hidden transition-shadow"
-    :class="active ? 'border-primary shadow-md ring-1 ring-primary/30' : 'border-border'"
+    class="overflow-hidden"
+    :class="
+      game
+        ? 'h-full'
+        : [
+            'rounded-lg border bg-card transition-shadow',
+            active ? 'border-primary shadow-md ring-1 ring-primary/30' : 'border-border',
+          ]
+    "
     :aria-label="`${name} avatar`"
   >
-    <div class="flex items-center justify-between gap-2 border-b px-3 py-2">
+    <div v-if="!game" class="flex items-center justify-between gap-2 border-b px-3 py-2">
       <div class="min-w-0">
         <div class="truncate text-sm font-medium">{{ name }}</div>
         <div class="truncate text-xs text-muted-foreground">{{ statusLabel }}</div>
@@ -90,7 +99,7 @@ defineExpose({
         Active
       </span>
     </div>
-    <div class="relative h-[240px] bg-muted/30">
+    <div class="relative" :class="game ? 'h-full' : 'h-[240px] bg-muted/30'">
       <div ref="stageRef" class="absolute inset-0 z-0" />
       <div
         v-if="status === 'idle' || status === 'loading'"
