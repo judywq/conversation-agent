@@ -27,6 +27,14 @@ const routes = [
         },
       },
       {
+        path: 'app/conversation/:id(\\d+)',
+        name: 'conversation-session',
+        component: () => import('@/views/ConversationView.vue'),
+        meta: {
+          requiresAuth: true,
+        },
+      },
+      {
         path: 'change-password',
         name: 'change-password',
         component: () => import('@/views/ChangePasswordView.vue'),

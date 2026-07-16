@@ -42,7 +42,7 @@ function sessionStatusLabel(session: ConversationSessionSummary): string {
 }
 
 function continueSession(sessionId: number) {
-  void router.push({ name: 'conversation', query: { resume: String(sessionId) } })
+  void router.push({ name: 'conversation-session', params: { id: sessionId } })
 }
 
 function displayTurnNumber(turns: ConversationTurn[], index: number): number {

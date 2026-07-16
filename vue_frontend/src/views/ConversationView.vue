@@ -2,7 +2,16 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
-import { Loader2, LogOut, Mic, NotebookPen, Settings, Smartphone, Square } from 'lucide-vue-next'
+import {
+  CircleStop,
+  Loader2,
+  LogOut,
+  Mic,
+  NotebookPen,
+  Settings,
+  Smartphone,
+  Square,
+} from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -753,6 +762,7 @@ function handleEvent(e: ConversationWsEvent) {
     stopAllAudioPlayback()
     resetAvatars()
     wsSessionBound.value = true
+    void router.replace({ name: 'conversation-session', params: { id: e.session_id } })
   }
   if (e.type === 'session_resumed') {
     const silent = pendingSilentResumeSessionId === e.session_id
@@ -786,6 +796,9 @@ function handleEvent(e: ConversationWsEvent) {
       stopAllAudioPlayback()
       resetAvatars()
       loadResumedTurns(e.turns ?? [])
+      if (Number(route.params.id) !== e.session_id) {
+        void router.replace({ name: 'conversation-session', params: { id: e.session_id } })
+      }
       if (!silent) {
         toast({
           title: 'Discussion resumed',
@@ -878,6 +891,10 @@ function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'error') {
     if (pendingSilentResumeSessionId === null) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' })
+    }
+    // Resume from the URL failed (missing/foreign/finished session): back to setup.
+    if (route.name === 'conversation-session' && !sessionId.value) {
+      void router.replace({ name: 'conversation' })
     }
   }
 }
@@ -1052,7 +1069,19 @@ function onExitClick() {
     return
   }
   if (!sessionId.value) return
-  exitConfirmOpen.value = true
+  leaveSessionWithoutEnding()
+  toast({
+    title: 'Session not ended',
+    description: 'Your discussion is still open — continue it anytime from History.',
+  })
+}
+
+/** Leave the game without ending: cycle the WS so the server treats the
+ *  session like a closed tab (interrupted, resumable from History). */
+function leaveSessionWithoutEnding() {
+  exitToSetup()
+  ws.close()
+  ws.connect()
 }
 
 function confirmEndSession() {
@@ -1078,6 +1107,9 @@ function exitToSetup() {
   notebookOpen.value = false
   exitConfirmOpen.value = false
   wsSessionBound.value = false
+  if (route.name === 'conversation-session') {
+    void router.replace({ name: 'conversation' })
+  }
 }
 
 const statusText = computed(() => {
@@ -1340,14 +1372,28 @@ onMounted(async () => {
     // Keep the page usable if profile refresh fails.
   }
 
-  const resumeParam = route.query.resume
-  const resumeId =
-    typeof resumeParam === 'string' ? Number(resumeParam) : Number.NaN
-  if (Number.isFinite(resumeId) && resumeId > 0) {
-    await router.replace({ name: 'conversation' })
-    resumeSession(resumeId)
+  const routeSessionId = Number(route.params.id)
+  if (Number.isFinite(routeSessionId) && routeSessionId > 0) {
+    resumeSession(routeSessionId)
   }
 })
+
+// Browser Back from the game URL to the setup URL reuses this component
+// instance, so leave the session explicitly (same as the Exit button).
+watch(
+  () => route.name,
+  (name) => {
+    if (name === 'conversation' && sessionId.value && !isEnded.value) {
+      leaveSessionWithoutEnding()
+    }
+    if (name === 'conversation-session' && !sessionId.value) {
+      const routeSessionId = Number(route.params.id)
+      if (Number.isFinite(routeSessionId) && routeSessionId > 0) {
+        resumeSession(routeSessionId)
+      }
+    }
+  },
+)
 
 onUnmounted(() => {
   unlockOrientation()
@@ -1507,15 +1553,27 @@ onUnmounted(() => {
       />
     </div>
 
-    <!-- Exit (top-left) -->
+    <!-- Exit (top-left): leaves without ending; the session stays resumable -->
     <Button
       variant="secondary"
       size="icon"
       class="absolute left-4 top-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
-      aria-label="Exit session"
+      aria-label="Exit without ending session"
       @click="onExitClick"
     >
       <LogOut class="h-5 w-5" />
+    </Button>
+
+    <!-- Stop: ends the session (with confirmation) -->
+    <Button
+      v-if="sessionInProgress"
+      variant="secondary"
+      size="icon"
+      class="absolute left-[4.75rem] top-4 h-11 w-11 rounded-xl bg-black/40 text-red-300 shadow-lg backdrop-blur hover:bg-black/60"
+      aria-label="End session"
+      @click="exitConfirmOpen = true"
+    >
+      <CircleStop class="h-5 w-5" />
     </Button>
 
     <!-- Status pill (top-center) -->
