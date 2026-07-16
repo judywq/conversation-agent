@@ -110,7 +110,7 @@ const activeAgentName = ref('')
 
 const avatarsEnabled = useStorage('conv-game-avatars', true)
 const showSpeechBubble = useStorage('conv-game-show-bubble', true)
-const fullStageAvatars = useStorage('conv-game-fullstage', true)
+const avatarScale = useStorage('conv-game-avatar-scale', 1)
 const avatarWarmedUp = ref(false)
 const avatarGridRef = ref<InstanceType<typeof AgentAvatarGrid> | null>(null)
 const avatarSpeaking = ref(false)
@@ -1444,7 +1444,7 @@ onUnmounted(() => {
       <AgentAvatarGrid
         ref="avatarGridRef"
         game
-        :full-stage="fullStageAvatars"
+        :avatar-scale="avatarScale"
         class="h-full"
         :participants="participants"
         :active-speaker-id="activeSpeakerId"
@@ -1504,8 +1504,15 @@ onUnmounted(() => {
           <input v-model="showSpeechBubble" type="checkbox" class="h-4 w-4 accent-primary" />
         </label>
         <label class="flex items-center justify-between gap-3 text-sm">
-          Full-size characters
-          <input v-model="fullStageAvatars" type="checkbox" class="h-4 w-4 accent-primary" />
+          Character size
+          <input
+            v-model.number="avatarScale"
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.05"
+            class="w-28 accent-primary"
+          />
         </label>
         <label class="flex items-center justify-between gap-3 text-sm">
           Show avatars
@@ -1543,7 +1550,7 @@ onUnmounted(() => {
     <!-- Mic cluster (bottom-center) -->
     <div
       v-if="!isEnded"
-      class="absolute bottom-6 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2"
+      class="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2"
     >
       <div
         v-if="micState === 'preview' && recordedUrl"
@@ -1589,7 +1596,7 @@ onUnmounted(() => {
     <Button
       variant="secondary"
       size="icon"
-      class="absolute bottom-6 right-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+      class="absolute bottom-6 right-4 z-10 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
       aria-label="Speaker opinions"
       @click="notebookOpen = !notebookOpen"
     >

@@ -17,16 +17,24 @@ const props = defineProps<{
   /** Shared-stage layout (game mode): total slot columns and this agent's column. */
   slotCount?: number
   slotIndex?: number
+  /** Multiplier on the preset zoom, from the user size slider. */
+  zoomScale?: number
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
-const { status, errorMessage, init, speak, setIdle, dispose } = useLive2D(stageRef)
+const { status, errorMessage, init, refit, speak, setIdle, dispose } = useLive2D(stageRef)
 
-const preset = computed(() => ({
-  ...avatarPresetForAgent(props.gender, props.index),
-  slots: props.slotCount,
-  slot: props.slotIndex,
-}))
+const preset = computed(() => {
+  const base = avatarPresetForAgent(props.gender, props.index)
+  return {
+    ...base,
+    zoom: (base.zoom ?? 2.4) * (props.zoomScale ?? 1),
+    slots: props.slotCount,
+    slot: props.slotIndex,
+  }
+})
+
+watch(preset, (p) => refit(p))
 
 const statusLabel = computed(() => {
   if (props.agentStatus === 'searching_online' && props.active) {

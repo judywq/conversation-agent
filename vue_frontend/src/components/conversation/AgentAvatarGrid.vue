@@ -28,8 +28,8 @@ const props = defineProps<{
   stacked?: boolean
   /** Immersive game-phase rendering: characters side-by-side, bubble + click menu. */
   game?: boolean
-  /** Game mode: stage-wide canvases (big, no clipping) vs boxed per-slot canvases. */
-  fullStage?: boolean
+  /** User size multiplier from the settings slider; default 1. */
+  avatarScale?: number
   /** Utterance shown in a speech bubble over the active speaker (game mode only). */
   bubbleText?: string | null
   /** Agent the bubble anchors to — the bubble turn's speaker, not activeSpeakerId, so replays anchor correctly. */
@@ -101,55 +101,37 @@ defineExpose({
 
 <template>
   <div v-if="game" class="relative h-full" aria-live="polite">
-    <!-- Full-stage canvas layer: each model gets a stage-wide canvas and is fitted
-         to its slot column by useLive2D, so motions can overdraw without clipping. -->
-    <template v-if="fullStage">
-      <AgentAvatarPanel
-        v-for="(agent, index) in agents"
-        :key="agent.id"
-        game
-        :ref="(el) => setPanelRef(agent.id, el as InstanceType<typeof AgentAvatarPanel> | null)"
-        :agent-id="agent.id"
-        :name="agent.name"
-        :gender="agent.avatar_body || agent.gender"
-        :index="index"
-        :slot-count="agents.length"
-        :slot-index="index"
-        :active="activeSpeakerId === agent.id"
-        :agent-status="agentStatus"
-        :warmed-up="warmedUp"
-        class="absolute inset-0 transition-[filter]"
-        :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
-      />
-    </template>
-    <!-- Interaction layer: hosts the click menu and bubble. Full-stage uses gapless
-         full-width columns so slot centers match the canvas layout math (i + 0.5) / n;
-         boxed renders the panel inside its slot (canvas-clipped, smaller characters). -->
-    <div class="flex h-full items-end justify-center" :class="fullStage ? '' : 'gap-[4vw]'">
+    <!-- Canvas layer: each model gets a stage-wide canvas and is fitted to its slot
+         column by useLive2D, so motions can overdraw without clipping. Panels are
+         persistent (only zoom changes via the size slider) so in-flight speak()
+         audio/lipsync survives a resize. -->
+    <AgentAvatarPanel
+      v-for="(agent, index) in agents"
+      :key="agent.id"
+      game
+      :ref="(el) => setPanelRef(agent.id, el as InstanceType<typeof AgentAvatarPanel> | null)"
+      :agent-id="agent.id"
+      :name="agent.name"
+      :gender="agent.avatar_body || agent.gender"
+      :index="index"
+      :slot-count="agents.length"
+      :slot-index="index"
+      :zoom-scale="avatarScale ?? 1"
+      :active="activeSpeakerId === agent.id"
+      :agent-status="agentStatus"
+      :warmed-up="warmedUp"
+      class="absolute inset-0 transition-[filter]"
+      :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
+    />
+    <!-- Interaction layer: hosts the click menu and bubble. Gapless full-height
+         columns so slot centers match the canvas layout math (i + 0.5) / n and the
+         click target covers the whole character, head included. -->
+    <div class="flex h-full items-end justify-center">
       <div
-        v-for="(agent, index) in agents"
+        v-for="agent in agents"
         :key="agent.id"
-        class="relative h-[min(72vh,720px)] transition-[filter]"
-        :class="[
-          fullStage ? 'flex-1' : 'w-[min(30vw,420px)]',
-          !fullStage && activeSpeakerId === agent.id
-            ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]'
-            : '',
-        ]"
+        class="relative h-full flex-1"
       >
-        <AgentAvatarPanel
-          v-if="!fullStage"
-          game
-          :ref="(el) => setPanelRef(agent.id, el as InstanceType<typeof AgentAvatarPanel> | null)"
-          :agent-id="agent.id"
-          :name="agent.name"
-          :gender="agent.avatar_body || agent.gender"
-          :index="index"
-          :active="activeSpeakerId === agent.id"
-          :agent-status="agentStatus"
-          :warmed-up="warmedUp"
-          class="h-full"
-        />
         <DropdownMenu>
           <DropdownMenuTrigger
             class="absolute inset-0 z-[5] cursor-pointer"
@@ -171,7 +153,7 @@ defineExpose({
         </DropdownMenu>
         <div
           v-if="bubbleText && bubbleAgentId === agent.id"
-          class="pointer-events-none absolute -top-2 left-1/2 z-10 w-[min(24rem,70vw)] -translate-x-1/2 -translate-y-full"
+          class="pointer-events-none absolute bottom-[min(72vh,720px)] left-1/2 z-10 mb-2 w-[min(24rem,70vw)] -translate-x-1/2"
         >
           <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
           <div class="pointer-events-auto max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">

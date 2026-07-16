@@ -79,6 +79,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   let restoreMouthSync: (() => void) | null = null
   let resizeObserver: ResizeObserver | null = null
   let disposed = false
+  let activePreset: Live2DPresetInput | null = null
 
   /** Fit-to-stage plus preset zoom; safe to re-run whenever the stage resizes. */
   function fitModel(instance: Live2DModel, preset: Live2DPresetInput) {
@@ -146,11 +147,18 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     }
   }
 
+  /** Re-apply fit math with a new preset (e.g. zoom change) without reloading the model. */
+  function refit(preset: Live2DPresetInput) {
+    activePreset = preset
+    if (model.value) fitModel(model.value, preset)
+  }
+
   async function init(preset: Live2DPresetInput): Promise<boolean> {
     if (model.value) return true
     if (initPromise) return initPromise
 
     disposed = false
+    activePreset = preset
     initPromise = (async () => {
       const stage = stageRef.value
       if (!stage) return false
@@ -184,7 +192,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
           return false
         }
 
-        fitModel(instance, preset)
+        fitModel(instance, activePreset ?? preset)
         app.stage.addChild(instance)
 
         // The game stage is viewport-sized; refit on stage resize. resizeTo only
@@ -192,7 +200,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         if (typeof ResizeObserver !== 'undefined') {
           resizeObserver = new ResizeObserver(() => {
             app?.resize()
-            fitModel(instance, preset)
+            fitModel(instance, activePreset ?? preset)
           })
           resizeObserver.observe(stage)
         }
@@ -337,6 +345,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     model.value = null
     capabilities.value = null
     app = null
+    activePreset = null
     status.value = 'idle'
     errorMessage.value = ''
     stageRef.value?.replaceChildren()
@@ -347,6 +356,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     errorMessage,
     capabilities,
     init,
+    refit,
     speak,
     playMotion,
     setExpression,
