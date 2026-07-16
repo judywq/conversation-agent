@@ -1486,8 +1486,9 @@ onUnmounted(() => {
       }"
     />
 
-    <!-- Stage: partner characters side-by-side -->
-    <div class="absolute inset-x-0 bottom-6 top-16">
+    <!-- Stage: partner characters side-by-side. bottom-0 so characters clip at the
+         screen edge instead of floating above a background strip. -->
+    <div class="absolute inset-x-0 bottom-0 top-16">
       <AgentAvatarGrid
         ref="avatarGridRef"
         game
