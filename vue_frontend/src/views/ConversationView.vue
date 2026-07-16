@@ -111,6 +111,23 @@ const activeAgentName = ref('')
 const avatarsEnabled = useStorage('conv-game-avatars', true)
 const showSpeechBubble = useStorage('conv-game-show-bubble', true)
 const avatarScale = useStorage('conv-game-avatar-scale', 1)
+
+const SCENE_OPTIONS = [
+  { id: 'classroom', label: 'Classroom', url: '/scenes/classroom.png' },
+  { id: 'sports-ground', label: 'Sports ground', url: '/scenes/sports-ground.png' },
+  { id: 'library', label: 'Library', url: '/scenes/library.png' },
+] as const
+
+type SceneId = (typeof SCENE_OPTIONS)[number]['id']
+
+function randomSceneId(): SceneId {
+  return SCENE_OPTIONS[Math.floor(Math.random() * SCENE_OPTIONS.length)].id
+}
+
+const sceneId = useStorage<SceneId>('conv-game-scene', randomSceneId())
+const sceneUrl = computed(
+  () => SCENE_OPTIONS.find((s) => s.id === sceneId.value)?.url ?? SCENE_OPTIONS[0].url,
+)
 const avatarWarmedUp = ref(false)
 const avatarGridRef = ref<InstanceType<typeof AgentAvatarGrid> | null>(null)
 const avatarSpeaking = ref(false)
@@ -1436,8 +1453,10 @@ onUnmounted(() => {
   <!-- Game phase: immersive fullscreen scene. z-[60] covers the NavBar (z-50);
        portaled popover/menu content gets z-[70] to stay above this overlay. -->
   <div v-else class="fixed inset-0 z-[60] overflow-hidden">
-    <!-- ponytail: swap this div's classes for bg-[url('/classroom.jpg')] bg-cover bg-center when the asset lands -->
-    <div class="absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-100 to-amber-100" />
+    <div
+      class="absolute inset-0 bg-cover bg-center"
+      :style="{ backgroundImage: `url(${sceneUrl})` }"
+    />
 
     <!-- Stage: partner characters side-by-side -->
     <div class="absolute inset-x-0 bottom-6 top-16">
@@ -1523,6 +1542,22 @@ onUnmounted(() => {
             @change="toggleAvatarsEnabled()"
           />
         </label>
+        <div class="space-y-2">
+          <div class="text-sm font-medium">Background</div>
+          <label
+            v-for="scene in SCENE_OPTIONS"
+            :key="scene.id"
+            class="flex items-center gap-2 text-sm"
+          >
+            <input
+              v-model="sceneId"
+              type="radio"
+              class="h-4 w-4 accent-primary"
+              :value="scene.id"
+            />
+            {{ scene.label }}
+          </label>
+        </div>
       </PopoverContent>
     </Popover>
 
