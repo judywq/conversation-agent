@@ -14,15 +14,6 @@ const routes = [
         component: HomeView,
       },
       {
-        path: 'app',
-        name: 'dashboard',
-        component: () => import('@/views/DashboardView.vue'),
-        meta: {
-          requiresAuth: true,
-          requiresStaff: true,
-        },
-      },
-      {
         path: 'debug/avatars',
         name: 'avatar-debug',
         component: () => import('@/views/AvatarDebugView.vue'),

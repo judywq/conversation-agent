@@ -27,9 +27,6 @@ const homeRoute = computed(() =>
 
 const menuItems = computed(() => {
   const items: Array<{ label: string; name: string }> = []
-  if (showStaffNav.value) {
-    items.push({ label: 'Dashboard', name: 'dashboard' })
-  }
   items.push(
     { label: 'My Profile', name: 'profile' },
     { label: 'Conversation', name: 'conversation' },
