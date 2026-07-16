@@ -10,9 +10,14 @@ export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
   { url: '/live2d/hiyori/Hiyori.model3.json' },
   { url: '/live2d/haru/Haru.model3.json' },
   { url: '/live2d/mao/Mao.model3.json' },
+  { url: '/live2d/epsilon/Epsilon_free.model3.json' },
+  { url: '/live2d/hibiki/hibiki.model3.json' },
 ]
 
-export const MALE_AVATAR_PRESETS: AvatarPreset[] = [{ url: '/live2d/natori/Natori.model3.json' }]
+export const MALE_AVATAR_PRESETS: AvatarPreset[] = [
+  { url: '/live2d/natori/Natori.model3.json' },
+  { url: '/live2d/chitose/chitose.model3.json' },
+]
 
 export function normalizeAvatarBody(gender?: string | null): AvatarBody {
   const value = (gender || '').trim().toLowerCase()
