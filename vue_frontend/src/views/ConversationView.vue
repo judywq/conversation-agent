@@ -125,6 +125,7 @@ function randomSceneId(): SceneId {
 }
 
 const sceneId = useStorage<SceneId>('conv-game-scene', randomSceneId())
+const sceneBlur = useStorage('conv-game-scene-blur', 4)
 const sceneUrl = computed(
   () => SCENE_OPTIONS.find((s) => s.id === sceneId.value)?.url ?? SCENE_OPTIONS[0].url,
 )
@@ -1453,9 +1454,14 @@ onUnmounted(() => {
   <!-- Game phase: immersive fullscreen scene. z-[60] covers the NavBar (z-50);
        portaled popover/menu content gets z-[70] to stay above this overlay. -->
   <div v-else class="fixed inset-0 z-[60] overflow-hidden">
+    <!-- Gradient stays visible while the scene image loads -->
+    <div class="absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-100 to-amber-100" />
     <div
-      class="absolute inset-0 bg-cover bg-center"
-      :style="{ backgroundImage: `url(${sceneUrl})` }"
+      class="absolute inset-0 scale-110 bg-cover bg-center"
+      :style="{
+        backgroundImage: `url(${sceneUrl})`,
+        filter: `blur(${sceneBlur}px)`,
+      }"
     />
 
     <!-- Stage: partner characters side-by-side -->
@@ -1556,6 +1562,17 @@ onUnmounted(() => {
               :value="scene.id"
             />
             {{ scene.label }}
+          </label>
+          <label class="flex items-center justify-between gap-3 text-sm">
+            Blur
+            <input
+              v-model.number="sceneBlur"
+              type="range"
+              min="0"
+              max="20"
+              step="1"
+              class="w-28 accent-primary"
+            />
           </label>
         </div>
       </PopoverContent>

@@ -49,6 +49,10 @@ const panelRefs = ref<Record<string, InstanceType<typeof AgentAvatarPanel> | nul
 
 const agents = computed(() => props.participants.filter((p) => p.type === 'agent'))
 
+const bubbleAgentName = computed(
+  () => agents.value.find((a) => a.id === props.bubbleAgentId)?.name ?? '',
+)
+
 const gridClass = computed(() => {
   if (props.stacked) return 'grid-cols-1'
   const count = agents.value.length
@@ -123,9 +127,9 @@ defineExpose({
       class="absolute inset-0 transition-[filter]"
       :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
     />
-    <!-- Interaction layer: hosts the click menu and bubble. Gapless full-height
-         columns so slot centers match the canvas layout math (i + 0.5) / n and the
-         click target covers the whole character, head included. -->
+    <!-- Interaction layer: hosts the click menu. Gapless full-height columns so
+         slot centers match the canvas layout math (i + 0.5) / n and the click
+         target covers the whole character, head included. -->
     <div class="flex h-full items-end justify-center">
       <div
         v-for="agent in agents"
@@ -151,17 +155,20 @@ defineExpose({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <div
-          v-if="bubbleText && bubbleAgentId === agent.id"
-          class="pointer-events-none absolute bottom-[min(72vh,720px)] left-1/2 z-10 mb-2 w-[min(24rem,70vw)] -translate-x-1/2"
-        >
-          <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
-          <div class="pointer-events-auto max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">
-            <div class="mb-0.5 font-semibold">{{ agent.name }}</div>
-            <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
-          </div>
-          <div class="mx-auto -mt-1.5 h-3 w-3 rotate-45 border-b border-r bg-white/95" />
-        </div>
+      </div>
+    </div>
+    <!-- Dialog bar (visual-novel style): one half-transparent bar across the lower
+         stage so it never covers a character's face. bottom-28 clears the mic cluster. -->
+    <div
+      v-if="bubbleText"
+      class="pointer-events-none absolute inset-x-0 bottom-28 z-10 flex justify-center px-4"
+    >
+      <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
+      <div
+        class="pointer-events-auto max-h-48 w-[min(56rem,92vw)] overflow-y-auto rounded-2xl border border-white/40 bg-white/50 px-5 py-3 text-lg text-gray-900 shadow-lg backdrop-blur-sm"
+      >
+        <div class="mb-0.5 font-semibold">{{ bubbleAgentName }}</div>
+        <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
       </div>
     </div>
   </div>
