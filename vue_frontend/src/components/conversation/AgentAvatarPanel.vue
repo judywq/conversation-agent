@@ -14,12 +14,19 @@ const props = defineProps<{
   warmedUp: boolean
   /** Immersive game-phase rendering: no card chrome/header, stage fills the parent. */
   game?: boolean
+  /** Shared-stage layout (game mode): total slot columns and this agent's column. */
+  slotCount?: number
+  slotIndex?: number
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
 const { status, errorMessage, init, speak, setIdle, dispose } = useLive2D(stageRef)
 
-const preset = computed(() => avatarPresetForAgent(props.gender, props.index))
+const preset = computed(() => ({
+  ...avatarPresetForAgent(props.gender, props.index),
+  slots: props.slotCount,
+  slot: props.slotIndex,
+}))
 
 const statusLabel = computed(() => {
   if (props.agentStatus === 'searching_online' && props.active) {
@@ -76,12 +83,11 @@ defineExpose({
 
 <template>
   <div
-    class="overflow-hidden"
     :class="
       game
         ? 'h-full'
         : [
-            'rounded-lg border bg-card transition-shadow',
+            'overflow-hidden rounded-lg border bg-card transition-shadow',
             active ? 'border-primary shadow-md ring-1 ring-primary/30' : 'border-border',
           ]
     "

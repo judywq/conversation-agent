@@ -28,6 +28,8 @@ const props = defineProps<{
   stacked?: boolean
   /** Immersive game-phase rendering: characters side-by-side, bubble + click menu. */
   game?: boolean
+  /** Game mode: stage-wide canvases (big, no clipping) vs boxed per-slot canvases. */
+  fullStage?: boolean
   /** Utterance shown in a speech bubble over the active speaker (game mode only). */
   bubbleText?: string | null
   /** Agent the bubble anchors to — the bubble turn's speaker, not activeSpeakerId, so replays anchor correctly. */
@@ -98,54 +100,86 @@ defineExpose({
 </script>
 
 <template>
-  <div v-if="game" class="flex h-full items-end justify-center gap-[4vw]" aria-live="polite">
-    <div
-      v-for="(agent, index) in agents"
-      :key="agent.id"
-      class="relative h-[min(72vh,720px)] w-[min(30vw,420px)] transition-[filter]"
-      :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
-    >
+  <div v-if="game" class="relative h-full" aria-live="polite">
+    <!-- Full-stage canvas layer: each model gets a stage-wide canvas and is fitted
+         to its slot column by useLive2D, so motions can overdraw without clipping. -->
+    <template v-if="fullStage">
       <AgentAvatarPanel
+        v-for="(agent, index) in agents"
+        :key="agent.id"
         game
         :ref="(el) => setPanelRef(agent.id, el as InstanceType<typeof AgentAvatarPanel> | null)"
         :agent-id="agent.id"
         :name="agent.name"
         :gender="agent.avatar_body || agent.gender"
         :index="index"
+        :slot-count="agents.length"
+        :slot-index="index"
         :active="activeSpeakerId === agent.id"
         :agent-status="agentStatus"
         :warmed-up="warmedUp"
-        class="h-full"
+        class="absolute inset-0 transition-[filter]"
+        :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
       />
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          class="absolute inset-0 z-[5] cursor-pointer"
-          :aria-label="`${agent.name} options`"
-        />
-        <!-- z-[70]: the game overlay sits at z-[60], above the default portal z-50 -->
-        <DropdownMenuContent align="center" class="z-[70]">
-          <DropdownMenuItem v-if="replayingAgentId === agent.id" @click="emit('stopReplay')">
-            Stop replay
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            v-else
-            :disabled="!(replayableAgentIds ?? []).includes(agent.id)"
-            @click="emit('replay', agent.id)"
-          >
-            Replay {{ agent.name }}&rsquo;s last turn
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+    </template>
+    <!-- Interaction layer: hosts the click menu and bubble. Full-stage uses gapless
+         full-width columns so slot centers match the canvas layout math (i + 0.5) / n;
+         boxed renders the panel inside its slot (canvas-clipped, smaller characters). -->
+    <div class="flex h-full items-end justify-center" :class="fullStage ? '' : 'gap-[4vw]'">
       <div
-        v-if="bubbleText && bubbleAgentId === agent.id"
-        class="pointer-events-none absolute -top-2 left-1/2 z-10 w-[min(24rem,70vw)] -translate-x-1/2 -translate-y-full"
+        v-for="(agent, index) in agents"
+        :key="agent.id"
+        class="relative h-[min(72vh,720px)] transition-[filter]"
+        :class="[
+          fullStage ? 'flex-1' : 'w-[min(30vw,420px)]',
+          !fullStage && activeSpeakerId === agent.id
+            ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]'
+            : '',
+        ]"
       >
-        <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
-        <div class="pointer-events-auto max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">
-          <div class="mb-0.5 font-semibold">{{ agent.name }}</div>
-          <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
+        <AgentAvatarPanel
+          v-if="!fullStage"
+          game
+          :ref="(el) => setPanelRef(agent.id, el as InstanceType<typeof AgentAvatarPanel> | null)"
+          :agent-id="agent.id"
+          :name="agent.name"
+          :gender="agent.avatar_body || agent.gender"
+          :index="index"
+          :active="activeSpeakerId === agent.id"
+          :agent-status="agentStatus"
+          :warmed-up="warmedUp"
+          class="h-full"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            class="absolute inset-0 z-[5] cursor-pointer"
+            :aria-label="`${agent.name} options`"
+          />
+          <!-- z-[70]: the game overlay sits at z-[60], above the default portal z-50 -->
+          <DropdownMenuContent align="center" class="z-[70]">
+            <DropdownMenuItem v-if="replayingAgentId === agent.id" @click="emit('stopReplay')">
+              Stop replay
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              v-else
+              :disabled="!(replayableAgentIds ?? []).includes(agent.id)"
+              @click="emit('replay', agent.id)"
+            >
+              Replay {{ agent.name }}&rsquo;s last turn
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div
+          v-if="bubbleText && bubbleAgentId === agent.id"
+          class="pointer-events-none absolute -top-2 left-1/2 z-10 w-[min(24rem,70vw)] -translate-x-1/2 -translate-y-full"
+        >
+          <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
+          <div class="pointer-events-auto max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">
+            <div class="mb-0.5 font-semibold">{{ agent.name }}</div>
+            <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
+          </div>
+          <div class="mx-auto -mt-1.5 h-3 w-3 rotate-45 border-b border-r bg-white/95" />
         </div>
-        <div class="mx-auto -mt-1.5 h-3 w-3 rotate-45 border-b border-r bg-white/95" />
       </div>
     </div>
   </div>

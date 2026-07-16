@@ -110,6 +110,7 @@ const activeAgentName = ref('')
 
 const avatarsEnabled = useStorage('conv-game-avatars', true)
 const showSpeechBubble = useStorage('conv-game-show-bubble', true)
+const fullStageAvatars = useStorage('conv-game-fullstage', true)
 const avatarWarmedUp = ref(false)
 const avatarGridRef = ref<InstanceType<typeof AgentAvatarGrid> | null>(null)
 const avatarSpeaking = ref(false)
@@ -1443,6 +1444,7 @@ onUnmounted(() => {
       <AgentAvatarGrid
         ref="avatarGridRef"
         game
+        :full-stage="fullStageAvatars"
         class="h-full"
         :participants="participants"
         :active-speaker-id="activeSpeakerId"
@@ -1500,6 +1502,10 @@ onUnmounted(() => {
         <label class="flex items-center justify-between gap-3 text-sm">
           Show speech bubble
           <input v-model="showSpeechBubble" type="checkbox" class="h-4 w-4 accent-primary" />
+        </label>
+        <label class="flex items-center justify-between gap-3 text-sm">
+          Full-size characters
+          <input v-model="fullStageAvatars" type="checkbox" class="h-4 w-4 accent-primary" />
         </label>
         <label class="flex items-center justify-between gap-3 text-sm">
           Show avatars
