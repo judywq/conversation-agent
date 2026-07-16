@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
-import { Loader2, LogOut, Mic, NotebookPen, Settings, Square } from 'lucide-vue-next'
+import { Loader2, LogOut, Mic, NotebookPen, Settings, Smartphone, Square } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -979,8 +979,27 @@ function sendOrToast(action: () => Promise<void>) {
   })()
 }
 
+/** Best-effort landscape lock on touch devices. Needs fullscreen + Android;
+ *  a no-op on iOS/desktop — the portrait overlay in the template covers those. */
+function lockLandscape() {
+  if (!window.matchMedia('(pointer: coarse)').matches) return
+  const orientation = screen.orientation as ScreenOrientation & {
+    lock?: (o: string) => Promise<void>
+  }
+  document.documentElement.requestFullscreen?.().then(
+    () => orientation.lock?.('landscape').catch(() => {}),
+    () => {},
+  )
+}
+
+function unlockOrientation() {
+  screen.orientation?.unlock?.()
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+}
+
 function startSession() {
   if (!authStore.user?.profile_completed) return
+  lockLandscape()
   warmupAvatars()
   void (async () => {
     try {
@@ -998,6 +1017,7 @@ function startSession() {
 }
 
 function resumeSession(sessionIdToResume: number) {
+  lockLandscape()
   warmupAvatars()
   void (async () => {
     try {
@@ -1042,6 +1062,7 @@ function confirmEndSession() {
 
 /** Leave the game phase and return to session setup. */
 function exitToSetup() {
+  unlockOrientation()
   stopAllAudioPlayback()
   resetAvatars()
   clearRecordingPreview()
@@ -1329,6 +1350,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  unlockOrientation()
   window.removeEventListener('keydown', handleRecordShortcut)
   window.removeEventListener('pointerdown', handleConversationInteraction)
   clearEndedSummaryPollTimer()
@@ -1734,6 +1756,16 @@ onUnmounted(() => {
           <Button variant="destructive" @click="confirmEndSession">End session</Button>
         </CardContent>
       </Card>
+    </div>
+
+    <!-- Portrait block: the stage is landscape-only on touch devices. Pure CSS so it
+         tracks rotation with no JS; state stays mounted underneath. -->
+    <div
+      class="absolute inset-0 z-40 hidden flex-col items-center justify-center gap-4 bg-black/90 text-white [@media(orientation:portrait)_and_(pointer:coarse)]:flex"
+    >
+      <Smartphone class="h-12 w-12 rotate-90" />
+      <p class="text-lg font-medium">Please rotate your device</p>
+      <p class="text-sm text-white/70">This scene is designed for landscape</p>
     </div>
   </div>
 </template>
