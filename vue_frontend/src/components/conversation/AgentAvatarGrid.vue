@@ -30,6 +30,8 @@ const props = defineProps<{
   game?: boolean
   /** Utterance shown in a speech bubble over the active speaker (game mode only). */
   bubbleText?: string | null
+  /** Agent the bubble anchors to — the bubble turn's speaker, not activeSpeakerId, so replays anchor correctly. */
+  bubbleAgentId?: string | null
   /** Agents whose last turn can be replayed via the character click menu. */
   replayableAgentIds?: string[]
   /** Agent whose replay is currently playing (shows a Stop item instead). */
@@ -135,10 +137,11 @@ defineExpose({
         </DropdownMenuContent>
       </DropdownMenu>
       <div
-        v-if="bubbleText && activeSpeakerId === agent.id"
+        v-if="bubbleText && bubbleAgentId === agent.id"
         class="pointer-events-none absolute -top-2 left-1/2 z-10 w-[min(24rem,70vw)] -translate-x-1/2 -translate-y-full"
       >
-        <div class="max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">
+        <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
+        <div class="pointer-events-auto max-h-40 overflow-y-auto rounded-2xl border bg-white/95 px-4 py-3 text-sm text-gray-900 shadow-lg">
           <div class="mb-0.5 font-semibold">{{ agent.name }}</div>
           <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
         </div>

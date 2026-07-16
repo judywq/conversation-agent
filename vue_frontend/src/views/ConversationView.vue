@@ -698,15 +698,15 @@ function replayAgentLastTurn(agentId: string) {
   void playTurnAudioManual(turn, turnKey(turn))
 }
 
-/** Utterance shown in the speech bubble over the speaking character. */
-const speakingBubbleText = computed(() => {
+/** The agent turn shown in the speech bubble (text + anchor derived together). */
+const speakingBubbleTurn = computed(() => {
   if (!showSpeechBubble.value) return null
   const key =
     liveSpeakingTurnKey.value ??
     (manualReplayActive.value && !manualReplayPaused.value ? manualReplayTurnKey.value : null)
   if (!key) return null
   const turn = turns.value.find((t) => turnKey(t) === key)
-  return turn && isAgentTurn(turn) ? turn.utterance : null
+  return turn && isAgentTurn(turn) ? turn : null
 })
 
 function handleEvent(e: ConversationWsEvent) {
@@ -1448,7 +1448,8 @@ onUnmounted(() => {
         :active-speaker-id="activeSpeakerId"
         :agent-status="agentStatus"
         :warmed-up="avatarWarmedUp && avatarsEnabled"
-        :bubble-text="speakingBubbleText"
+        :bubble-text="speakingBubbleTurn?.utterance ?? null"
+        :bubble-agent-id="speakingBubbleTurn?.speaker ?? null"
         :replayable-agent-ids="replayableAgentIds"
         :replaying-agent-id="replayingAgentId"
         @replay="replayAgentLastTurn"
