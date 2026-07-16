@@ -67,12 +67,20 @@ export class ConversationWsClient {
   private ws: WebSocket | null = null
   private listeners: Array<(e: ConversationWsEvent) => void> = []
   private connectionListeners: Array<(open: boolean) => void> = []
+  // Auto-reconnect while the caller wants the connection up: connect() arms it,
+  // close() disarms it, so intentional close/connect cycles are untouched.
+  private shouldReconnect = false
+  private reconnectAttempt = 0
+  private reconnectTimer: number | null = null
 
   isOpen(): boolean {
     return this.ws?.readyState === WebSocket.OPEN
   }
 
   connect(): void {
+    this.shouldReconnect = true
+    this.clearReconnectTimer()
+
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
       return
     }
@@ -85,6 +93,7 @@ export class ConversationWsClient {
     this.ws = socket
 
     socket.onopen = () => {
+      this.reconnectAttempt = 0
       this.notifyConnectionChange(true)
     }
     socket.onclose = () => {
@@ -92,6 +101,7 @@ export class ConversationWsClient {
         this.ws = null
       }
       this.notifyConnectionChange(false)
+      this.scheduleReconnect()
     }
     socket.onerror = () => {
       // onclose follows
@@ -174,8 +184,27 @@ export class ConversationWsClient {
   }
 
   close(): void {
+    this.shouldReconnect = false
+    this.clearReconnectTimer()
     this.teardownSocket(true)
     this.notifyConnectionChange(false)
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.shouldReconnect || this.reconnectTimer !== null) return
+    const delay =
+      Math.min(1000 * 2 ** this.reconnectAttempt++, 15000) + Math.floor(Math.random() * 500)
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null
+      if (this.shouldReconnect) this.connect()
+    }, delay)
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
   }
 
   private teardownSocket(notifyDisconnect: boolean): void {
