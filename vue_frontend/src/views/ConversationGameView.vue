@@ -3,9 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import {
-  BookOpen,
-  Check,
-  FolderOpen,
   Loader2,
   LogOut,
   Mic,
@@ -16,26 +13,14 @@ import {
 } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
-import PartnerSelectPanel from '@/components/conversation/PartnerSelectPanel.vue'
-import SakuraCorner from '@/components/SakuraCorner.vue'
 import SakuraMark from '@/components/SakuraMark.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast/use-toast'
 import {
   ConversationService,
   type ArgumentSummaryResult,
-  type DiscussionScenarioResult,
-  type NewsCategory,
 } from '@/services/conversationService'
 import {
   ConversationWsClient,
@@ -53,6 +38,7 @@ import {
   formatCombinedExportText,
   formatTranscriptText,
 } from '@/lib/conversationExport'
+import { SCENE_OPTIONS, type SceneId, randomSceneId } from '@/lib/conversationScenes'
 
 const { toast } = useToast()
 const authStore = useAuthStore()
@@ -71,13 +57,8 @@ const sessionId = ref<number | null>(null)
 const sessionMaxTurns = ref(0)
 const sessionTurnCount = ref(0)
 const topic = ref('')
-const taxonomy = ref<NewsCategory[]>([])
-const selectedCategory = ref('')
-const selectedSubtopic = ref('')
-const isGeneratingScenario = ref(false)
-const scenarioArticles = ref<DiscussionScenarioResult['articles']>([])
-const MAX_AGENT_COUNT = 3
-const selectedCharacterIds = ref<string[]>([])
+/** True while waiting for the first resume bind on this page. */
+const isResuming = ref(false)
 
 type Participant = ConversationParticipant
 
@@ -126,22 +107,6 @@ const activeAgentName = ref('')
 const avatarsEnabled = useStorage('conv-game-avatars', true)
 const showSpeechBubble = useStorage('conv-game-show-bubble', true)
 const avatarScale = useStorage('conv-game-avatar-scale', 1)
-
-const SCENE_OPTIONS = [
-  { id: 'classroom', label: 'Sunny Classroom', url: '/scenes/classroom.png' },
-  { id: 'library', label: 'Library Terrace', url: '/scenes/library.png' },
-  { id: 'campus-cafe', label: 'Campus Café', url: '/scenes/campus-cafe.png' },
-  { id: 'sports-ground', label: 'Sports Ground', url: '/scenes/sports-ground.png' },
-  { id: 'meeting-room', label: 'Meeting Room', url: '/scenes/meeting-room.png' },
-  { id: 'outdoors', label: 'Outdoors', url: '/scenes/outdoors.png' },
-  { id: 'pathway', label: 'Pathway', url: '/scenes/pathway.png' },
-] as const
-
-type SceneId = (typeof SCENE_OPTIONS)[number]['id']
-
-function randomSceneId(): SceneId {
-  return SCENE_OPTIONS[Math.floor(Math.random() * SCENE_OPTIONS.length)].id
-}
 
 const sceneId = useStorage<SceneId>('conv-game-scene', randomSceneId())
 const sceneBlur = useStorage('conv-game-scene-blur', 4)
@@ -336,45 +301,13 @@ const turnPlaybackQueue = ref<TurnPlaybackJob[]>([])
 const isProcessingTurnPlayback = ref(false)
 let playbackAbortController: AbortController | null = null
 
-const showConversationPanel = computed(() => !!sessionId.value || isEnded.value)
+/** Immersive chrome is always shown on this page (loading, live, or ended). */
 const sessionInProgress = computed(() => !!sessionId.value && !isEnded.value)
+const sessionBound = computed(() => !!sessionId.value || isEnded.value)
 
-watch(
-  showConversationPanel,
-  (immersive) => {
-    hideAppNav.value = immersive
-  },
-  { immediate: true },
-)
+hideAppNav.value = true
 
 const showArgumentSummary = computed(() => !!sessionId.value && turns.value.length > 0)
-
-const canStart = computed(
-  () =>
-    connected.value &&
-    (!sessionId.value || isEnded.value) &&
-    !!topic.value.trim() &&
-    selectedCharacterIds.value.length >= 1 &&
-    selectedCharacterIds.value.length <= MAX_AGENT_COUNT &&
-    !!authStore.user?.profile_completed,
-)
-
-const availableSubtopics = computed(() => {
-  const category = taxonomy.value.find((item) => item.slug === selectedCategory.value)
-  return category?.subtopics ?? []
-})
-
-const canGenerateScenario = computed(
-  () =>
-    !!selectedCategory.value &&
-    !!selectedSubtopic.value &&
-    !isGeneratingScenario.value &&
-    (!sessionId.value || isEnded.value),
-)
-
-watch(selectedCategory, () => {
-  selectedSubtopic.value = ''
-})
 
 function nextLocalTurnIndex(): number {
   const lastTurn = turns.value.length > 0 ? turns.value[turns.value.length - 1] : undefined
@@ -763,29 +696,6 @@ function handleEvent(e: ConversationWsEvent) {
   if (e.type === 'connected') {
     connected.value = true
   }
-  if (e.type === 'session_started') {
-    sessionId.value = e.session_id
-    sessionMaxTurns.value = e.max_turns ?? 0
-    sessionTurnCount.value = e.turn_count ?? 0
-    // Starting a new session should clear old logs.
-    isEnded.value = false
-    isPaused.value = false
-    needUserTurn.value = false
-    needFirstTurnChoice.value = false
-    agentStatus.value = 'idle'
-    turns.value = []
-    turnPlaybackQueue.value = []
-    isProcessingTurnPlayback.value = false
-    liveSpeakingTurnKey.value = null
-    completedAgentPlaybackKeys.value = []
-    participants.value = []
-    endedArgumentSummary.value = null
-    endedSummaryLoading.value = false
-    stopAllAudioPlayback()
-    resetAvatars()
-    wsSessionBound.value = true
-    void router.replace({ name: 'conversation-session', params: { id: e.session_id } })
-  }
   if (e.type === 'session_resumed') {
     const silent = pendingSilentResumeSessionId === e.session_id
     if (silent) {
@@ -801,6 +711,7 @@ function handleEvent(e: ConversationWsEvent) {
     needUserTurn.value = e.need_user_turn ?? false
     agentStatus.value = 'idle'
     wsSessionBound.value = true
+    isResuming.value = false
 
     if (e.rebind) {
       if (!e.need_user_turn) {
@@ -822,10 +733,13 @@ function handleEvent(e: ConversationWsEvent) {
         void router.replace({ name: 'conversation-session', params: { id: e.session_id } })
       }
       if (!silent) {
-        toast({
-          title: 'Discussion resumed',
-          description: 'Pick up where you left off.',
-        })
+        const isFresh = (e.turns?.length ?? 0) === 0 && (e.turn_count ?? 0) === 0
+        if (!isFresh) {
+          toast({
+            title: 'Discussion resumed',
+            description: 'Pick up where you left off.',
+          })
+        }
       }
     }
   }
@@ -921,7 +835,8 @@ function handleEvent(e: ConversationWsEvent) {
       clearRecordingPreview()
     }
     // Resume from the URL failed (missing/foreign/finished session): back to setup.
-    if (route.name === 'conversation-session' && !sessionId.value) {
+    if (!sessionId.value) {
+      isResuming.value = false
       void router.replace({ name: 'conversation' })
     }
   }
@@ -1039,46 +954,31 @@ function lockLandscape() {
 
 function unlockOrientation() {
   screen.orientation?.unlock?.()
-  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
-}
-
-function startSession() {
-  if (!authStore.user?.profile_completed) return
-  lockLandscape()
-  warmupAvatars()
-  void (async () => {
-    try {
-      await ws.ready()
-      ws.send({
-        type: 'start_session',
-        topic: topic.value.trim(),
-        character_ids: selectedCharacterIds.value,
-      })
-    } catch {
-      connected.value = false
-      toast({
-        title: 'Connection error',
-        description: 'Could not connect to the conversation server. Please wait a moment and try again.',
-        variant: 'destructive',
-      })
-    }
-  })()
+  // Defer fullscreen exit: calling it synchronously during a route leave can
+  // cancel CSS transitionend, and BaseLayout's mode="out-in" then never mounts
+  // the next view (blank setup page).
+  window.setTimeout(() => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+  }, 250)
 }
 
 function resumeSession(sessionIdToResume: number) {
   lockLandscape()
   warmupAvatars()
+  isResuming.value = true
   void (async () => {
     try {
       await ws.ready()
       ws.send({ type: 'resume_session', session_id: sessionIdToResume })
     } catch {
+      isResuming.value = false
       connected.value = false
       toast({
         title: 'Connection error',
         description: 'Could not connect to the conversation server. Please wait a moment and try again.',
         variant: 'destructive',
       })
+      void router.replace({ name: 'conversation' })
     }
   })()
 }
@@ -1096,7 +996,12 @@ function onExitClick() {
     exitToSetup()
     return
   }
-  if (!sessionId.value) return
+  if (!sessionId.value) {
+    hideAppNav.value = false
+    unlockOrientation()
+    void router.replace({ name: 'conversation' })
+    return
+  }
   leaveSessionWithoutEnding()
   toast({
     title: 'Session not ended',
@@ -1104,12 +1009,10 @@ function onExitClick() {
   })
 }
 
-/** Leave the game without ending: cycle the WS so the server treats the
+/** Leave the game without ending: close WS so the server treats the
  *  session like a closed tab (interrupted, resumable from History). */
 function leaveSessionWithoutEnding() {
   exitToSetup()
-  ws.close()
-  ws.connect()
 }
 
 function confirmEndSession() {
@@ -1119,12 +1022,14 @@ function confirmEndSession() {
 
 /** Leave the game phase and return to session setup. */
 function exitToSetup() {
+  hideAppNav.value = false
   unlockOrientation()
   stopAllAudioPlayback()
   resetAvatars()
   clearRecordingPreview()
   sessionId.value = null
   isEnded.value = false
+  isResuming.value = false
   turns.value = []
   participants.value = []
   endedArgumentSummary.value = null
@@ -1135,12 +1040,12 @@ function exitToSetup() {
   notebookOpen.value = false
   exitConfirmOpen.value = false
   wsSessionBound.value = false
-  if (route.name === 'conversation-session') {
-    void router.replace({ name: 'conversation' })
-  }
+  ws.close()
+  void router.replace({ name: 'conversation' })
 }
 
 const statusText = computed(() => {
+  if (isResuming.value && !sessionBound.value) return 'Resuming…'
   if (isEnded.value) return 'Ended'
   if (wsReconnecting.value) return 'Reconnecting…'
   if (sessionInProgress.value && !connected.value) return 'Connection lost — refresh if this persists'
@@ -1363,46 +1268,8 @@ function handleConversationInteraction() {
   }
 }
 
-async function loadTaxonomy() {
-  try {
-    const payload = await ConversationService.fetchNewsTaxonomy()
-    taxonomy.value = payload.categories
-  } catch (error: any) {
-    toast({
-      title: 'Could not load topics',
-      description: error?.message || 'Please refresh and try again.',
-      variant: 'destructive',
-    })
-  }
-}
-
-async function generateDiscussionScenario() {
-  if (!selectedCategory.value || !selectedSubtopic.value) return
-  isGeneratingScenario.value = true
-  try {
-    const result = await ConversationService.generateDiscussionScenario(
-      selectedCategory.value,
-      selectedSubtopic.value,
-    )
-    topic.value = result.scenario
-    scenarioArticles.value = result.articles
-    await authStore.fetchUser()
-    toast({
-      title: 'Scenario ready',
-      description: 'You can edit the text below before you start.',
-    })
-  } catch (error: any) {
-    toast({
-      title: 'Could not generate scenario',
-      description: error?.message || 'Please try again.',
-      variant: 'destructive',
-    })
-  } finally {
-    isGeneratingScenario.value = false
-  }
-}
-
-onMounted(async () => {
+onMounted(() => {
+  hideAppNav.value = true
   ws.connect()
   const off = ws.onEvent(handleEvent)
   const offConnection = ws.onConnectionChange((open) => {
@@ -1419,41 +1286,14 @@ onMounted(async () => {
     off()
     offConnection()
   })
-  await loadTaxonomy()
-  try {
-    await authStore.fetchUser()
-    selectedCategory.value = authStore.user?.discussion_category?.trim() || ''
-    selectedSubtopic.value = authStore.user?.discussion_subtopic?.trim() || ''
-    const scenario = authStore.user?.discussion_scenario?.trim()
-    if (scenario && !topic.value.trim()) {
-      topic.value = scenario
-    }
-  } catch {
-    // Keep the page usable if profile refresh fails.
-  }
 
   const routeSessionId = Number(route.params.id)
   if (Number.isFinite(routeSessionId) && routeSessionId > 0) {
     resumeSession(routeSessionId)
+  } else {
+    void router.replace({ name: 'conversation' })
   }
 })
-
-// Browser Back from the game URL to the setup URL reuses this component
-// instance, so leave the session explicitly (same as the Exit button).
-watch(
-  () => route.name,
-  (name) => {
-    if (name === 'conversation' && sessionId.value && !isEnded.value) {
-      leaveSessionWithoutEnding()
-    }
-    if (name === 'conversation-session' && !sessionId.value) {
-      const routeSessionId = Number(route.params.id)
-      if (Number.isFinite(routeSessionId) && routeSessionId > 0) {
-        resumeSession(routeSessionId)
-      }
-    }
-  },
-)
 
 onUnmounted(() => {
   hideAppNav.value = false
@@ -1472,155 +1312,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="!showConversationPanel" class="container mx-auto space-y-6 px-4 py-8">
-    <Card class="relative mx-auto max-w-5xl overflow-hidden rounded-2xl border-border/80 shadow-sm">
-      <SakuraCorner class="opacity-80" :size="96" />
-      <CardHeader class="relative z-[2] space-y-1">
-        <CardTitle class="text-2xl font-bold">Discussion Setup</CardTitle>
-        <CardDescription>
-          Choose a topic, set the scene, then pick classmates for your seminar.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="relative z-[2] space-y-6">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div class="space-y-2">
-            <div class="flex items-center gap-2 text-sm font-medium">
-              <FolderOpen class="h-4 w-4 text-tag-foreground" />
-              Major category
-            </div>
-            <Select v-model="selectedCategory" :disabled="sessionInProgress || isGeneratingScenario">
-              <SelectTrigger class="h-11 w-full rounded-xl">
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="category in taxonomy" :key="category.slug" :value="category.slug">
-                  {{ category.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p class="text-xs text-muted-foreground">
-              Choose the general subject you want to discuss today.
-            </p>
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center gap-2 text-sm font-medium">
-              <BookOpen class="h-4 w-4 text-tag-foreground" />
-              Subtopic
-            </div>
-            <Select
-              v-model="selectedSubtopic"
-              :disabled="!selectedCategory || sessionInProgress || isGeneratingScenario"
-            >
-              <SelectTrigger class="h-11 w-full rounded-xl">
-                <SelectValue placeholder="Select a subtopic" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="subtopic in availableSubtopics"
-                  :key="subtopic.slug"
-                  :value="subtopic.slug"
-                >
-                  {{ subtopic.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p class="text-xs text-muted-foreground">
-              Pick a specific focus within that subject.
-            </p>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="text-sm font-medium">Discussion scenario</div>
-            <Button
-              variant="default"
-              size="sm"
-              class="rounded-xl font-semibold"
-              :disabled="!canGenerateScenario"
-              @click="generateDiscussionScenario"
-            >
-              <SakuraMark :size="14" class="text-primary-foreground" />
-              {{ isGeneratingScenario ? 'Generating…' : 'Generate prompt' }}
-            </Button>
-          </div>
-          <p v-if="isGeneratingScenario" class="text-sm text-muted-foreground">
-            Preparing your scenario…
-          </p>
-          <p v-else-if="topic.trim() && scenarioArticles.length" class="text-sm text-muted-foreground">
-            Scenario ready—you can edit it below before you start.
-          </p>
-          <Textarea
-            v-model="topic"
-            placeholder="Enter what you would like to discuss…"
-            class="min-h-[100px] rounded-2xl"
-          />
-        </div>
-
-        <div class="space-y-3">
-          <div class="text-sm font-medium">Discussion environment</div>
-          <div class="grid gap-3 sm:grid-cols-3">
-            <button
-              v-for="scene in SCENE_OPTIONS"
-              :key="scene.id"
-              type="button"
-              class="group relative overflow-hidden rounded-2xl border text-left transition-all"
-              :class="
-                sceneId === scene.id
-                  ? 'border-primary ring-2 ring-primary/30'
-                  : 'border-border hover:border-primary/40'
-              "
-              :disabled="sessionInProgress"
-              @click="sceneId = scene.id"
-            >
-              <div
-                class="h-24 bg-cover bg-center"
-                :style="{ backgroundImage: `url(${scene.url})` }"
-              />
-              <div class="flex items-center justify-between gap-2 px-3 py-2">
-                <span class="text-sm font-medium">{{ scene.label }}</span>
-                <span
-                  v-if="sceneId === scene.id"
-                  class="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
-                >
-                  <Check class="h-3 w-3" />
-                </span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <Card class="rounded-2xl border-border/80 bg-muted/20">
-          <CardHeader class="pb-3">
-            <CardTitle class="text-lg font-bold">Choose Classmates</CardTitle>
-            <CardDescription>
-              Classmates who join you in the discussion.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <PartnerSelectPanel
-              v-model="selectedCharacterIds"
-              :disabled="sessionInProgress"
-            />
-            <div v-if="!sessionInProgress" class="pt-1">
-              <Button
-                class="h-11 rounded-xl px-8 text-base font-semibold"
-                :disabled="!canStart"
-                @click="startSession"
-              >
-                Start discussion
-                <SakuraMark :size="16" class="text-primary-foreground" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </CardContent>
-    </Card>
-  </div>
-
-  <!-- Game phase: immersive fullscreen scene. z-[60] covers the NavBar (z-50);
+  <!-- Immersive fullscreen scene. z-[60] covers the NavBar (z-50);
        portaled popover/menu content gets z-[70] to stay above this overlay. -->
-  <div v-else class="fixed inset-0 z-[60] overflow-hidden">
+  <div class="fixed inset-0 z-[60] overflow-hidden">
     <!-- Gradient stays visible while the scene image loads -->
     <div class="absolute inset-0 bg-gradient-to-b from-pink-200/80 via-sky-100 to-amber-50" />
     <div
@@ -1631,9 +1325,20 @@ onUnmounted(() => {
       }"
     />
 
+    <!-- Loading shell while resume binds (never show setup on this route). -->
+    <div
+      v-if="!sessionBound"
+      class="absolute inset-0 z-10 grid place-items-center"
+    >
+      <div class="flex flex-col items-center gap-3 rounded-2xl border border-white/40 bg-white/90 px-6 py-5 shadow-lg backdrop-blur">
+        <Loader2 class="h-8 w-8 animate-spin text-primary" />
+        <div class="text-sm font-medium text-foreground">{{ statusText }}</div>
+      </div>
+    </div>
+
     <!-- Stage: partner characters side-by-side. bottom-0 so characters clip at the
          screen edge instead of floating above a background strip. -->
-    <div class="absolute inset-x-0 bottom-0 top-16">
+    <div v-if="sessionBound" class="absolute inset-x-0 bottom-0 top-16">
       <AgentAvatarGrid
         ref="avatarGridRef"
         game
@@ -1684,7 +1389,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Settings (top-right) -->
-    <Popover>
+    <Popover v-if="sessionBound">
       <PopoverTrigger as-child>
         <Button
           variant="secondary"
@@ -1753,7 +1458,7 @@ onUnmounted(() => {
 
     <!-- Who speaks first? -->
     <div
-      v-if="needFirstTurnChoice && !isEnded"
+      v-if="needFirstTurnChoice && !isEnded && sessionBound"
       class="pointer-events-none absolute inset-0 z-10 grid place-items-center p-4"
     >
       <Card class="pointer-events-auto w-[min(24rem,100%)] rounded-2xl shadow-xl">
@@ -1774,7 +1479,7 @@ onUnmounted(() => {
 
     <!-- Mic cluster (bottom-center) -->
     <div
-      v-if="!isEnded"
+      v-if="!isEnded && sessionBound"
       class="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2"
     >
       <div
@@ -1819,6 +1524,7 @@ onUnmounted(() => {
 
     <!-- Notebook: speaker opinions (bottom-right) -->
     <Button
+      v-if="sessionBound"
       variant="secondary"
       size="icon"
       class="absolute bottom-6 right-4 z-10 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
@@ -1828,6 +1534,7 @@ onUnmounted(() => {
       <NotebookPen class="h-5 w-5" />
     </Button>
     <ArgumentSummaryPanel
+      v-if="sessionBound"
       class="!bottom-20"
       :session-id="sessionId"
       :settled-turn-count="effectiveSettledTurnCount"

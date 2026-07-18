@@ -21,7 +21,7 @@ const routes = [
       {
         path: 'app/conversation',
         name: 'conversation',
-        component: () => import('@/views/ConversationView.vue'),
+        component: () => import('@/views/ConversationSetupView.vue'),
         meta: {
           requiresAuth: true,
         },
@@ -29,7 +29,7 @@ const routes = [
       {
         path: 'app/conversation/:id(\\d+)',
         name: 'conversation-session',
-        component: () => import('@/views/ConversationView.vue'),
+        component: () => import('@/views/ConversationGameView.vue'),
         meta: {
           requiresAuth: true,
         },

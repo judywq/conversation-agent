@@ -24,13 +24,9 @@ onMounted(() => {
     <NavBar v-if="!hideAppNav" />
 
     <main class="relative z-10 flex-grow">
-      <router-view v-slot="{ Component }">
-        <transition
-          name="fade"
-          mode="out-in"
-          appear
-        >
-          <component :is="Component" />
+      <router-view v-slot="{ Component, route }">
+        <transition name="fade" appear>
+          <component :is="Component" :key="route.fullPath" />
         </transition>
       </router-view>
     </main>
