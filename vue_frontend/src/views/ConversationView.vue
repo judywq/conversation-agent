@@ -1349,10 +1349,16 @@ function handleRecordShortcut(event: KeyboardEvent) {
   const focused = document.activeElement as HTMLElement | null
   if (focused) {
     const tag = focused.tagName?.toUpperCase()
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return
+    // Only yield Space to real typing contexts; focused buttons must not steal it
+    // (e.g. Replay after click would otherwise re-fire on Space).
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
     if (focused.isContentEditable) return
   }
   event.preventDefault()
+  // Capture-phase + stopPropagation so Space never reaches the focused button
+  // (reka-ui's own keydown handler would otherwise re-fire it). Enter still
+  // activates buttons for keyboard users.
+  event.stopPropagation()
   toggleRecordingFromKeyboard()
 }
 
@@ -1412,7 +1418,7 @@ onMounted(async () => {
       wsSessionBound.value = false
     }
   })
-  window.addEventListener('keydown', handleRecordShortcut)
+  window.addEventListener('keydown', handleRecordShortcut, true)
   window.addEventListener('pointerdown', handleConversationInteraction, { once: false })
   onUnmounted(() => {
     off()
@@ -1457,7 +1463,7 @@ watch(
 onUnmounted(() => {
   hideAppNav.value = false
   unlockOrientation()
-  window.removeEventListener('keydown', handleRecordShortcut)
+  window.removeEventListener('keydown', handleRecordShortcut, true)
   window.removeEventListener('pointerdown', handleConversationInteraction)
   clearEndedSummaryPollTimer()
   cancelWsWaits()
