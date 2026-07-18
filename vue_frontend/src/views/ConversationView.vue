@@ -1088,10 +1088,6 @@ function volunteer() {
   sendOrToast(() => sendSessionMessage({ type: 'raise_hand' }))
 }
 
-function pauseOrResume() {
-  sendOrToast(() => sendSessionMessage({ type: isPaused.value ? 'resume' : 'pause' }))
-}
-
 const exitConfirmOpen = ref(false)
 const notebookOpen = ref(false)
 
@@ -1685,14 +1681,6 @@ onUnmounted(() => {
     >
       <SakuraMark :size="14" />
       <span class="whitespace-nowrap font-medium">{{ statusText }}</span>
-      <button
-        v-if="sessionInProgress"
-        type="button"
-        class="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary hover:bg-primary/25"
-        @click="pauseOrResume"
-      >
-        {{ isPaused ? 'Resume' : 'Pause' }}
-      </button>
     </div>
 
     <!-- Settings (top-right) -->
