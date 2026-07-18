@@ -40,7 +40,8 @@ const appInstance = {
   init: vi.fn().mockResolvedValue(undefined),
   canvas: null as HTMLCanvasElement | null,
   screen: { width: 360, height: 240 },
-  stage: { addChild: vi.fn() },
+  stage: { addChild: vi.fn(), removeChild: vi.fn() },
+  ticker: { stop: vi.fn() },
   destroy: vi.fn(),
 }
 
@@ -182,8 +183,34 @@ describe('useLive2D', () => {
     const { init, dispose, status } = useLive2D(makeStage())
     await init({ url: '/m.model3.json' })
     dispose()
+    expect(appInstance.ticker.stop).toHaveBeenCalled()
+    expect(appInstance.stage.removeChild).toHaveBeenCalledWith(fakeModel)
+    // Assets-managed textures must not be destroyed — partner-select and in-game
+    // panels share the same model URLs via the Pixi Assets cache.
+    expect(fakeModel.destroy).toHaveBeenCalledWith({ children: true })
     expect(appInstance.destroy).toHaveBeenCalled()
     expect(status.value).toBe('idle')
+  })
+
+  it('dispose during in-flight model load does not destroy Assets textures', async () => {
+    let resolveFrom!: (model: typeof fakeModel) => void
+    ;(Live2DModel.from as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFrom = resolve
+        }),
+    )
+    const { init, dispose } = useLive2D(makeStage())
+    const initPromise = init({ url: '/shared.model3.json' })
+    // Let app.init complete so from() is pending, then dispose mid-load.
+    await vi.waitFor(() => {
+      expect(Live2DModel.from).toHaveBeenCalled()
+      expect(resolveFrom).toBeTypeOf('function')
+    })
+    dispose()
+    resolveFrom(fakeModel)
+    await expect(initPromise).resolves.toBe(false)
+    expect(fakeModel.destroy).toHaveBeenCalledWith({ children: true })
   })
 
   it('setIdle settles an in-flight speak() with false when the engine never calls onFinish/onError', async () => {

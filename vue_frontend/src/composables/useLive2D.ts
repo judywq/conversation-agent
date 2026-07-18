@@ -187,8 +187,11 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         })
 
         // dispose() ran while we were awaiting Live2DModel.from(); bail out cleanly.
+        // Do not destroy textures — Live2DModel.from() registers them in Pixi Assets;
+        // destroying TextureSources poisons the cache for later loads of the same URL
+        // (partner-select → in-game reuse).
         if (disposed || !app) {
-          instance.destroy({ children: true, texture: true, baseTexture: true })
+          instance.destroy({ children: true })
           return false
         }
 
@@ -211,7 +214,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         return true
       } catch (error) {
         console.error('Live2D init failed:', error)
-        model.value?.destroy({ children: true, texture: true, baseTexture: true })
+        model.value?.destroy({ children: true })
         model.value = null
         app?.destroy(true)
         app = null
@@ -336,8 +339,18 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     settlePendingMotion(false)
     // Teardown may race an in-flight init() (renderer mid-init); never let a
     // throw here abort a disposeAll() loop over sibling panels.
+    //
+    // Never pass texture/baseTexture:true — textures are Assets-managed. Partner
+    // select and in-game panels load the same model URLs; destroying TextureSources
+    // leaves the Assets cache holding dead entries and the next from() render
+    // crashes (pixelWidth of null).
     try {
-      model.value?.destroy({ children: true, texture: true, baseTexture: true })
+      app?.ticker.stop()
+      const instance = model.value
+      if (instance && app) {
+        app.stage.removeChild(instance)
+      }
+      instance?.destroy({ children: true })
       app?.destroy(true)
     } catch (error) {
       console.error('Live2D dispose failed:', error)
