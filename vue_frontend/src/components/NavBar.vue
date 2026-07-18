@@ -44,7 +44,7 @@ const isSheetOpen = ref(false)
 
 <template>
   <header
-    class="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-border/80 bg-card/90 px-4 shadow-sm backdrop-blur-md md:px-6"
+    class="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-border/80 bg-card/40 px-4 shadow-sm backdrop-blur-md md:px-6"
   >
     <nav
       class="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:flex-nowrap md:items-center md:gap-6 md:text-sm lg:gap-8"

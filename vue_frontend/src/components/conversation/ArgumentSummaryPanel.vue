@@ -211,7 +211,7 @@ onUnmounted(() => {
     v-if="visible"
     :class="
       embedded
-        ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-background'
+        ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-background/60 backdrop-blur-md'
         : 'pointer-events-auto fixed bottom-4 left-4 right-4 z-40 sm:left-auto sm:right-4 sm:w-[min(22rem,calc(100vw-2rem))]'
     "
   >
@@ -219,7 +219,7 @@ onUnmounted(() => {
       :class="
         embedded
           ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden'
-          : 'flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg'
+          : 'flex flex-col overflow-hidden rounded-lg border bg-background/60 shadow-lg backdrop-blur-md'
       "
     >
       <div class="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
