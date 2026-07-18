@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import AgentAvatarPanel from '@/components/conversation/AgentAvatarPanel.vue'
 import SakuraMark from '@/components/SakuraMark.vue'
 import {
@@ -55,6 +55,24 @@ const agents = computed(() => props.participants.filter((p) => p.type === 'agent
 const bubbleAgentName = computed(
   () => agents.value.find((a) => a.id === props.bubbleAgentId)?.name ?? '',
 )
+
+/** Shared cursor-anchored character menu. */
+const menuOpen = ref(false)
+const menuAgentId = ref<string | null>(null)
+const menuPos = ref({ x: 0, y: 0 })
+
+const menuAgent = computed(() => agents.value.find((a) => a.id === menuAgentId.value) ?? null)
+
+async function openCharacterMenu(agent: AgentParticipant, event: MouseEvent) {
+  menuAgentId.value = agent.id
+  menuPos.value = { x: event.clientX + 4, y: event.clientY + 4 }
+  // Close first if already open so radix remeasures against the new anchor.
+  if (menuOpen.value) {
+    menuOpen.value = false
+    await nextTick()
+  }
+  menuOpen.value = true
+}
 
 const gridClass = computed(() => {
   if (props.stacked) return 'grid-cols-1'
@@ -131,36 +149,47 @@ defineExpose({
       class="absolute inset-0 transition-[filter]"
       :class="activeSpeakerId === agent.id ? 'drop-shadow-[0_0_24px_rgba(255,255,255,0.55)]' : ''"
     />
-    <!-- Interaction layer: hosts the click menu. Gapless full-height columns so
-         slot centers match the canvas layout math (i + 0.5) / n and the click
-         target covers the whole character, head included. -->
+    <!-- Interaction layer: gapless full-height columns so slot centers match the
+         canvas layout math (i + 0.5) / n and the click target covers the character. -->
     <div class="flex h-full items-end justify-center">
       <div
         v-for="agent in agents"
         :key="agent.id"
         class="relative h-full flex-1"
       >
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            class="absolute inset-0 z-[5] cursor-pointer"
-            :aria-label="`${agent.name} options`"
-          />
-          <!-- z-[70]: the game overlay sits at z-[60], above the default portal z-50 -->
-          <DropdownMenuContent align="center" class="z-[70]">
-            <DropdownMenuItem v-if="replayingAgentId === agent.id" @click="emit('stopReplay')">
-              Stop replay
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              v-else
-              :disabled="!(replayableAgentIds ?? []).includes(agent.id)"
-              @click="emit('replay', agent.id)"
-            >
-              Replay {{ agent.name }}&rsquo;s last turn
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          type="button"
+          class="absolute inset-0 z-[5] cursor-pointer"
+          :aria-label="`${agent.name} options`"
+          @click="openCharacterMenu(agent, $event)"
+        />
       </div>
     </div>
+    <!-- Cursor-anchored menu: invisible fixed trigger at the click point. -->
+    <DropdownMenu v-model:open="menuOpen">
+      <DropdownMenuTrigger
+        class="pointer-events-none fixed z-[70] h-0 w-0 overflow-hidden opacity-0"
+        :style="{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }"
+        tabindex="-1"
+        aria-hidden="true"
+      />
+      <!-- z-[70]: the game overlay sits at z-[60], above the default portal z-50 -->
+      <DropdownMenuContent v-if="menuAgent" align="start" side="bottom" class="z-[70]">
+        <DropdownMenuItem
+          v-if="replayingAgentId === menuAgent.id"
+          @click="emit('stopReplay')"
+        >
+          Stop replay
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          v-else
+          :disabled="!(replayableAgentIds ?? []).includes(menuAgent.id)"
+          @click="emit('replay', menuAgent.id)"
+        >
+          Replay {{ menuAgent.name }}&rsquo;s last turn
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
     <!-- Dialog bar (visual-novel style): one half-transparent bar across the lower
          stage so it never covers a character's face. bottom-32 clears the mic cluster
          (the stage now reaches the viewport bottom). -->
@@ -170,7 +199,7 @@ defineExpose({
     >
       <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
       <div
-        class="pointer-events-auto relative max-h-48 w-[min(56rem,92vw)] overflow-visible rounded-2xl border border-primary/15 bg-white/60 px-6 py-5 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
+        class="pointer-events-auto relative max-h-48 w-[min(56rem,92vw)] overflow-visible rounded-2xl border border-primary/15 bg-white/60 px-6 py-5 pr-14 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
       >
         <div
           class="absolute -top-3 left-5 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground shadow"
@@ -178,6 +207,13 @@ defineExpose({
           <SakuraMark :size="14" class="text-primary-foreground" />
           {{ bubbleAgentName }}
         </div>
+        <button
+          type="button"
+          class="absolute right-3 top-3 rounded-md border border-foreground/15 bg-white/80 px-2.5 py-1 text-sm font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+          @click="emit('stopReplay')"
+        >
+          Stop
+        </button>
         <div class="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
           {{ bubbleText }}
         </div>

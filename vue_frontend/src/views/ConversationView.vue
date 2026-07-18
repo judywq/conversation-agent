@@ -169,7 +169,6 @@ const canStartMic = computed(
     needUserTurn.value &&
     !needFirstTurnChoice.value &&
     userTurnsAllowed.value &&
-    !agentPlaybackBusy.value &&
     agentStatus.value !== 'thinking' &&
     agentStatus.value !== 'searching_online',
 )
@@ -1186,6 +1185,7 @@ function chooseFirstTurn(speakFirst: boolean) {
 }
 
 async function startRecording() {
+  stopAllAudioPlayback()
   micState.value = 'requesting'
   clearRecordingPreview()
   try {
@@ -1652,7 +1652,7 @@ onUnmounted(() => {
         :replayable-agent-ids="replayableAgentIds"
         :replaying-agent-id="replayingAgentId"
         @replay="replayAgentLastTurn"
-        @stop-replay="stopManualTurnAudio"
+        @stop-replay="stopAllAudioPlayback"
       />
     </div>
 
