@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
+  AVATAR_DEFAULT_ZOOM,
+  AVATAR_GLOBAL_ZOOM,
+  avatarPresetByUrl,
   avatarPresetForAgent,
   FEMALE_AVATAR_PRESETS,
   MALE_AVATAR_PRESETS,
   normalizeAvatarBody,
+  resolveAvatarZoom,
 } from '../avatarPresets'
 
 describe('avatarPresets', () => {
@@ -28,5 +32,17 @@ describe('avatarPresets', () => {
     expect(avatarPresetForAgent('male', 1)).toBe(
       MALE_AVATAR_PRESETS[1 % MALE_AVATAR_PRESETS.length],
     )
+  })
+
+  it('looks up presets by url', () => {
+    expect(avatarPresetByUrl(FEMALE_AVATAR_PRESETS[0]!.url)).toBe(FEMALE_AVATAR_PRESETS[0])
+    expect(avatarPresetByUrl(MALE_AVATAR_PRESETS[0]!.url)).toBe(MALE_AVATAR_PRESETS[0])
+    expect(avatarPresetByUrl('/live2d/missing/Missing.model3.json')).toBeUndefined()
+  })
+
+  it('resolves zoom with global multiplier and optional user scale', () => {
+    expect(resolveAvatarZoom(undefined)).toBe(AVATAR_DEFAULT_ZOOM * AVATAR_GLOBAL_ZOOM)
+    expect(resolveAvatarZoom(2)).toBe(2 * AVATAR_GLOBAL_ZOOM)
+    expect(resolveAvatarZoom(2, 1.5)).toBe(2 * AVATAR_GLOBAL_ZOOM * 1.5)
   })
 })

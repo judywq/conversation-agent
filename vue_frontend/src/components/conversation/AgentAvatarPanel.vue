@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { avatarPresetForAgent } from '@/config/avatarPresets'
+import { avatarPresetByUrl, avatarPresetForAgent, resolveAvatarZoom } from '@/config/avatarPresets'
 import { useLive2D } from '@/composables/useLive2D'
 import type { LipSyncPayload } from '@/types/lipsync'
 
@@ -27,11 +27,11 @@ const { status, errorMessage, init, refit, speak, setIdle, dispose } = useLive2D
 
 const preset = computed(() => {
   const base = props.live2dUrl
-    ? { url: props.live2dUrl }
+    ? (avatarPresetByUrl(props.live2dUrl) ?? { url: props.live2dUrl })
     : avatarPresetForAgent(props.gender, props.index)
   return {
     ...base,
-    zoom: (base.zoom ?? 2.4) * (props.zoomScale ?? 1),
+    zoom: resolveAvatarZoom(base.zoom, props.zoomScale ?? 1),
     slots: props.slotCount,
     slot: props.slotIndex,
   }

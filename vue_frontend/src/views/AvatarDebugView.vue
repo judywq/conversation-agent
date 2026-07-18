@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { FEMALE_AVATAR_PRESETS, MALE_AVATAR_PRESETS } from '@/config/avatarPresets'
+import {
+  AVATAR_GLOBAL_ZOOM,
+  FEMALE_AVATAR_PRESETS,
+  MALE_AVATAR_PRESETS,
+} from '@/config/avatarPresets'
 import AvatarDebugCard from '@/components/conversation/AvatarDebugCard.vue'
 import { Button } from '@/components/ui/button'
 
@@ -9,6 +13,8 @@ type CardInstance = InstanceType<typeof AvatarDebugCard>
 
 const cards = ref<CardInstance[]>([])
 const loadingAll = ref(false)
+/** Preview multiplier; seed from config. Copy into AVATAR_GLOBAL_ZOOM when happy. */
+const globalZoom = ref(AVATAR_GLOBAL_ZOOM)
 
 function setCardRef(el: Element | ComponentPublicInstance | null) {
   if (el) {
@@ -41,6 +47,24 @@ async function loadAll() {
       </Button>
     </div>
 
+    <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+      <span class="shrink-0 text-sm font-medium">Global zoom</span>
+      <input
+        v-model.number="globalZoom"
+        type="range"
+        min="0.2"
+        max="3"
+        step="0.05"
+        class="h-8 min-w-0 flex-1 accent-primary sm:max-w-md"
+        aria-label="Global zoom"
+      />
+      <code
+        class="w-12 shrink-0 select-all text-right font-mono text-sm tabular-nums"
+        title="Copy into avatarPresets.ts as AVATAR_GLOBAL_ZOOM"
+        >{{ globalZoom.toFixed(2) }}</code
+      >
+    </div>
+
     <section class="space-y-3">
       <h2 class="text-lg font-medium">Female presets ({{ FEMALE_AVATAR_PRESETS.length }})</h2>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -49,6 +73,7 @@ async function loadAll() {
           :key="`F-${preset.url}`"
           :ref="setCardRef"
           :preset="preset"
+          :global-zoom="globalZoom"
         />
       </div>
     </section>
@@ -61,6 +86,7 @@ async function loadAll() {
           :key="`M-${preset.url}`"
           :ref="setCardRef"
           :preset="preset"
+          :global-zoom="globalZoom"
         />
       </div>
     </section>

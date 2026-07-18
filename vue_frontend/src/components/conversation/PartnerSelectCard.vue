@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { avatarPresetByUrl, resolveAvatarZoom } from '@/config/avatarPresets'
 import { useLive2D } from '@/composables/useLive2D'
 import type { AgentCharacter } from '@/services/conversationService'
 import { Check } from 'lucide-vue-next'
@@ -28,9 +29,12 @@ async function load() {
   if (status.value === 'ready' || status.value === 'loading') return
   await nextTick()
   if (!stageRef.value) return
-  await init({
+  const base = avatarPresetByUrl(props.character.live2d_url) ?? {
     url: props.character.live2d_url,
-    zoom: 1.8,
+  }
+  await init({
+    ...base,
+    zoom: resolveAvatarZoom(base.zoom),
   })
 }
 
