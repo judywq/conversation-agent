@@ -85,7 +85,6 @@ function isCardDisabled(id: string) {
           type="button"
           variant="outline"
           size="sm"
-          class="rounded-xl"
           :disabled="disabled || loading || characters.length === 0"
           @click="randomSelect"
         >

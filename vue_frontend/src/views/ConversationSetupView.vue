@@ -196,7 +196,7 @@ onUnmounted(() => {
               Major category
             </div>
             <Select v-model="selectedCategory" :disabled="isGeneratingScenario || isStarting">
-              <SelectTrigger class="h-11 w-full rounded-xl">
+              <SelectTrigger class="w-full">
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
@@ -218,7 +218,7 @@ onUnmounted(() => {
               v-model="selectedSubtopic"
               :disabled="!selectedCategory || isGeneratingScenario || isStarting"
             >
-              <SelectTrigger class="h-11 w-full rounded-xl">
+              <SelectTrigger class="w-full">
                 <SelectValue placeholder="Select a subtopic" />
               </SelectTrigger>
               <SelectContent>
@@ -243,7 +243,7 @@ onUnmounted(() => {
             <Button
               variant="default"
               size="sm"
-              class="rounded-xl font-semibold"
+              class="font-semibold"
               :disabled="!canGenerateScenario"
               @click="generateDiscussionScenario"
             >
@@ -309,7 +309,7 @@ onUnmounted(() => {
             <PartnerSelectPanel v-model="selectedCharacterIds" :disabled="isStarting" />
             <div class="pt-1">
               <Button
-                class="h-11 rounded-xl px-8 text-base font-semibold"
+                class="h-11 px-8 text-base font-semibold"
                 :disabled="!canStart"
                 @click="startSession"
               >

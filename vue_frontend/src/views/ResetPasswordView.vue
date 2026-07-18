@@ -17,7 +17,6 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Enter your new password"
-                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -36,7 +35,6 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Confirm your new password"
-                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -50,7 +48,7 @@
 
         <Button
           type="submit"
-          class="h-11 w-full rounded-xl font-semibold"
+          class="h-11 w-full font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid || success"
         >
           {{ isSubmitting ? 'Resetting...' : 'Reset Password' }}

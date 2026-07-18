@@ -84,7 +84,7 @@ const onSubmit = form.handleSubmit(async (values) => {
                   v-bind="componentField"
                   type="email"
                   placeholder="name@example.com"
-                  class="h-11 rounded-xl pl-10"
+                  class="pl-10"
                   :disabled="loading"
                 />
               </div>
@@ -115,7 +115,7 @@ const onSubmit = form.handleSubmit(async (values) => {
                   v-bind="componentField"
                   :type="showPassword ? 'text' : 'password'"
                   placeholder="Enter your password"
-                  class="h-11 rounded-xl pl-10 pr-10"
+                  class="pl-10 pr-10"
                   :disabled="loading"
                 />
                 <button
@@ -136,7 +136,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 
         <Button
           type="submit"
-          class="mt-1 h-11 w-full rounded-xl text-base font-semibold"
+          class="mt-1 h-11 w-full text-base font-semibold"
           :disabled="loading || !form.meta.value.valid"
         >
           <Loader2

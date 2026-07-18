@@ -19,7 +19,6 @@
                 v-bind="componentField"
                 type="email"
                 placeholder="name@example.com"
-                class="h-11 rounded-xl"
                 :disabled="isSubmitting"
               />
             </FormControl>
@@ -33,7 +32,7 @@
 
         <Button
           type="submit"
-          class="h-11 w-full rounded-xl font-semibold"
+          class="h-11 w-full font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid"
         >
           {{ isSubmitting ? 'Sending...' : 'Send Reset Link' }}

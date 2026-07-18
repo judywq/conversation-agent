@@ -101,7 +101,6 @@
           </div>
           <Button
             variant="outline"
-            class="rounded-xl"
             type="button"
             :disabled="isGeneratingCefr"
             @click="generateCefrSamples"
@@ -129,7 +128,7 @@
               </div>
               <Button
                 type="button"
-                class="shrink-0 rounded-xl"
+                class="shrink-0"
                 :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
                 @click="selectedCefrLevel = sample.level"
               >
@@ -148,7 +147,6 @@
         <Button
           type="button"
           variant="outline"
-          class="rounded-xl"
           :disabled="isPrevDisabled || isSubmitting"
           @click="goPrev"
         >
@@ -156,7 +154,7 @@
         </Button>
         <Button
           type="button"
-          class="rounded-xl font-semibold"
+          class="font-semibold"
           :disabled="isSubmitting"
           @click="handlePrimaryAction"
         >

@@ -9,7 +9,7 @@
     <CardContent>
       <div class="grid gap-4">
         <router-link :to="{ name: 'login' }">
-          <Button class="h-11 w-full rounded-xl font-semibold">Back to Login</Button>
+          <Button class="h-11 w-full font-semibold">Back to Login</Button>
         </router-link>
       </div>
     </CardContent>

@@ -14,7 +14,6 @@
           type="button"
           variant="outline"
           size="sm"
-          class="rounded-xl"
           :disabled="editingSection !== null"
           @click="startEdit('about')"
         >
@@ -34,7 +33,6 @@
         <div class="flex flex-wrap gap-2">
           <Button
             type="button"
-            class="rounded-xl"
             :disabled="isSubmitting"
             @click="saveSection('about')"
           >
@@ -43,7 +41,6 @@
           <Button
             type="button"
             variant="outline"
-            class="rounded-xl"
             :disabled="isSubmitting"
             @click="cancelEdit"
           >
@@ -83,7 +80,6 @@
           type="button"
           variant="outline"
           size="sm"
-          class="rounded-xl"
           :disabled="editingSection !== null"
           @click="startEdit('ocean')"
         >
@@ -96,7 +92,6 @@
         <div class="flex flex-wrap gap-2">
           <Button
             type="button"
-            class="rounded-xl"
             :disabled="isSubmitting"
             @click="saveSection('ocean')"
           >
@@ -105,7 +100,6 @@
           <Button
             type="button"
             variant="outline"
-            class="rounded-xl"
             :disabled="isSubmitting"
             @click="cancelEdit"
           >
@@ -139,7 +133,6 @@
           type="button"
           variant="outline"
           size="sm"
-          class="rounded-xl"
           :disabled="editingSection !== null"
           @click="startEdit('cefr')"
         >
@@ -159,7 +152,6 @@
         <Button
           type="button"
           variant="outline"
-          class="rounded-xl"
           :disabled="isGeneratingCefr"
           @click="generateCefrSamples"
         >
@@ -186,7 +178,7 @@
             </div>
             <Button
               type="button"
-              class="shrink-0 rounded-xl"
+              class="shrink-0"
               :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
               @click="selectedCefrLevel = sample.level"
             >
@@ -197,7 +189,6 @@
         <div class="flex flex-wrap gap-2">
           <Button
             type="button"
-            class="rounded-xl"
             :disabled="isSubmitting"
             @click="saveSection('cefr')"
           >
@@ -206,7 +197,6 @@
           <Button
             type="button"
             variant="outline"
-            class="rounded-xl"
             :disabled="isSubmitting"
             @click="cancelEdit"
           >

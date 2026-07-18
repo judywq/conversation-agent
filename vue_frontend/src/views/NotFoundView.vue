@@ -4,7 +4,7 @@
     <h1 class="mb-3 text-4xl font-bold">404</h1>
     <p class="mb-8 text-xl text-muted-foreground">Page not found</p>
     <router-link :to="{ name: 'home' }">
-      <Button class="h-11 rounded-xl px-6 font-semibold">Return Home</Button>
+      <Button class="h-11 px-6 font-semibold">Return Home</Button>
     </router-link>
   </div>
 </template>

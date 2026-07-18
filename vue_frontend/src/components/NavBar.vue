@@ -76,7 +76,7 @@ const isSheetOpen = ref(false)
     </nav>
     <Sheet v-model:open="isSheetOpen">
       <SheetTrigger as-child>
-        <Button variant="outline" size="icon" class="shrink-0 rounded-xl md:hidden">
+        <Button variant="outline" size="icon" class="shrink-0 md:hidden">
           <Menu class="h-5 w-5" />
           <span class="sr-only">Toggle navigation menu</span>
         </Button>

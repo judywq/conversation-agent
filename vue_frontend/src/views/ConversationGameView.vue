@@ -1361,7 +1361,7 @@ onUnmounted(() => {
     <Button
       variant="secondary"
       size="icon"
-      class="absolute left-4 top-4 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
+      class="absolute left-4 top-4 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
       aria-label="Exit without ending session"
       @click="onExitClick"
     >
@@ -1373,7 +1373,7 @@ onUnmounted(() => {
       v-if="sessionInProgress"
       variant="secondary"
       size="icon"
-      class="absolute left-[4.75rem] top-4 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-destructive shadow-lg backdrop-blur hover:bg-white"
+      class="absolute left-[4.75rem] top-4 h-11 w-11 border border-white/30 bg-white/85 text-destructive shadow-lg backdrop-blur hover:bg-white"
       aria-label="End session"
       @click="exitConfirmOpen = true"
     >
@@ -1394,7 +1394,7 @@ onUnmounted(() => {
         <Button
           variant="secondary"
           size="icon"
-          class="absolute right-4 top-4 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
+          class="absolute right-4 top-4 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
           aria-label="Settings"
         >
           <Settings class="h-5 w-5" />
@@ -1469,8 +1469,8 @@ onUnmounted(() => {
           </CardDescription>
         </CardHeader>
         <CardContent class="flex flex-col gap-2 sm:flex-row">
-          <Button class="rounded-xl" :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
-          <Button variant="outline" class="rounded-xl" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">
+          <Button :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
+          <Button variant="outline" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">
             Let a partner start
           </Button>
         </CardContent>
@@ -1489,8 +1489,8 @@ onUnmounted(() => {
         <div class="text-sm font-medium">Preview recording</div>
         <audio :src="recordedUrl" controls class="w-full" />
         <div class="flex gap-2">
-          <Button size="sm" class="rounded-xl" :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
-          <Button size="sm" variant="outline" class="rounded-xl" @click="redoRecording">Redo</Button>
+          <Button size="sm" :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
+          <Button size="sm" variant="outline" @click="redoRecording">Redo</Button>
         </div>
       </div>
       <button
@@ -1527,7 +1527,7 @@ onUnmounted(() => {
       v-if="sessionBound"
       variant="secondary"
       size="icon"
-      class="absolute bottom-6 right-4 z-10 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
+      class="absolute bottom-6 right-4 z-10 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
       aria-label="Speaker opinions"
       @click="notebookOpen = !notebookOpen"
     >
@@ -1554,13 +1554,12 @@ onUnmounted(() => {
         <CardContent class="space-y-4">
           <div v-if="turns.length > 0" class="space-y-2">
             <div class="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" class="rounded-xl" @click="downloadTranscript">
+              <Button variant="outline" size="sm" @click="downloadTranscript">
                 Download transcript
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                class="rounded-xl"
                 :disabled="!canDownloadArgumentStructure"
                 @click="downloadArgumentStructure"
               >
@@ -1569,7 +1568,6 @@ onUnmounted(() => {
               <Button
                 variant="outline"
                 size="sm"
-                class="rounded-xl"
                 :disabled="!canDownloadArgumentStructure"
                 @click="downloadCombinedExport"
               >
@@ -1593,7 +1591,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-else class="text-sm text-muted-foreground">No turns were recorded.</div>
-          <Button class="rounded-xl font-semibold" @click="exitToSetup">Done</Button>
+          <Button class="font-semibold" @click="exitToSetup">Done</Button>
         </CardContent>
       </Card>
     </div>

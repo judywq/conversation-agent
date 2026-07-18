@@ -12,7 +12,7 @@
         Practice academic dialogue with AI classmates in a visual-novel style seminar.
       </p>
       <router-link :to="{ name: 'login' }">
-        <Button class="h-11 rounded-xl px-8 text-base font-semibold">
+        <Button class="h-11 px-8 text-base font-semibold">
           Enter Campus
           <SakuraMark :size="16" class="text-primary-foreground" />
         </Button>

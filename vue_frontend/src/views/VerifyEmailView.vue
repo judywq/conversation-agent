@@ -101,7 +101,6 @@ const handleSubmit = form.handleSubmit(async (values) => {
                 v-bind="componentField"
                 type="text"
                 placeholder="Enter verification code"
-                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -122,7 +121,7 @@ const handleSubmit = form.handleSubmit(async (values) => {
 
         <Button
           type="submit"
-          class="h-11 w-full rounded-xl font-semibold"
+          class="h-11 w-full font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid || success"
         >
           {{ isSubmitting ? 'Verifying...' : 'Verify Email' }}
