@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import SakuraCorner from '@/components/SakuraCorner.vue';
 import SakuraMark from '@/components/SakuraMark.vue';
 import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
@@ -59,15 +60,16 @@ const onSubmit = form.handleSubmit(async (values) => {
 </script>
 
 <template>
-  <Card class="mx-auto w-full overflow-hidden rounded-2xl border-border/80 shadow-lg shadow-primary/5 sm:w-[26rem]">
-    <CardHeader class="space-y-3 pb-2 text-center">
+  <Card class="relative mx-auto w-full overflow-hidden rounded-2xl border-border/80 shadow-lg shadow-primary/5 sm:w-[26rem]">
+    <SakuraCorner class="opacity-80" :size="88" />
+    <CardHeader class="relative z-[2] space-y-3 pb-2 text-center">
       <div class="flex items-center justify-center gap-2">
         <SakuraMark :size="26" />
         <span class="text-lg font-bold tracking-[0.14em] text-foreground uppercase">ConvAgent</span>
       </div>
       <CardTitle class="text-2xl font-bold text-foreground">Welcome back</CardTitle>
     </CardHeader>
-    <CardContent class="pt-2">
+    <CardContent class="relative z-[2] pt-2">
       <form @submit="onSubmit" class="grid gap-4">
         <FormField
           v-slot="{ componentField }"

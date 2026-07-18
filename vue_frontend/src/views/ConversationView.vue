@@ -18,6 +18,7 @@ import {
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
 import PartnerSelectPanel from '@/components/conversation/PartnerSelectPanel.vue'
+import SakuraCorner from '@/components/SakuraCorner.vue'
 import SakuraMark from '@/components/SakuraMark.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -1423,14 +1424,15 @@ onUnmounted(() => {
 
 <template>
   <div v-if="!showConversationPanel" class="container mx-auto space-y-6 px-4 py-8">
-    <Card class="mx-auto max-w-5xl overflow-hidden rounded-2xl border-border/80 shadow-sm">
-      <CardHeader class="space-y-1">
+    <Card class="relative mx-auto max-w-5xl overflow-hidden rounded-2xl border-border/80 shadow-sm">
+      <SakuraCorner class="opacity-80" :size="96" />
+      <CardHeader class="relative z-[2] space-y-1">
         <CardTitle class="text-2xl font-bold">Discussion Setup</CardTitle>
         <CardDescription>
           Choose a topic, set the scene, then pick classmates for your seminar.
         </CardDescription>
       </CardHeader>
-      <CardContent class="space-y-6">
+      <CardContent class="relative z-[2] space-y-6">
         <div class="grid gap-4 sm:grid-cols-2">
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-sm font-medium">
