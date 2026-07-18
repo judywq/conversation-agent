@@ -56,7 +56,7 @@ function onClick() {
 <template>
   <button
     type="button"
-    class="group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-left transition-all"
+    class="group relative flex flex-col overflow-hidden rounded-2xl border bg-card/80 text-left shadow-sm backdrop-blur-md transition-all"
     :class="[
       selected
         ? 'border-primary shadow-md ring-2 ring-primary/30'

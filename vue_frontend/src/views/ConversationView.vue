@@ -45,6 +45,7 @@ import {
   type ConversationWsEvent,
 } from '@/services/conversationWs'
 import { useAuthStore } from '@/stores/auth'
+import { hideAppNav } from '@/composables/useLayoutChrome'
 import { isLipSyncPayload } from '@/types/lipsync'
 import {
   buildExportFilename,
@@ -336,6 +337,14 @@ let playbackAbortController: AbortController | null = null
 
 const showConversationPanel = computed(() => !!sessionId.value || isEnded.value)
 const sessionInProgress = computed(() => !!sessionId.value && !isEnded.value)
+
+watch(
+  showConversationPanel,
+  (immersive) => {
+    hideAppNav.value = immersive
+  },
+  { immediate: true },
+)
 
 const showArgumentSummary = computed(() => !!sessionId.value && turns.value.length > 0)
 
@@ -1412,6 +1421,7 @@ watch(
 )
 
 onUnmounted(() => {
+  hideAppNav.value = false
   unlockOrientation()
   window.removeEventListener('keydown', handleRecordShortcut)
   window.removeEventListener('pointerdown', handleConversationInteraction)

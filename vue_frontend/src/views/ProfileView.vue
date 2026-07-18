@@ -22,7 +22,7 @@
         </div>
       </CardHeader>
       <CardContent class="space-y-6">
-        <section class="space-y-4 rounded-2xl border border-border/80 bg-muted/30 p-4 sm:p-5">
+        <section class="space-y-4">
           <div class="space-y-1">
             <h2 class="text-base font-semibold">About you</h2>
             <p class="text-sm text-muted-foreground">
@@ -85,7 +85,7 @@
           </div>
         </section>
 
-        <section class="space-y-4 rounded-2xl border border-border/80 bg-muted/30 p-4 sm:p-5">
+        <section class="space-y-4">
           <div class="space-y-1">
             <h2 class="text-base font-semibold">English proficiency</h2>
             <p class="text-sm text-muted-foreground">
@@ -120,7 +120,7 @@
           <div v-if="cefrSampleList.length === 0" class="text-sm text-muted-foreground">
             Generate samples to choose your starting level.
           </div>
-          <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-2xl border border-border/80 bg-card p-3">
+          <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-2xl border border-border/80 bg-card/40 p-3 backdrop-blur-sm">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="flex flex-wrap items-center gap-3">
                 <div class="font-medium w-5 text-center">{{ idx + 1 }}</div>

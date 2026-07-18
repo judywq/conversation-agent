@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Footer from '@/components/Footer.vue';
 import SakuraMark from '@/components/SakuraMark.vue';
+import SceneBackdrop from '@/components/SceneBackdrop.vue';
 import { defaultAuthenticatedRoute } from '@/lib/authNavigation';
 import { ensureCsrfToken } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
@@ -22,12 +23,7 @@ onMounted(() => {
 
 <template>
   <div class="relative min-h-screen flex flex-col overflow-hidden bg-background">
-    <div
-      class="pointer-events-none absolute inset-0 bg-cover bg-center scale-105 blur-sm brightness-95"
-      style="background-image: url('/scenes/classroom.png')"
-      aria-hidden="true"
-    />
-    <div class="pointer-events-none absolute inset-0 bg-background/55 sakura-petals" aria-hidden="true" />
+    <SceneBackdrop />
 
     <nav class="relative z-10 w-full py-5">
       <div class="container mx-auto px-4">

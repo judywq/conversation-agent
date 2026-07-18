@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import NavBar from '@/components/NavBar.vue';
-import Footer from '@/components/Footer.vue';
+import SceneBackdrop from '@/components/SceneBackdrop.vue';
+import { hideAppNav } from '@/composables/useLayoutChrome';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import { onMounted } from 'vue';
@@ -17,12 +18,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background flex flex-col">
-    <!-- NavBar -->
-    <NavBar />
+  <div class="relative min-h-screen flex flex-col bg-background">
+    <SceneBackdrop />
 
-    <!-- Main Content -->
-    <main class="flex-grow">
+    <NavBar v-if="!hideAppNav" />
+
+    <main class="relative z-10 flex-grow">
       <router-view v-slot="{ Component }">
         <transition
           name="fade"
@@ -33,9 +34,6 @@ onMounted(() => {
         </transition>
       </router-view>
     </main>
-
-    <!-- Footer -->
-    <!-- <Footer /> -->
   </div>
 </template>
 
