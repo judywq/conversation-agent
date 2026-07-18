@@ -8,6 +8,8 @@ export type ConversationParticipant = {
   gender?: string
   voice_title?: string
   avatar_body?: string
+  live2d_url?: string | null
+  character_id?: string
 }
 
 export type ConversationTurn = {

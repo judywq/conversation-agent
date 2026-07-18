@@ -14,6 +14,7 @@ import {
 } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
+import PartnerSelectPanel from '@/components/conversation/PartnerSelectPanel.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -71,7 +72,7 @@ const selectedSubtopic = ref('')
 const isGeneratingScenario = ref(false)
 const scenarioArticles = ref<DiscussionScenarioResult['articles']>([])
 const MAX_AGENT_COUNT = 3
-const agentCount = ref<number>(MAX_AGENT_COUNT)
+const selectedCharacterIds = ref<string[]>([])
 
 type Participant = ConversationParticipant
 
@@ -334,6 +335,8 @@ const canStart = computed(
     connected.value &&
     (!sessionId.value || isEnded.value) &&
     !!topic.value.trim() &&
+    selectedCharacterIds.value.length >= 1 &&
+    selectedCharacterIds.value.length <= MAX_AGENT_COUNT &&
     !!authStore.user?.profile_completed,
 )
 
@@ -1021,7 +1024,11 @@ function startSession() {
   void (async () => {
     try {
       await ws.ready()
-      ws.send({ type: 'start_session', topic: topic.value.trim(), agent_count: agentCount.value })
+      ws.send({
+        type: 'start_session',
+        topic: topic.value.trim(),
+        character_ids: selectedCharacterIds.value,
+      })
     } catch {
       connected.value = false
       toast({
@@ -1497,19 +1504,10 @@ onUnmounted(() => {
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-2">
-            <div class="flex items-center gap-3">
-              <div class="text-sm font-medium w-36 shrink-0">Number of partners</div>
-              <select
-                v-model.number="agentCount"
-                class="h-9 rounded-md border bg-background px-3 text-sm"
-                :disabled="sessionInProgress"
-              >
-                <option v-for="n in MAX_AGENT_COUNT" :key="n" :value="n">{{ n }}</option>
-              </select>
-            </div>
-            <p class="text-xs text-muted-foreground">
-              Choose how many partners join you (1–{{ MAX_AGENT_COUNT }}). More partners means a larger group discussion.
-            </p>
+            <PartnerSelectPanel
+              v-model="selectedCharacterIds"
+              :disabled="sessionInProgress"
+            />
             <div v-if="!sessionInProgress" class="pt-2">
               <Button :disabled="!canStart" @click="startSession">Start</Button>
             </div>

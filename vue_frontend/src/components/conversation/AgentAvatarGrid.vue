@@ -17,6 +17,8 @@ export type AgentParticipant = {
   gender?: string
   voice_title?: string
   avatar_body?: string
+  live2d_url?: string | null
+  character_id?: string
 }
 
 const props = defineProps<{
@@ -117,6 +119,7 @@ defineExpose({
       :agent-id="agent.id"
       :name="agent.name"
       :gender="agent.avatar_body || agent.gender"
+      :live2d-url="agent.live2d_url || undefined"
       :index="index"
       :slot-count="agents.length"
       :slot-index="index"
@@ -183,6 +186,7 @@ defineExpose({
         :agent-id="agent.id"
         :name="agent.name"
         :gender="agent.avatar_body || agent.gender"
+        :live2d-url="agent.live2d_url || undefined"
         :index="index"
         :active="activeSpeakerId === agent.id"
         :agent-status="agentStatus"

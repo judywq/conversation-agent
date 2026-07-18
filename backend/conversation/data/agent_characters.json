@@ -1,0 +1,42 @@
+[
+  {
+    "id": "haru",
+    "display_name": "Haru",
+    "live2d_url": "/live2d/haru/Haru.model3.json",
+    "persona_name": "Supportive Builder",
+    "gender": "female",
+    "voice_preset_name": "Emma"
+  },
+  {
+    "id": "natori",
+    "display_name": "Natori",
+    "live2d_url": "/live2d/natori/Natori.model3.json",
+    "persona_name": "Fact Checker",
+    "gender": "male",
+    "voice_preset_name": "Oliver"
+  },
+  {
+    "id": "hiyori",
+    "display_name": "Hiyori",
+    "live2d_url": "/live2d/hiyori/Hiyori.model3.json",
+    "persona_name": "Discussion Driver",
+    "gender": "female",
+    "voice_preset_name": "Ava"
+  },
+  {
+    "id": "mao",
+    "display_name": "Mao",
+    "live2d_url": "/live2d/mao/Mao.model3.json",
+    "persona_name": "Idea Explorer",
+    "gender": "female",
+    "voice_preset_name": "Mia"
+  },
+  {
+    "id": "epsilon",
+    "display_name": "Epsilon",
+    "live2d_url": "/live2d/epsilon/Epsilon_free.model3.json",
+    "persona_name": "Tense Skeptic",
+    "gender": "female",
+    "voice_preset_name": "Isabella"
+  }
+]

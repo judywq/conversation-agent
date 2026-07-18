@@ -204,8 +204,12 @@ def provider_voice_id(
     return ""
 
 
+def voice_preset_by_name(name: str) -> AgentVoicePreset | None:
+    return _VOICE_PRESETS_BY_NAME.get(str(name or "").strip())
+
+
 def voice_reference_id_for_name(name: str, *, provider: str | None = None) -> str:
-    preset = _VOICE_PRESETS_BY_NAME.get(name.strip())
+    preset = voice_preset_by_name(name)
     if preset is None:
         return ""
     return provider_voice_id(preset, provider=provider)

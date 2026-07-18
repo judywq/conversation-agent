@@ -115,9 +115,23 @@ export interface ConversationSessionListResult {
   results: ConversationSessionSummary[]
 }
 
+export interface AgentCharacter {
+  id: string
+  display_name: string
+  live2d_url: string
+  persona_name: string
+  gender: string
+  voice_preset_name: string
+}
+
 export const PROFILE_ONBOARDING_CEFR_TOPIC = 'University life and learning English'
 
 export class ConversationService {
+  static async fetchAgentCharacters(): Promise<AgentCharacter[]> {
+    const res = await api.get<{ characters: AgentCharacter[] }>('/conversation/characters/')
+    return res.data.characters
+  }
+
   static async fetchNewsTaxonomy(): Promise<{ taxonomy_version: string; categories: NewsCategory[] }> {
     const res = await api.get<{ taxonomy_version: string; categories: NewsCategory[] }>('/news/taxonomy/')
     return res.data

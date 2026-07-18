@@ -10,6 +10,8 @@ from rest_framework.views import APIView
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
 from backend.conversation.services.argument_summary import get_argument_summary_for_session
+from backend.conversation.services.agent_characters import AgentCharacterError
+from backend.conversation.services.agent_characters import get_agent_characters
 from backend.conversation.services.session_serialization import session_detail_to_dict
 from backend.conversation.services.session_serialization import session_summary_to_dict
 from backend.conversation.services.discussion_scenario import DISCUSSION_PROFILE_FIELDS
@@ -22,6 +24,17 @@ from backend.news.taxonomy import get_category
 from backend.news.taxonomy import get_subtopic
 
 logger = logging.getLogger(__name__)
+
+
+class AgentCharactersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            characters = get_agent_characters()
+        except AgentCharacterError as exc:
+            return Response({"detail": str(exc)}, status=500)
+        return Response({"characters": [c.to_dict() for c in characters]})
 
 
 class SpeechToTextView(APIView):

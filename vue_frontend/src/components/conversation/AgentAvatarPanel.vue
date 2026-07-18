@@ -8,6 +8,7 @@ const props = defineProps<{
   agentId: string
   name: string
   gender?: string
+  live2dUrl?: string
   index: number
   active: boolean
   agentStatus?: 'idle' | 'thinking' | 'finished' | 'searching_online'
@@ -25,7 +26,9 @@ const stageRef = ref<HTMLElement | null>(null)
 const { status, errorMessage, init, refit, speak, setIdle, dispose } = useLive2D(stageRef)
 
 const preset = computed(() => {
-  const base = avatarPresetForAgent(props.gender, props.index)
+  const base = props.live2dUrl
+    ? { url: props.live2dUrl }
+    : avatarPresetForAgent(props.gender, props.index)
   return {
     ...base,
     zoom: (base.zoom ?? 2.4) * (props.zoomScale ?? 1),
@@ -58,6 +61,14 @@ async function ensureInit() {
   if (!stageRef.value) return
   await init(preset.value)
 }
+
+watch(
+  () => props.live2dUrl,
+  () => {
+    dispose()
+    void ensureInit()
+  },
+)
 
 watch(
   () => props.warmedUp,

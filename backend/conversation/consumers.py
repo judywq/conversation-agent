@@ -21,9 +21,13 @@ from backend.conversation.services.session_news_chunks import materialize_sessio
 from backend.conversation.services.agent_selection import (
     select_complementary_agent_personas,
 )
+from backend.conversation.services.agent_characters import AgentCharacter
+from backend.conversation.services.agent_characters import AgentCharacterError
+from backend.conversation.services.agent_characters import resolve_character_ids
 from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_voice_preset_for_persona
 from backend.conversation.services.names import provider_voice_id
+from backend.conversation.services.names import voice_preset_by_name
 from backend.conversation.services.retrieval import persist_turn_retrieval_safely
 from backend.conversation.services.tts import synthesize_speech_with_lipsync
 from backend.conversation.services.tts import tts_provider_timeouts
@@ -196,6 +200,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         if msg_type == "start_session":
             topic = str(content.get("topic") or "")
             requested_agent_count = content.get("agent_count")
+            raw_character_ids = content.get("character_ids")
+            character_ids: list[str] | None = None
+            if isinstance(raw_character_ids, list) and raw_character_ids:
+                character_ids = [str(cid).strip() for cid in raw_character_ids if str(cid).strip()]
             try:
                 agent_count = int(requested_agent_count) if requested_agent_count is not None else None
             except Exception:
@@ -215,8 +223,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                 session = await self._create_session(
                     topic=topic,
                     agent_count=agent_count,
+                    character_ids=character_ids,
                     discussion=discussion,
                 )
+            except AgentCharacterError as exc:
+                await self.send_json({"type": "error", "message": str(exc)})
+                return
             except Exception as exc:
                 logger.exception("start_session_failed topic=%s", topic[:120])
                 await self.send_json(
@@ -581,26 +593,33 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             "discussion_web_context": str(getattr(profile, "discussion_web_context", "") or ""),
         }
 
-    @database_sync_to_async
-    def _create_session(
+    def _create_session_sync(
         self,
         *,
         topic: str,
         agent_count: int | None = None,
+        character_ids: list[str] | None = None,
         discussion: dict | None = None,
     ) -> ConversationSession:
         user_model = get_user_model()
         user = user_model.objects.select_related("userprofile").get(pk=self.scope["user"].pk)
-        desired_count = agent_count
-        if desired_count is None:
-            desired_count = int(getattr(settings, "CONVERSATION_AGENT_COUNT", 3) or 3)
-        desired_count = max(1, min(MAX_AGENT_COUNT, int(desired_count)))
         discussion = discussion or {}
         news_article_id = discussion.get("news_article_id")
         discussion_article_ids = list(discussion.get("discussion_article_ids") or [])
         if not discussion_article_ids and news_article_id:
             discussion_article_ids = [int(news_article_id)]
         scenario = str(discussion.get("scenario") or topic or "").strip()
+
+        selected_characters = None
+        if character_ids:
+            selected_characters = resolve_character_ids(character_ids)
+            desired_count = len(selected_characters)
+        else:
+            desired_count = agent_count
+            if desired_count is None:
+                desired_count = int(getattr(settings, "CONVERSATION_AGENT_COUNT", 3) or 3)
+            desired_count = max(1, min(MAX_AGENT_COUNT, int(desired_count)))
+
         session = ConversationSession.objects.create(
             user=user,
             topic=topic,
@@ -619,6 +638,97 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             user.userprofile.cefr_level if hasattr(user, "userprofile") else "",
         )
         proficiency_guidance = proficiency["proficiency_guidance"]
+
+        if selected_characters is not None:
+            agent_rows = self._agent_rows_from_characters(
+                session=session,
+                characters=selected_characters,
+                user_major=user_major,
+                agent_cefr_level=agent_cefr_level,
+                proficiency_guidance=proficiency_guidance,
+                reference_utterance=proficiency["reference_utterance"],
+            )
+        else:
+            agent_rows = self._agent_rows_from_ocean(
+                session=session,
+                ocean=ocean,
+                desired_count=desired_count,
+                user_major=user_major,
+                agent_cefr_level=agent_cefr_level,
+                proficiency_guidance=proficiency_guidance,
+                reference_utterance=proficiency["reference_utterance"],
+            )
+        AgentProfile.objects.bulk_create(agent_rows)
+        return session
+
+    async def _create_session(
+        self,
+        *,
+        topic: str,
+        agent_count: int | None = None,
+        character_ids: list[str] | None = None,
+        discussion: dict | None = None,
+    ) -> ConversationSession:
+        return await database_sync_to_async(self._create_session_sync)(
+            topic=topic,
+            agent_count=agent_count,
+            character_ids=character_ids,
+            discussion=discussion,
+        )
+
+    def _agent_rows_from_characters(
+        self,
+        *,
+        session: ConversationSession,
+        characters: list[AgentCharacter],
+        user_major: str,
+        agent_cefr_level: str,
+        proficiency_guidance: str,
+        reference_utterance: str,
+    ) -> list[AgentProfile]:
+        agent_rows: list[AgentProfile] = []
+        for character in characters:
+            voice_preset = voice_preset_by_name(character.voice_preset_name)
+            if voice_preset is None:
+                raise AgentCharacterError(
+                    f"Unknown voice_preset_name for {character.id}: {character.voice_preset_name}",
+                )
+            agent_rows.append(
+                AgentProfile(
+                    session=session,
+                    agent_id=character.id,
+                    display_name=character.display_name,
+                    personality={
+                        "persona_name": character.persona_name,
+                        "character_id": character.id,
+                        "live2d_url": character.live2d_url,
+                        "major": user_major,
+                        "voice_chinese_name": voice_preset.chinese_name,
+                        "voice_gender": voice_preset.gender,
+                        "voice_title": voice_preset.title,
+                    },
+                    voice=provider_voice_id(voice_preset),
+                    traits={
+                        "style": character.persona_name.lower().replace(" ", "_"),
+                        "proficiency_level": agent_cefr_level,
+                        "proficiency_guidance": proficiency_guidance,
+                        "user_reference_utterance": reference_utterance,
+                    },
+                ),
+            )
+        return agent_rows
+
+    def _agent_rows_from_ocean(
+        self,
+        *,
+        session: ConversationSession,
+        ocean: dict,
+        desired_count: int,
+        user_major: str,
+        agent_cefr_level: str,
+        proficiency_guidance: str,
+        reference_utterance: str,
+    ) -> list[AgentProfile]:
         selected_prompts = select_agent_personas_for_session(ocean, count=desired_count)
         used_ids: set[str] = set()
         agent_rows: list[AgentProfile] = []
@@ -652,13 +762,12 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                         "style": selected.prompt.persona_name.lower().replace(" ", "_"),
                         "proficiency_level": agent_cefr_level,
                         "proficiency_guidance": proficiency_guidance,
-                        "user_reference_utterance": proficiency["reference_utterance"],
+                        "user_reference_utterance": reference_utterance,
                         "complementary_score": selected.complementary_score,
                     },
                 ),
             )
-        AgentProfile.objects.bulk_create(agent_rows)
-        return session
+        return agent_rows
 
     @database_sync_to_async
     def _materialize_session_knowledge_sync(
@@ -751,8 +860,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         turns = list(session.turns.order_by("turn_index", "subturn_index", "id"))
         return [turn_record_to_dict(turn=turn, session=session) for turn in turns]
 
-    @database_sync_to_async
-    def _participants_payload(self, session_id: int) -> list[dict]:
+    def _participants_payload_sync(self, session_id: int) -> list[dict]:
         session = (
             ConversationSession.objects.filter(id=session_id)
             .select_related("user__userprofile")
@@ -770,6 +878,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         for a in session.agent_profiles.order_by("agent_id"):
             voice_gender = (a.personality or {}).get("voice_gender") or ""
             avatar_body = "M" if str(voice_gender).strip().lower() in {"m", "male"} else "F"
+            live2d_url = str((a.personality or {}).get("live2d_url") or "").strip()
             participants.append(
                 {
                     "id": a.agent_id,
@@ -779,9 +888,14 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     "gender": voice_gender,
                     "voice_title": (a.personality or {}).get("voice_title") or "",
                     "avatar_body": avatar_body,
+                    "live2d_url": live2d_url or None,
+                    "character_id": (a.personality or {}).get("character_id") or "",
                 },
             )
         return participants
+
+    async def _participants_payload(self, session_id: int) -> list[dict]:
+        return await database_sync_to_async(self._participants_payload_sync)(session_id)
 
     @database_sync_to_async
     def _get_agent_persona_and_name(self, session_id: int, agent_id: str) -> tuple[str, str]:
