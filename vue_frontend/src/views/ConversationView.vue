@@ -5,7 +5,6 @@ import { useStorage } from '@vueuse/core'
 import {
   BookOpen,
   Check,
-  CircleStop,
   FolderOpen,
   Loader2,
   LogOut,
@@ -1677,7 +1676,7 @@ onUnmounted(() => {
       aria-label="End session"
       @click="exitConfirmOpen = true"
     >
-      <CircleStop class="h-5 w-5" />
+      <Square class="h-5 w-5 fill-current" />
     </Button>
 
     <!-- Status pill (top-center) -->
@@ -1910,7 +1909,7 @@ onUnmounted(() => {
       class="absolute inset-0 z-30 grid place-items-center bg-black/60 p-4"
       @click.self="exitConfirmOpen = false"
     >
-      <Card class="w-[min(26rem,100%)] shadow-xl">
+      <Card class="w-[min(26rem,100%)] shadow-xl bg-white/80">
         <CardHeader>
           <CardTitle class="text-base">End this session?</CardTitle>
           <CardDescription>
