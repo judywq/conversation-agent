@@ -213,6 +213,49 @@ describe('useLive2D', () => {
     expect(fakeModel.destroy).toHaveBeenCalledWith({ children: true })
   })
 
+  it('dispose then re-init mid-from destroys the stale model and does not attach it', async () => {
+    const makeModel = () => ({
+      ...fakeModel,
+      destroy: vi.fn(),
+      scale: { set: vi.fn() },
+      anchor: { set: vi.fn() },
+      position: { set: vi.fn() },
+      internalModel: {
+        ...fakeModel.internalModel,
+        __moc: { _modelCount: 1 },
+      },
+    })
+    const modelA = makeModel()
+    const modelB = makeModel()
+
+    const resolvers: Array<(model: ReturnType<typeof makeModel>) => void> = []
+    ;(Live2DModel.from as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { init, dispose, status } = useLive2D(makeStage())
+    const first = init({ url: '/a.model3.json' })
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+
+    dispose()
+    const second = init({ url: '/b.model3.json' })
+    await vi.waitFor(() => expect(resolvers.length).toBe(2))
+
+    resolvers[0]!(modelA)
+    await expect(first).resolves.toBe(false)
+    expect(modelA.destroy).toHaveBeenCalledWith({ children: true })
+    expect(appInstance.stage.addChild).not.toHaveBeenCalledWith(modelA)
+
+    resolvers[1]!(modelB)
+    await expect(second).resolves.toBe(true)
+    expect(status.value).toBe('ready')
+    expect(appInstance.stage.addChild).toHaveBeenCalledWith(modelB)
+    expect(modelB.destroy).not.toHaveBeenCalled()
+  })
+
   it('setIdle settles an in-flight speak() with false when the engine never calls onFinish/onError', async () => {
     // stopSpeaking() (called by setIdle) does not invoke onFinish/onError, so the engine
     // mock here intentionally never calls either — mirrors a barge-in/stop mid-utterance.

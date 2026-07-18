@@ -171,7 +171,7 @@ defineExpose({
         class="pointer-events-none fixed z-[70] h-0 w-0 overflow-hidden opacity-0"
         :style="{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }"
         tabindex="-1"
-        aria-hidden="true"
+        :aria-label="menuAgent ? `${menuAgent.name} options` : 'Character options'"
       />
       <!-- z-[70]: the game overlay sits at z-[60], above the default portal z-50 -->
       <DropdownMenuContent v-if="menuAgent" align="start" side="bottom" class="z-[70]">

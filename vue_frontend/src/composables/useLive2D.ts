@@ -50,6 +50,21 @@ export type Live2DCapabilities = {
 type MotionSpec = { File: string; Name?: string }
 type ExpressionSpec = { Name: string }
 
+/** Cubism moc owned by InternalModel; engine never decrements _modelCount before release. */
+type CubismMocRef = { _modelCount: number }
+
+/**
+ * Destroy a Live2D model without tripping CubismMoc.release()'s CSM_ASSERT(_modelCount == 0).
+ * untitled-pixi-live2d-engine increments _modelCount in createModel() but releaseMoc never
+ * calls deleteModel(), so every destroy would otherwise console.assert.
+ * Do not pass texture/baseTexture:true — textures are Pixi Assets-managed.
+ */
+function destroyLive2DModel(instance: Live2DModel) {
+  const moc = (instance.internalModel as unknown as { __moc?: CubismMocRef }).__moc
+  if (moc) moc._modelCount = 0
+  instance.destroy({ children: true })
+}
+
 function readCapabilities(instance: Live2DModel): Live2DCapabilities {
   const manager = instance.internalModel.motionManager
   const definitions = manager.definitions as Partial<Record<string, MotionSpec[]>>
@@ -79,6 +94,8 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   let restoreMouthSync: (() => void) | null = null
   let resizeObserver: ResizeObserver | null = null
   let disposed = false
+  /** Bumped on dispose() and at each init() start; stale awaits bail when gen mismatches. */
+  let loadGen = 0
   let activePreset: Live2DPresetInput | null = null
 
   /** Fit-to-stage plus preset zoom; safe to re-run whenever the stage resizes. */
@@ -158,8 +175,9 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     if (initPromise) return initPromise
 
     disposed = false
+    const gen = ++loadGen
     activePreset = preset
-    initPromise = (async () => {
+    const thisInit = (async () => {
       const stage = stageRef.value
       if (!stage) return false
 
@@ -176,8 +194,8 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
           backgroundAlpha: 0,
         })
 
-        // dispose() ran while we were awaiting app.init(); bail before touching app.
-        if (disposed || !app) return false
+        // dispose()/newer init invalidated this attempt while awaiting app.init().
+        if (disposed || gen !== loadGen || !app) return false
         stage.appendChild(app.canvas)
 
         // Defaults (1.5 / 0.4) keep mouths too closed; weight 1.0 applies full open amount.
@@ -186,12 +204,12 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
           lipSyncWeight: 1.0,
         })
 
-        // dispose() ran while we were awaiting Live2DModel.from(); bail out cleanly.
+        // dispose()/newer init ran while awaiting from(); bail without attaching.
         // Do not destroy textures — Live2DModel.from() registers them in Pixi Assets;
         // destroying TextureSources poisons the cache for later loads of the same URL
         // (partner-select → in-game reuse).
-        if (disposed || !app) {
-          instance.destroy({ children: true })
+        if (disposed || gen !== loadGen || !app) {
+          destroyLive2DModel(instance)
           return false
         }
 
@@ -214,7 +232,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         return true
       } catch (error) {
         console.error('Live2D init failed:', error)
-        model.value?.destroy({ children: true })
+        if (model.value) destroyLive2DModel(model.value)
         model.value = null
         app?.destroy(true)
         app = null
@@ -222,11 +240,13 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         errorMessage.value = error instanceof Error ? error.message : 'Avatar unavailable'
         return false
       } finally {
-        initPromise = null
+        // Only clear if we still own the slot — a newer init() after dispose() must keep its promise.
+        if (initPromise === thisInit) initPromise = null
       }
     })()
+    initPromise = thisInit
 
-    return initPromise
+    return thisInit
   }
 
   async function speak(audioUrl: string, lipsync?: LipSyncPayload | null): Promise<boolean> {
@@ -331,6 +351,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
 
   function dispose() {
     disposed = true
+    loadGen++
     initPromise = null
     resizeObserver?.disconnect()
     resizeObserver = null
@@ -350,7 +371,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
       if (instance && app) {
         app.stage.removeChild(instance)
       }
-      instance?.destroy({ children: true })
+      if (instance) destroyLive2DModel(instance)
       app?.destroy(true)
     } catch (error) {
       console.error('Live2D dispose failed:', error)
