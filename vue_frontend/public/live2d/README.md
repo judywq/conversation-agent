@@ -21,17 +21,21 @@ this repository. To set up locally:
    - hiyori, haru, mao (female), natori (male)
 
    From the [Live2D sample data CDN](https://cubism.live2d.com/sample-data/js/download.js)
-   (ZIP under `https://cubism.live2d.com/sample-data/bin/<id>/<id>_ja.zip`,
-   then copy the ZIP's `runtime/` folder contents — for Epsilon use
-   `epsilon_free/runtime/`):
+   (ZIP under `https://cubism.live2d.com/sample-data/bin/<id>/<id>_ja.zip` or
+   `_en.zip` when available, then copy the ZIP's `runtime/` folder contents —
+   for Epsilon use `epsilon_free/runtime/`; for Kei use `kei_basic_free/runtime/`):
    - epsilon → `Epsilon_free.model3.json` (female)
    - hibiki → `hibiki.model3.json` (female)
+   - shizuku → `shizuku.model3.json` (female)
    - chitose → `chitose.model3.json` (male)
+   - kei → `kei_basic_free.model3.json` (female)
 
    Sample pages: [Chitose](https://www.live2d.com/en/learn/sample/chitose/),
    [Haru](https://www.live2d.com/en/learn/sample/haru/),
    [Epsilon](https://www.live2d.com/en/learn/sample/epsilon/),
-   [Hibiki](https://www.live2d.com/en/learn/sample/hibiki/).
+   [Hibiki](https://www.live2d.com/en/learn/sample/hibiki/),
+   [Shizuku](https://www.live2d.com/en/learn/sample/shizuku/),
+   [Kei](https://www.live2d.com/en/learn/sample/kei/).
 3. Model URLs are wired in `src/config/avatarPresets.ts` — update filenames there if
    the source ships different manifest names.
 

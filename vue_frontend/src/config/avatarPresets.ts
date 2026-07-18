@@ -12,6 +12,8 @@ export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
   { url: '/live2d/mao/Mao.model3.json' },
   { url: '/live2d/epsilon/Epsilon_free.model3.json' },
   { url: '/live2d/hibiki/hibiki.model3.json' },
+  { url: '/live2d/shizuku/shizuku.model3.json' },
+  { url: '/live2d/kei/kei_basic_free.model3.json' },
 ]
 
 export const MALE_AVATAR_PRESETS: AvatarPreset[] = [
