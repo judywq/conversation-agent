@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import SakuraMark from '@/components/SakuraMark.vue'
 import { CircleUser, Menu } from 'lucide-vue-next'
 
 import { defaultAuthenticatedRoute, isStaffUser } from '@/lib/authNavigation'
@@ -43,18 +44,24 @@ const isSheetOpen = ref(false)
 
 <template>
   <header
-    class="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 z-50"
+    class="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-border/80 bg-card/90 px-4 shadow-sm backdrop-blur-md md:px-6"
   >
     <nav
       class="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:flex-nowrap md:items-center md:gap-6 md:text-sm lg:gap-8"
     >
-      <router-link :to="homeRoute" class="shrink-0 items-center text-xl font-semibold whitespace-nowrap"> ConvAgent </router-link>
+      <router-link
+        :to="homeRoute"
+        class="flex shrink-0 items-center gap-2 whitespace-nowrap text-xl font-bold tracking-wide text-foreground"
+      >
+        <SakuraMark :size="22" />
+        ConvAgent
+      </router-link>
       <router-link
         v-for="item in menuItems"
         :key="item.label"
         :to="{ name: item.name }"
-        class="shrink-0 whitespace-nowrap px-1 text-muted-foreground transition-colors hover:text-foreground"
-        :class="{ 'text-primary': $route.name === item.name }"
+        class="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        :class="{ 'bg-accent font-semibold text-primary': $route.name === item.name }"
       >
         <span>{{ item.label }}</span>
       </router-link>
@@ -62,32 +69,37 @@ const isSheetOpen = ref(false)
         v-if="showStaffNav"
         href="/admin"
         target="_blank"
-        class="shrink-0 whitespace-nowrap px-1 text-muted-foreground transition-colors hover:text-foreground"
+        class="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <span>Admin</span>
       </a>
     </nav>
     <Sheet v-model:open="isSheetOpen">
       <SheetTrigger as-child>
-        <Button variant="outline" size="icon" class="shrink-0 md:hidden">
+        <Button variant="outline" size="icon" class="shrink-0 rounded-xl md:hidden">
           <Menu class="h-5 w-5" />
           <span class="sr-only">Toggle navigation menu</span>
         </Button>
       </SheetTrigger>
       <SheetContent side="left">
         <SheetDescription className="hidden">Menu</SheetDescription>
-        <SheetTitle><router-link
+        <SheetTitle>
+          <router-link
             :to="homeRoute"
-            class="items-center text-2xl font-semibold"
+            class="flex items-center gap-2 text-2xl font-bold"
             @click="isSheetOpen = false"
           >
+            <SakuraMark :size="24" />
             ConvAgent
-          </router-link></SheetTitle>
-        <nav class="mt-6 grid gap-6 text-lg font-medium">
-          <router-link v-for="item in menuItems" :key="item.label"
+          </router-link>
+        </SheetTitle>
+        <nav class="mt-6 grid gap-4 text-lg font-medium">
+          <router-link
+            v-for="item in menuItems"
+            :key="item.label"
             :to="{ name: item.name }"
-            class="text-muted-foreground hover:text-foreground"
-            :class="{ 'text-primary': $route.name === item.name }"
+            class="rounded-xl px-3 py-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+            :class="{ 'bg-accent font-semibold text-primary': $route.name === item.name }"
             @click="isSheetOpen = false"
           >
             <span>{{ item.label }}</span>
@@ -96,7 +108,7 @@ const isSheetOpen = ref(false)
             v-if="showStaffNav"
             href="/admin"
             target="_blank"
-            class="text-muted-foreground transition-colors hover:text-foreground"
+            class="rounded-xl px-3 py-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <span>Admin</span>
           </a>

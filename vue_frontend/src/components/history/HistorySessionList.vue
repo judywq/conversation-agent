@@ -137,7 +137,7 @@ onMounted(() => {
   </div>
 
   <div v-else class="space-y-3">
-    <div v-for="session in sessions" :key="session.id" class="rounded-md border">
+    <div v-for="session in sessions" :key="session.id" class="rounded-2xl border border-border/80">
       <div class="flex items-center gap-2">
         <Button
           v-if="session.can_continue"
@@ -177,7 +177,7 @@ onMounted(() => {
           >
             <div class="space-y-2">
               <h3 class="text-sm font-medium">Transcript</h3>
-              <div class="max-h-[min(60vh,28rem)] space-y-4 overflow-y-auto rounded-md border p-3">
+              <div class="max-h-[min(60vh,28rem)] space-y-4 overflow-y-auto rounded-xl border border-border/80 p-3">
                 <div
                   v-for="(turn, index) in sessionDetail(session.id)!.turns"
                   :key="`${turn.turn_index}-${turn.subturn_index}-${index}`"
@@ -201,7 +201,7 @@ onMounted(() => {
 
             <div v-if="!session.can_continue" class="space-y-2">
               <h3 class="text-sm font-medium">Speaker opinions</h3>
-              <div class="max-h-[min(60vh,28rem)] overflow-y-auto rounded-md border p-3">
+              <div class="max-h-[min(60vh,28rem)] overflow-y-auto rounded-xl border border-border/80 p-3">
                 <ArgumentSummaryReadonly :summary="sessionDetail(session.id)!.argument_summary" />
               </div>
             </div>

@@ -1,7 +1,7 @@
 <template>
-  <Card class="w-full mx-auto sm:w-96">
+  <Card class="mx-auto w-full rounded-2xl border-border/80 shadow-lg shadow-primary/5 sm:w-[26rem]">
     <CardHeader>
-      <CardTitle class="text-2xl">Reset Password</CardTitle>
+      <CardTitle class="text-2xl font-bold">Reset Password</CardTitle>
       <CardDescription>Enter your new password below</CardDescription>
     </CardHeader>
     <CardContent>
@@ -17,6 +17,7 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Enter your new password"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -35,6 +36,7 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Confirm your new password"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -48,15 +50,15 @@
 
         <Button
           type="submit"
-          class="w-full"
+          class="h-11 w-full rounded-xl font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid || success"
         >
           {{ isSubmitting ? 'Resetting...' : 'Reset Password' }}
         </Button>
 
-        <p v-if="success" class="text-success-foreground text-sm text-center">
+        <p v-if="success" class="text-center text-sm text-success">
           Password reset successful. Redirecting to
-          <router-link :to="{ name: 'login' }" class="underline">login</router-link>
+          <router-link :to="{ name: 'login' }" class="font-semibold text-primary">login</router-link>
           ...
         </p>
       </form>

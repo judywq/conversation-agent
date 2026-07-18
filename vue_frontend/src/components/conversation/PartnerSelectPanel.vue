@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import PartnerSelectCard from '@/components/conversation/PartnerSelectCard.vue'
 import { Button } from '@/components/ui/button'
 import { ConversationService, type AgentCharacter } from '@/services/conversationService'
-import { Dices, Loader2 } from 'lucide-vue-next'
+import { Dices, Lightbulb, Loader2 } from 'lucide-vue-next'
 
 const MAX_SELECTED = 3
 
@@ -70,22 +70,29 @@ function isCardDisabled(id: string) {
 </script>
 
 <template>
-  <div class="space-y-3">
+  <div class="space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <p class="text-xs text-muted-foreground">
-        Select 1–{{ MAX_SELECTED }} partners
-        <span v-if="selectedCount">({{ selectedCount }} selected)</span>
+      <p class="text-sm text-muted-foreground">
+        Select 1–{{ MAX_SELECTED }} classmates
       </p>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        :disabled="disabled || loading || characters.length === 0"
-        @click="randomSelect"
-      >
-        <Dices class="mr-1.5 h-3.5 w-3.5" />
-        Random
-      </Button>
+      <div class="flex items-center gap-2">
+        <span
+          class="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-primary"
+        >
+          {{ selectedCount }} / {{ MAX_SELECTED }} selected
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="rounded-xl"
+          :disabled="disabled || loading || characters.length === 0"
+          @click="randomSelect"
+        >
+          <Dices class="mr-1.5 h-3.5 w-3.5" />
+          Random
+        </Button>
+      </div>
     </div>
 
     <div v-if="loading" class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -102,6 +109,15 @@ function isCardDisabled(id: string) {
         :disabled="isCardDisabled(character.id)"
         @toggle="toggle(character.id)"
       />
+    </div>
+
+    <div
+      class="flex items-start gap-2.5 rounded-2xl border border-success/20 bg-success-muted px-4 py-3 text-sm text-success-muted-foreground"
+    >
+      <Lightbulb class="mt-0.5 h-4 w-4 shrink-0 text-success" />
+      <p>
+        Tip: Pick classmates with different speaking styles for a richer seminar discussion.
+      </p>
     </div>
   </div>
 </template>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { avatarPresetByUrl, resolveAvatarZoom } from '@/config/avatarPresets'
 import { useLive2D } from '@/composables/useLive2D'
 import type { AgentCharacter } from '@/services/conversationService'
-import { Check } from 'lucide-vue-next'
+import { AudioLines, Check } from 'lucide-vue-next'
 
 const props = defineProps<{
   character: AgentCharacter
@@ -17,13 +17,6 @@ const emit = defineEmits<{
 
 const stageRef = ref<HTMLElement | null>(null)
 const { status, errorMessage, init, dispose } = useLive2D(stageRef)
-
-const statusLabel = computed(() => {
-  if (status.value === 'loading') return 'Loading…'
-  if (status.value === 'error') return 'Unavailable'
-  if (status.value === 'ready') return props.character.persona_name
-  return 'Loading…'
-})
 
 async function load() {
   if (status.value === 'ready' || status.value === 'loading') return
@@ -63,11 +56,11 @@ function onClick() {
 <template>
   <button
     type="button"
-    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left transition-shadow"
+    class="group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-left transition-all"
     :class="[
       selected
-        ? 'border-primary shadow-md ring-1 ring-primary/40'
-        : 'border-border hover:border-primary/40',
+        ? 'border-primary shadow-md ring-2 ring-primary/30'
+        : 'border-border hover:border-primary/40 hover:shadow-sm',
       disabled && !selected ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
     ]"
     :aria-pressed="selected"
@@ -75,7 +68,7 @@ function onClick() {
     :disabled="disabled && !selected"
     @click="onClick"
   >
-    <div class="relative h-[160px] bg-muted/30">
+    <div class="relative h-[180px] bg-muted/40">
       <div ref="stageRef" class="absolute inset-0 z-0" />
       <div
         v-if="status === 'idle' || status === 'loading'"
@@ -91,15 +84,28 @@ function onClick() {
       </div>
       <span
         v-if="selected"
-        class="absolute right-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground"
+        class="absolute right-2.5 top-2.5 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow"
         aria-hidden="true"
       >
-        <Check class="h-3.5 w-3.5" />
+        <Check class="h-4 w-4" />
       </span>
     </div>
-    <div class="border-t px-3 py-2">
-      <div class="truncate text-sm font-medium">{{ character.display_name }}</div>
-      <div class="truncate text-xs text-muted-foreground">{{ statusLabel }}</div>
+    <div class="relative space-y-2 border-t border-border/60 px-3 py-3">
+      <div>
+        <div class="truncate text-sm font-semibold text-foreground">{{ character.display_name }}</div>
+        <div class="truncate text-xs text-muted-foreground">{{ character.persona_name }}</div>
+      </div>
+      <div>
+        <span
+          class="inline-block rounded-full border border-success/20 bg-success-muted px-2.5 py-0.5 text-[10px] font-medium text-success-muted-foreground"
+        >
+          {{ character.persona_name }}
+        </span>
+      </div>
+      <div class="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+        <AudioLines class="mt-0.5 h-3 w-3 shrink-0 text-primary/70" />
+        <span class="line-clamp-2">Speaking style: {{ character.voice_preset_name }}</span>
+      </div>
     </div>
   </button>
 </template>

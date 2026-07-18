@@ -23,6 +23,9 @@ module.exports = {
             },
         },
         extend: {
+            fontFamily: {
+                sans: ['"Plus Jakarta Sans"', "ui-sans-serif", "system-ui", "sans-serif"],
+            },
             typography: {
                 DEFAULT: {
                     css: {
@@ -76,8 +79,14 @@ module.exports = {
                     foreground: colors.red[500],
                 },
                 success: {
-                    DEFAULT: colors.green[500],
-                    foreground: colors.green[500],
+                    DEFAULT: "hsl(var(--success))",
+                    foreground: "hsl(var(--success-foreground))",
+                    muted: "hsl(var(--success-muted))",
+                    "muted-foreground": "hsl(var(--success-muted-foreground))",
+                },
+                tag: {
+                    DEFAULT: "hsl(var(--tag))",
+                    foreground: "hsl(var(--tag-foreground))",
                 },
             },
             borderRadius: {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import AgentAvatarPanel from '@/components/conversation/AgentAvatarPanel.vue'
+import SakuraMark from '@/components/SakuraMark.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -169,10 +170,17 @@ defineExpose({
     >
       <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
       <div
-        class="pointer-events-auto max-h-48 w-[min(56rem,92vw)] overflow-y-auto rounded-2xl border border-white/40 bg-white/50 px-5 py-3 text-lg text-gray-900 shadow-lg backdrop-blur-sm"
+        class="pointer-events-auto relative max-h-48 w-[min(56rem,92vw)] overflow-visible rounded-2xl border border-primary/15 bg-white/90 px-6 py-5 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
       >
-        <div class="mb-0.5 font-semibold">{{ bubbleAgentName }}</div>
-        <div class="whitespace-pre-wrap">{{ bubbleText }}</div>
+        <div
+          class="absolute -top-3 left-5 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground shadow"
+        >
+          <SakuraMark :size="14" class="text-primary-foreground" />
+          {{ bubbleAgentName }}
+        </div>
+        <div class="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+          {{ bubbleText }}
+        </div>
       </div>
     </div>
   </div>

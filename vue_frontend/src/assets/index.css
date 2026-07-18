@@ -4,67 +4,87 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Soft blush page */
+    --background: 340 30% 98%;
+    --foreground: 222 40% 18%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 340 25% 95%;
+    --muted-foreground: 222 15% 42%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 40% 18%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 40% 18%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 340 20% 88%;
+    --input: 340 18% 86%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Sakura pink */
+    --primary: 340 82% 62%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 222 40% 22%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 340 40% 95%;
+    --accent-foreground: 340 70% 40%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --ring: 222.2 84% 4.9%;
+    --ring: 340 82% 62%;
 
-    --radius: 0.5rem;
+    /* Soft mint for selected / success surfaces */
+    --success: 142 45% 42%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 142 40% 94%;
+    --success-muted-foreground: 142 50% 28%;
+
+    /* Soft blue for personality tags */
+    --tag: 210 55% 94%;
+    --tag-foreground: 210 45% 38%;
+
+    --radius: 1rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 340 20% 8%;
+    --foreground: 340 20% 96%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 340 15% 16%;
+    --muted-foreground: 340 12% 65%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 340 18% 10%;
+    --popover-foreground: 340 20% 96%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 340 18% 10%;
+    --card-foreground: 340 20% 96%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    --border: 340 12% 22%;
+    --input: 340 12% 22%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 340 75% 65%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 340 12% 18%;
+    --secondary-foreground: 340 20% 96%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 340 25% 18%;
+    --accent-foreground: 340 70% 80%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --ring: 212.7 26.8% 83.9%;
+    --ring: 340 75% 65%;
+
+    --success: 142 40% 45%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 142 25% 16%;
+    --success-muted-foreground: 142 40% 72%;
+
+    --tag: 210 30% 20%;
+    --tag-foreground: 210 40% 75%;
   }
 }
 
@@ -73,6 +93,16 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .sakura-petals {
+    background-image:
+      radial-gradient(circle at 12% 18%, hsl(340 80% 88% / 0.45) 0 3px, transparent 4px),
+      radial-gradient(circle at 88% 22%, hsl(340 70% 90% / 0.4) 0 2.5px, transparent 3.5px),
+      radial-gradient(circle at 78% 78%, hsl(340 75% 86% / 0.35) 0 3px, transparent 4px),
+      radial-gradient(circle at 18% 82%, hsl(340 65% 90% / 0.3) 0 2px, transparent 3px);
   }
 }

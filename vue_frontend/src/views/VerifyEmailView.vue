@@ -79,9 +79,9 @@ const handleSubmit = form.handleSubmit(async (values) => {
 </script>
 
 <template>
-  <Card class="w-full mx-auto sm:w-96">
+  <Card class="mx-auto w-full rounded-2xl border-border/80 shadow-lg shadow-primary/5 sm:w-[26rem]">
     <CardHeader>
-      <CardTitle class="text-2xl">
+      <CardTitle class="text-2xl font-bold">
         Email Verification
       </CardTitle>
       <CardDescription>
@@ -101,6 +101,7 @@ const handleSubmit = form.handleSubmit(async (values) => {
                 v-bind="componentField"
                 type="text"
                 placeholder="Enter verification code"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -111,7 +112,7 @@ const handleSubmit = form.handleSubmit(async (values) => {
         <div
           v-if="generalError"
           :class="{
-            'text-success-foreground': success,
+            'text-success': success,
             'text-destructive': !success,
             'text-sm text-center': true
           }"
@@ -121,16 +122,16 @@ const handleSubmit = form.handleSubmit(async (values) => {
 
         <Button
           type="submit"
-          class="w-full"
+          class="h-11 w-full rounded-xl font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid || success"
         >
           {{ isSubmitting ? 'Verifying...' : 'Verify Email' }}
         </Button>
 
-        <div class="mt-4 text-center text-sm">
+        <div class="mt-2 text-center text-sm">
           <router-link
             :to="{ name: 'login' }"
-            class="underline"
+            class="font-semibold text-primary hover:text-primary/80"
             :tabindex="isSubmitting || success ? -1 : 0"
           >
             Back to Login

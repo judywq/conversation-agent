@@ -1,13 +1,13 @@
 <template>
-  <Card class="w-full mx-auto sm:w-96">
+  <Card class="mx-auto w-full rounded-2xl border-border/80 shadow-lg shadow-primary/5 sm:w-[26rem]">
     <CardHeader>
-      <CardTitle class="text-2xl">Change Password</CardTitle>
+      <CardTitle class="text-2xl font-bold">Change Password</CardTitle>
       <CardDescription>Enter your current password and a new password</CardDescription>
     </CardHeader>
     <CardContent>
       <div
         v-if="authStore.user?.must_change_password"
-        class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         role="alert"
       >
         Your account requires a new password before you can continue.
@@ -24,6 +24,7 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Enter your current password"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -42,6 +43,7 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Enter your new password"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -60,6 +62,7 @@
                 v-bind="componentField"
                 type="password"
                 placeholder="Confirm your new password"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting || success"
               />
             </FormControl>
@@ -73,13 +76,13 @@
 
         <Button
           type="submit"
-          class="w-full"
+          class="h-11 w-full rounded-xl font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid || success"
         >
           {{ isSubmitting ? 'Changing...' : 'Change Password' }}
         </Button>
 
-        <p v-if="success" class="text-success-foreground text-sm text-center">
+        <p v-if="success" class="text-center text-sm text-success">
           Password changed successfully! Redirecting...
         </p>
       </form>

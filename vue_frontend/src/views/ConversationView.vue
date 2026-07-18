@@ -3,7 +3,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import {
+  BookOpen,
+  Check,
   CircleStop,
+  FolderOpen,
   Loader2,
   LogOut,
   Mic,
@@ -15,6 +18,7 @@ import {
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
 import PartnerSelectPanel from '@/components/conversation/PartnerSelectPanel.vue'
+import SakuraMark from '@/components/SakuraMark.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -123,9 +127,9 @@ const showSpeechBubble = useStorage('conv-game-show-bubble', true)
 const avatarScale = useStorage('conv-game-avatar-scale', 1)
 
 const SCENE_OPTIONS = [
-  { id: 'classroom', label: 'Classroom', url: '/scenes/classroom.png' },
-  { id: 'sports-ground', label: 'Sports ground', url: '/scenes/sports-ground.png' },
-  { id: 'library', label: 'Library', url: '/scenes/library.png' },
+  { id: 'classroom', label: 'Sunny Classroom', url: '/scenes/classroom.png' },
+  { id: 'library', label: 'Library Terrace', url: '/scenes/library.png' },
+  { id: 'sports-ground', label: 'Campus Café', url: '/scenes/sports-ground.png' },
 ] as const
 
 type SceneId = (typeof SCENE_OPTIONS)[number]['id']
@@ -1418,20 +1422,23 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="!showConversationPanel" class="container mx-auto py-8 px-4 space-y-6">
-    <Card>
-      <CardHeader>
-        <CardTitle>Session Setup</CardTitle>
+  <div v-if="!showConversationPanel" class="container mx-auto space-y-6 px-4 py-8">
+    <Card class="mx-auto max-w-5xl overflow-hidden rounded-2xl border-border/80 shadow-sm">
+      <CardHeader class="space-y-1">
+        <CardTitle class="text-2xl font-bold">Discussion Setup</CardTitle>
         <CardDescription>
-          Choose a topic, set up your discussion group, then start speaking with your partners.
+          Choose a topic, set the scene, then pick classmates for your seminar.
         </CardDescription>
       </CardHeader>
-      <CardContent class="space-y-4">
+      <CardContent class="space-y-6">
         <div class="grid gap-4 sm:grid-cols-2">
           <div class="space-y-2">
-            <div class="text-sm font-medium">Major category</div>
+            <div class="flex items-center gap-2 text-sm font-medium">
+              <FolderOpen class="h-4 w-4 text-tag-foreground" />
+              Major category
+            </div>
             <Select v-model="selectedCategory" :disabled="sessionInProgress || isGeneratingScenario">
-              <SelectTrigger class="w-full">
+              <SelectTrigger class="h-11 w-full rounded-xl">
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
@@ -1445,12 +1452,15 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="space-y-2">
-            <div class="text-sm font-medium">Subtopic</div>
+            <div class="flex items-center gap-2 text-sm font-medium">
+              <BookOpen class="h-4 w-4 text-tag-foreground" />
+              Subtopic
+            </div>
             <Select
               v-model="selectedSubtopic"
               :disabled="!selectedCategory || sessionInProgress || isGeneratingScenario"
             >
-              <SelectTrigger class="w-full">
+              <SelectTrigger class="h-11 w-full rounded-xl">
                 <SelectValue placeholder="Select a subtopic" />
               </SelectTrigger>
               <SelectContent>
@@ -1470,46 +1480,86 @@ onUnmounted(() => {
         </div>
 
         <div class="space-y-2">
-          <div class="text-sm font-medium">Build your scenario</div>
-          <p class="text-xs text-muted-foreground">
-            Get a suggested prompt for your topic, or write your own in the box below.
-          </p>
-          <div class="flex flex-wrap items-center gap-3">
-          <Button
-            variant="outline"
-            :disabled="!canGenerateScenario"
-            @click="generateDiscussionScenario"
-          >
-            {{ isGeneratingScenario ? 'Generating scenario…' : 'Generate scenario' }}
-          </Button>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-sm font-medium">Discussion scenario</div>
+            <Button
+              variant="default"
+              size="sm"
+              class="rounded-xl font-semibold"
+              :disabled="!canGenerateScenario"
+              @click="generateDiscussionScenario"
+            >
+              <SakuraMark :size="14" class="text-primary-foreground" />
+              {{ isGeneratingScenario ? 'Generating…' : 'Generate prompt' }}
+            </Button>
+          </div>
           <p v-if="isGeneratingScenario" class="text-sm text-muted-foreground">
             Preparing your scenario…
           </p>
           <p v-else-if="topic.trim() && scenarioArticles.length" class="text-sm text-muted-foreground">
             Scenario ready—you can edit it below before you start.
           </p>
+          <Textarea
+            v-model="topic"
+            placeholder="Enter what you would like to discuss…"
+            class="min-h-[100px] rounded-2xl"
+          />
+        </div>
+
+        <div class="space-y-3">
+          <div class="text-sm font-medium">Discussion environment</div>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <button
+              v-for="scene in SCENE_OPTIONS"
+              :key="scene.id"
+              type="button"
+              class="group relative overflow-hidden rounded-2xl border text-left transition-all"
+              :class="
+                sceneId === scene.id
+                  ? 'border-primary ring-2 ring-primary/30'
+                  : 'border-border hover:border-primary/40'
+              "
+              :disabled="sessionInProgress"
+              @click="sceneId = scene.id"
+            >
+              <div
+                class="h-24 bg-cover bg-center"
+                :style="{ backgroundImage: `url(${scene.url})` }"
+              />
+              <div class="flex items-center justify-between gap-2 px-3 py-2">
+                <span class="text-sm font-medium">{{ scene.label }}</span>
+                <span
+                  v-if="sceneId === scene.id"
+                  class="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                >
+                  <Check class="h-3 w-3" />
+                </span>
+              </div>
+            </button>
           </div>
         </div>
 
-        <div class="space-y-2">
-          <div class="text-sm font-medium">Discussion scenario</div>
-          <Textarea v-model="topic" placeholder="Enter what you would like to discuss…" class="min-h-[80px]" />
-        </div>
-
-        <Card class="border">
-          <CardHeader>
-            <CardTitle class="text-base">Discussion partners</CardTitle>
+        <Card class="rounded-2xl border-border/80 bg-muted/20">
+          <CardHeader class="pb-3">
+            <CardTitle class="text-lg font-bold">Choose Classmates</CardTitle>
             <CardDescription>
               Classmates who join you in the discussion.
             </CardDescription>
           </CardHeader>
-          <CardContent class="space-y-2">
+          <CardContent class="space-y-4">
             <PartnerSelectPanel
               v-model="selectedCharacterIds"
               :disabled="sessionInProgress"
             />
-            <div v-if="!sessionInProgress" class="pt-2">
-              <Button :disabled="!canStart" @click="startSession">Start</Button>
+            <div v-if="!sessionInProgress" class="pt-1">
+              <Button
+                class="h-11 rounded-xl px-8 text-base font-semibold"
+                :disabled="!canStart"
+                @click="startSession"
+              >
+                Start discussion
+                <SakuraMark :size="16" class="text-primary-foreground" />
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -1521,7 +1571,7 @@ onUnmounted(() => {
        portaled popover/menu content gets z-[70] to stay above this overlay. -->
   <div v-else class="fixed inset-0 z-[60] overflow-hidden">
     <!-- Gradient stays visible while the scene image loads -->
-    <div class="absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-100 to-amber-100" />
+    <div class="absolute inset-0 bg-gradient-to-b from-pink-200/80 via-sky-100 to-amber-50" />
     <div
       class="absolute inset-0 scale-110 bg-cover bg-center"
       :style="{
@@ -1555,7 +1605,7 @@ onUnmounted(() => {
     <Button
       variant="secondary"
       size="icon"
-      class="absolute left-4 top-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+      class="absolute left-4 top-4 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
       aria-label="Exit without ending session"
       @click="onExitClick"
     >
@@ -1567,7 +1617,7 @@ onUnmounted(() => {
       v-if="sessionInProgress"
       variant="secondary"
       size="icon"
-      class="absolute left-[4.75rem] top-4 h-11 w-11 rounded-xl bg-black/40 text-red-300 shadow-lg backdrop-blur hover:bg-black/60"
+      class="absolute left-[4.75rem] top-4 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-destructive shadow-lg backdrop-blur hover:bg-white"
       aria-label="End session"
       @click="exitConfirmOpen = true"
     >
@@ -1576,13 +1626,14 @@ onUnmounted(() => {
 
     <!-- Status pill (top-center) -->
     <div
-      class="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/50 px-4 py-1.5 text-sm text-white shadow backdrop-blur"
+      class="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/40 bg-white/90 px-4 py-1.5 text-sm text-foreground shadow-md backdrop-blur"
     >
-      <span class="whitespace-nowrap">{{ statusText }}</span>
+      <SakuraMark :size="14" />
+      <span class="whitespace-nowrap font-medium">{{ statusText }}</span>
       <button
         v-if="sessionInProgress"
         type="button"
-        class="rounded-full bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30"
+        class="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary hover:bg-primary/25"
         @click="pauseOrResume"
       >
         {{ isPaused ? 'Resume' : 'Pause' }}
@@ -1595,7 +1646,7 @@ onUnmounted(() => {
         <Button
           variant="secondary"
           size="icon"
-          class="absolute right-4 top-4 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+          class="absolute right-4 top-4 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
           aria-label="Settings"
         >
           <Settings class="h-5 w-5" />
@@ -1662,16 +1713,16 @@ onUnmounted(() => {
       v-if="needFirstTurnChoice && !isEnded"
       class="pointer-events-none absolute inset-0 z-10 grid place-items-center p-4"
     >
-      <Card class="pointer-events-auto w-[min(24rem,100%)] shadow-xl">
+      <Card class="pointer-events-auto w-[min(24rem,100%)] rounded-2xl shadow-xl">
         <CardHeader>
-          <CardTitle class="text-base">Who speaks first?</CardTitle>
+          <CardTitle class="text-base font-bold">Who speaks first?</CardTitle>
           <CardDescription>
             Decide whether you open the discussion or let one of your partners begin.
           </CardDescription>
         </CardHeader>
         <CardContent class="flex flex-col gap-2 sm:flex-row">
-          <Button :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
-          <Button variant="outline" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">
+          <Button class="rounded-xl" :disabled="wsReconnecting" @click="chooseFirstTurn(true)">I’ll speak first</Button>
+          <Button variant="outline" class="rounded-xl" :disabled="wsReconnecting" @click="chooseFirstTurn(false)">
             Let a partner start
           </Button>
         </CardContent>
@@ -1685,41 +1736,41 @@ onUnmounted(() => {
     >
       <div
         v-if="micState === 'preview' && recordedUrl"
-        class="w-[min(20rem,calc(100vw-2rem))] space-y-2 rounded-lg border bg-background p-3 shadow-xl"
+        class="w-[min(20rem,calc(100vw-2rem))] space-y-2 rounded-2xl border border-border/80 bg-card p-3 shadow-xl"
       >
         <div class="text-sm font-medium">Preview recording</div>
         <audio :src="recordedUrl" controls class="w-full" />
         <div class="flex gap-2">
-          <Button size="sm" :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
-          <Button size="sm" variant="outline" @click="redoRecording">Redo</Button>
+          <Button size="sm" class="rounded-xl" :disabled="!canStartMic || wsReconnecting" @click="sendRecording">Send</Button>
+          <Button size="sm" variant="outline" class="rounded-xl" @click="redoRecording">Redo</Button>
         </div>
       </div>
       <button
         type="button"
-        class="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-xl transition-colors"
+        class="flex h-20 w-20 items-center justify-center rounded-full text-white shadow-xl transition-colors"
         :class="
           micState === 'recording'
             ? 'animate-pulse bg-red-500 ring-4 ring-red-300/70'
             : micButtonEnabled
-              ? 'animate-pulse bg-rose-400 ring-4 ring-rose-300/60 shadow-[0_0_30px_rgba(251,113,133,0.8)] hover:bg-rose-500'
-              : 'cursor-not-allowed bg-gray-400/70'
+              ? 'animate-pulse bg-primary ring-4 ring-primary/40 shadow-[0_0_28px_hsl(var(--primary)/0.55)] hover:bg-primary/90'
+              : 'cursor-not-allowed bg-muted-foreground/40'
         "
         :disabled="!micButtonEnabled"
         aria-label="Speak"
         @click="onMicClick"
       >
-        <Square v-if="micState === 'recording'" class="h-6 w-6" />
+        <Square v-if="micState === 'recording'" class="h-7 w-7" />
         <Loader2
           v-else-if="micState === 'transcribing' || micState === 'requesting'"
-          class="h-6 w-6 animate-spin"
+          class="h-7 w-7 animate-spin"
         />
-        <Mic v-else class="h-7 w-7" />
+        <Mic v-else class="h-8 w-8" />
       </button>
       <div
         v-if="micButtonEnabled"
-        class="rounded-full bg-black/40 px-3 py-0.5 text-xs text-white backdrop-blur"
+        class="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-foreground shadow backdrop-blur"
       >
-        {{ micState === 'recording' ? 'Recording… click or press Space to stop' : 'Your turn — click or press Space to talk' }}
+        {{ micState === 'recording' ? 'Recording… click or press Space to stop' : 'Hold to speak' }}
       </div>
     </div>
 
@@ -1727,7 +1778,7 @@ onUnmounted(() => {
     <Button
       variant="secondary"
       size="icon"
-      class="absolute bottom-6 right-4 z-10 h-11 w-11 rounded-xl bg-black/40 text-white shadow-lg backdrop-blur hover:bg-black/60"
+      class="absolute bottom-6 right-4 z-10 h-11 w-11 rounded-xl border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
       aria-label="Speaker opinions"
       @click="notebookOpen = !notebookOpen"
     >
@@ -1745,20 +1796,21 @@ onUnmounted(() => {
 
     <!-- Results overlay -->
     <div v-if="isEnded" class="absolute inset-0 z-20 overflow-y-auto bg-background/95 p-6">
-      <Card class="mx-auto max-w-3xl">
+      <Card class="mx-auto max-w-3xl rounded-2xl border-border/80 shadow-lg">
         <CardHeader>
-          <CardTitle>Session complete</CardTitle>
+          <CardTitle class="text-2xl font-bold">Session complete</CardTitle>
           <CardDescription>Review the discussion and download your results.</CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
           <div v-if="turns.length > 0" class="space-y-2">
             <div class="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" @click="downloadTranscript">
+              <Button variant="outline" size="sm" class="rounded-xl" @click="downloadTranscript">
                 Download transcript
               </Button>
               <Button
                 variant="outline"
                 size="sm"
+                class="rounded-xl"
                 :disabled="!canDownloadArgumentStructure"
                 @click="downloadArgumentStructure"
               >
@@ -1767,6 +1819,7 @@ onUnmounted(() => {
               <Button
                 variant="outline"
                 size="sm"
+                class="rounded-xl"
                 :disabled="!canDownloadArgumentStructure"
                 @click="downloadCombinedExport"
               >
@@ -1779,7 +1832,7 @@ onUnmounted(() => {
           </div>
           <div
             v-if="turns.length > 0"
-            class="max-h-[50vh] space-y-4 overflow-y-auto rounded-md border p-4"
+            class="max-h-[50vh] space-y-4 overflow-y-auto rounded-2xl border border-border/80 bg-muted/20 p-4"
           >
             <div v-for="(turn, index) in turns" :key="turnKey(turn)" class="space-y-1">
               <div class="text-xs text-muted-foreground">
@@ -1790,7 +1843,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-else class="text-sm text-muted-foreground">No turns were recorded.</div>
-          <Button @click="exitToSetup">Done</Button>
+          <Button class="rounded-xl font-semibold" @click="exitToSetup">Done</Button>
         </CardContent>
       </Card>
     </div>

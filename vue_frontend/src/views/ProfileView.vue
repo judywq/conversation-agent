@@ -1,10 +1,10 @@
 <template>
   <div class="container mx-auto py-8 px-4">
-    <Card class="w-full mx-auto sm:max-w-3xl">
+    <Card class="mx-auto w-full rounded-2xl border-border/80 shadow-sm sm:max-w-3xl">
       <CardHeader class="space-y-3">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div class="space-y-1">
-            <CardTitle class="text-2xl">My Profile</CardTitle>
+            <CardTitle class="text-2xl font-bold">My Profile</CardTitle>
             <CardDescription>
               Set up your language-learning profile before starting conversations.
             </CardDescription>
@@ -22,7 +22,7 @@
         </div>
       </CardHeader>
       <CardContent class="space-y-6">
-        <section class="rounded-lg border p-4 sm:p-5 space-y-4">
+        <section class="space-y-4 rounded-2xl border border-border/80 bg-muted/30 p-4 sm:p-5">
           <div class="space-y-1">
             <h2 class="text-base font-semibold">About you</h2>
             <p class="text-sm text-muted-foreground">
@@ -85,7 +85,7 @@
           </div>
         </section>
 
-        <section class="rounded-lg border p-4 sm:p-5 space-y-4">
+        <section class="space-y-4 rounded-2xl border border-border/80 bg-muted/30 p-4 sm:p-5">
           <div class="space-y-1">
             <h2 class="text-base font-semibold">English proficiency</h2>
             <p class="text-sm text-muted-foreground">
@@ -110,6 +110,7 @@
 
           <Button
             variant="outline"
+            class="rounded-xl"
             :disabled="isGeneratingCefr"
             @click="generateCefrSamples"
           >
@@ -119,7 +120,7 @@
           <div v-if="cefrSampleList.length === 0" class="text-sm text-muted-foreground">
             Generate samples to choose your starting level.
           </div>
-          <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-md border p-3">
+          <div v-for="(sample, idx) in cefrSampleList" :key="sample.level" class="rounded-2xl border border-border/80 bg-card p-3">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="flex flex-wrap items-center gap-3">
                 <div class="font-medium w-5 text-center">{{ idx + 1 }}</div>
@@ -127,7 +128,7 @@
                 <audio v-if="sample.audio_url" :src="sample.audio_url" controls class="h-8 max-w-[220px]" />
               </div>
               <Button
-                class="shrink-0"
+                class="shrink-0 rounded-xl"
                 :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
                 @click="selectedCefrLevel = sample.level"
               >
@@ -143,14 +144,14 @@
 
         <div class="flex flex-col gap-3">
           <Button
-            class="w-full"
+            class="h-11 w-full rounded-xl font-semibold"
             :disabled="isSubmitting"
             @click="handleSave"
           >
             {{ isSubmitting ? 'Saving...' : 'Save' }}
           </Button>
           <Button
-            class="w-full"
+            class="h-11 w-full rounded-xl"
             variant="outline"
             :disabled="isSubmitting"
             @click="handleGoToConversation"

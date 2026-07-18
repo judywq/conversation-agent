@@ -1,7 +1,7 @@
 <template>
-  <Card class="w-full mx-auto sm:w-96">
+  <Card class="mx-auto w-full rounded-2xl border-border/80 shadow-lg shadow-primary/5 sm:w-[26rem]">
     <CardHeader>
-      <CardTitle class="text-2xl">Forgot Password</CardTitle>
+      <CardTitle class="text-2xl font-bold">Forgot Password</CardTitle>
       <CardDescription>
         Enter your email address and we'll send you a link to reset your password
       </CardDescription>
@@ -19,6 +19,7 @@
                 v-bind="componentField"
                 type="email"
                 placeholder="name@example.com"
+                class="h-11 rounded-xl"
                 :disabled="isSubmitting"
               />
             </FormControl>
@@ -26,23 +27,23 @@
           </FormItem>
         </FormField>
 
-        <div v-if="generalError" class="text-destructive text-sm text-center">
+        <div v-if="generalError" class="text-center text-sm text-destructive">
           {{ generalError }}
         </div>
 
         <Button
           type="submit"
-          class="w-full"
+          class="h-11 w-full rounded-xl font-semibold"
           :disabled="isSubmitting || !form.meta.value.valid"
         >
           {{ isSubmitting ? 'Sending...' : 'Send Reset Link' }}
         </Button>
 
-        <div class="mt-4 text-center text-sm">
+        <div class="mt-2 text-center text-sm text-muted-foreground">
           Remember your password?
           <router-link
             :to="{ name: 'login' }"
-            class="underline"
+            class="font-semibold text-primary hover:text-primary/80"
             :tabindex="isSubmitting ? -1 : 0"
           >
             Back to login
