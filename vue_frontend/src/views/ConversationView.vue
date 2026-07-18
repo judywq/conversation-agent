@@ -327,6 +327,9 @@ const recordedBlob = ref<Blob | null>(null)
 const recordedUrl = ref<string | null>(null)
 const pendingMicSend = ref<{ text: string; audioUrl: string | null } | null>(null)
 const autoSendRecordingAfterStop = ref(false)
+/** `performance.now()` when MediaRecorder started; used to enforce a 1s minimum. */
+let recordingStartedAt: number | null = null
+const MIN_RECORDING_MS = 1000
 const currentAudio = ref<HTMLAudioElement | null>(null)
 
 type TurnPlaybackJob = { turn: Turn }
@@ -913,6 +916,12 @@ function handleEvent(e: ConversationWsEvent) {
     if (pendingSilentResumeSessionId === null) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' })
     }
+    // Empty utterance: keep the user's turn open so they can speak again.
+    if (/empty utterance/i.test(e.message ?? '')) {
+      needUserTurn.value = true
+      micState.value = 'idle'
+      clearRecordingPreview()
+    }
     // Resume from the URL failed (missing/foreign/finished session): back to setup.
     if (route.name === 'conversation-session' && !sessionId.value) {
       void router.replace({ name: 'conversation' })
@@ -1188,11 +1197,26 @@ async function startRecording() {
     }
     recorder.onstop = () => {
       stream.getTracks().forEach((t) => t.stop())
+      const elapsedMs =
+        recordingStartedAt != null ? performance.now() - recordingStartedAt : 0
+      recordingStartedAt = null
+      const shouldAutoSend = autoSendRecordingAfterStop.value
+      autoSendRecordingAfterStop.value = false
+
+      if (elapsedMs < MIN_RECORDING_MS) {
+        clearRecordingPreview()
+        micState.value = 'idle'
+        toast({
+          title: 'Too short',
+          description: 'You have to speak for at least 1 second.',
+        })
+        return
+      }
+
       const blob = new Blob(recordedChunks.value, { type: 'audio/webm' })
       recordedBlob.value = blob
       recordedUrl.value = URL.createObjectURL(blob)
-      if (autoSendRecordingAfterStop.value) {
-        autoSendRecordingAfterStop.value = false
+      if (shouldAutoSend) {
         void sendRecording()
       } else {
         micState.value = 'preview'
@@ -1200,8 +1224,10 @@ async function startRecording() {
     }
     recorder.start()
     mediaRecorder.value = recorder
+    recordingStartedAt = performance.now()
     micState.value = 'recording'
   } catch (err: any) {
+    recordingStartedAt = null
     micState.value = 'error'
     toast({
       title: 'Microphone error',
@@ -1228,20 +1254,28 @@ async function sendRecording() {
     audioUrl = pendingMicSend.value.audioUrl
   } else {
     const blob = recordedBlob.value!
-    const currentSessionId = sessionId.value ? String(sessionId.value) : null
-    const uploadPromise = currentSessionId
-      ? ConversationService.uploadUserAudio(currentSessionId, blob).catch((err: unknown) => {
-          console.warn('User audio upload failed; sending turn without audio_url', err)
-          return null
-        })
-      : Promise.resolve(null)
-
     try {
-      const [sttText, upload] = await Promise.all([
-        ConversationService.speechToText(blob),
-        uploadPromise,
-      ])
+      const sttText = (await ConversationService.speechToText(blob)).trim()
+      if (!sttText) {
+        clearRecordingPreview()
+        micState.value = 'idle'
+        toast({
+          title: 'No speech detected',
+          description: 'Please speak again.',
+        })
+        return
+      }
       text = sttText
+
+      const currentSessionId = sessionId.value ? String(sessionId.value) : null
+      let upload: { audio_url: string } | null = null
+      if (currentSessionId) {
+        try {
+          upload = await ConversationService.uploadUserAudio(currentSessionId, blob)
+        } catch (err: unknown) {
+          console.warn('User audio upload failed; sending turn without audio_url', err)
+        }
+      }
       audioUrl = upload?.audio_url ?? null
       pendingMicSend.value = { text, audioUrl }
     } catch (err: any) {
@@ -1786,7 +1820,7 @@ onUnmounted(() => {
         v-if="micButtonEnabled"
         class="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-foreground shadow backdrop-blur"
       >
-        {{ micState === 'recording' ? 'Recording… click or press Space to stop' : 'Hold to speak' }}
+        {{ micState === 'recording' ? 'Recording… press Space to stop' : 'Press Space to speak' }}
       </div>
     </div>
 
