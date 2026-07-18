@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { profileRequiredDialogOpen } from '@/composables/useProfileRequiredDialog'
 import { defaultAuthenticatedRoute, isStaffUser } from '@/lib/authNavigation'
 import { useAuthStore } from '@/stores/auth'
 import HomeView from '@/views/HomeView.vue'
@@ -165,6 +166,20 @@ router.beforeEach(async (to, from) => {
   ) {
     // Allow only navigation to change-password page
     return { name: 'change-password' }
+  }
+
+  // Incomplete profile: block conversation routes, show dialog, stay on current page
+  if (
+    authStore.isAuthenticated &&
+    !authStore.user?.profile_completed &&
+    (to.name === 'conversation' || to.name === 'conversation-session')
+  ) {
+    profileRequiredDialogOpen.value = true
+    // Cold-load of a conversation URL: land on profile instead of a blank cancel
+    if (!from.name || from.name === 'conversation' || from.name === 'conversation-session') {
+      return { name: 'profile' }
+    }
+    return false
   }
 })
 
