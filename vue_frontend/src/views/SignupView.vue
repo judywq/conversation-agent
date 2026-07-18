@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import SakuraCorner from '@/components/SakuraCorner.vue'
 import SakuraMark from '@/components/SakuraMark.vue'
-import { Loader2 } from 'lucide-vue-next'
+import { Eye, EyeOff, Loader2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
@@ -24,6 +24,7 @@ const authStore = useAuthStore()
 const { loading } = storeToRefs(authStore)
 const router = useRouter()
 const generalError = ref<string | null>(null)
+const showPassword = ref(false)
 
 const form = useForm({
   validationSchema: toTypedSchema(signupFormSchema),
@@ -108,13 +109,25 @@ const onSubmit = form.handleSubmit(async (values) => {
           <FormItem>
             <FormLabel>Password</FormLabel>
             <FormControl>
-              <Input
-                v-bind="componentField"
-                type="password"
-                placeholder="Create a password"
-                class="h-11 rounded-xl"
-                :disabled="loading"
-              />
+              <div class="relative">
+                <Input
+                  v-bind="componentField"
+                  :type="showPassword ? 'text' : 'password'"
+                  placeholder="Create a password"
+                  class="h-11 rounded-xl pr-10"
+                  :disabled="loading"
+                />
+                <button
+                  type="button"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  :disabled="loading"
+                  @click="showPassword = !showPassword"
+                >
+                  <EyeOff v-if="showPassword" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                  <span class="sr-only">Toggle password visibility</span>
+                </button>
+              </div>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -127,13 +140,25 @@ const onSubmit = form.handleSubmit(async (values) => {
           <FormItem>
             <FormLabel>Confirm Password</FormLabel>
             <FormControl>
-              <Input
-                v-bind="componentField"
-                type="password"
-                placeholder="Confirm your password"
-                class="h-11 rounded-xl"
-                :disabled="loading"
-              />
+              <div class="relative">
+                <Input
+                  v-bind="componentField"
+                  :type="showPassword ? 'text' : 'password'"
+                  placeholder="Confirm your password"
+                  class="h-11 rounded-xl pr-10"
+                  :disabled="loading"
+                />
+                <button
+                  type="button"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  :disabled="loading"
+                  @click="showPassword = !showPassword"
+                >
+                  <EyeOff v-if="showPassword" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                  <span class="sr-only">Toggle password visibility</span>
+                </button>
+              </div>
             </FormControl>
             <FormMessage />
           </FormItem>
