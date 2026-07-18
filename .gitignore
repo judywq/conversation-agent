@@ -61,6 +61,8 @@ staticfiles/
 docs/_build/
 docs/readthedocs.db
 
+docs/ui-prototypes
+
 # PyBuilder
 target/
 
