@@ -98,12 +98,14 @@
               <label class="text-sm text-muted-foreground">{{ trait.label }}</label>
               <div class="text-xs text-muted-foreground">{{ trait.description }}</div>
             </div>
-            <Select v-model="oceanModel[trait.key]">
+            <Select
+              :model-value="oceanSelectValue(oceanModel[trait.key])"
+              @update:model-value="setOceanTrait(trait.key, $event)"
+            >
               <SelectTrigger class="w-full">
-                <SelectValue placeholder="Not set" />
+                <SelectValue placeholder="Select a level" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem :value="OCEAN_UNSET">Not set</SelectItem>
                 <SelectItem v-for="lvl in OCEAN_LEVELS" :key="lvl" :value="lvl">
                   {{ lvl }}
                 </SelectItem>
@@ -274,6 +276,7 @@ import {
   OCEAN_TRAITS,
   OCEAN_UNSET,
   oceanPayload,
+  type OceanTraitKey,
   validateStep,
 } from '@/lib/profileForm'
 import {
@@ -298,6 +301,14 @@ const selectedCefrLevel = ref<string | null>(authStore.user?.cefr_level ?? null)
 const isGeneratingCefr = ref(false)
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
+
+function oceanSelectValue(value: string): string | undefined {
+  return value === OCEAN_UNSET ? undefined : value
+}
+
+function setOceanTrait(key: OceanTraitKey, value: unknown) {
+  oceanModel[key] = typeof value === 'string' && value ? value : OCEAN_UNSET
+}
 
 function syncFromUser() {
   const user = authStore.user
