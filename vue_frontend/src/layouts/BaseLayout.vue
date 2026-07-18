@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import Footer from '@/components/Footer.vue';
 import NavBar from '@/components/NavBar.vue';
 import SceneBackdrop from '@/components/SceneBackdrop.vue';
 import { hideAppNav } from '@/composables/useLayoutChrome';
 import { useAuthStore } from '@/stores/auth';
-import { useRouter } from 'vue-router';
-import { onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { computed, onMounted } from 'vue';
 
 const authStore = useAuthStore();
+const route = useRoute();
 const router = useRouter();
+const showFooter = computed(() => route.name === 'home');
 
 // Redirect unauthenticated users to login
 onMounted(() => {
@@ -30,6 +33,10 @@ onMounted(() => {
         </transition>
       </router-view>
     </main>
+
+    <div v-if="showFooter" class="relative z-10">
+      <Footer />
+    </div>
   </div>
 </template>
 
