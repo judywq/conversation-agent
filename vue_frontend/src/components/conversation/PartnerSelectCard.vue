@@ -95,13 +95,6 @@ function onClick() {
         <div class="truncate text-sm font-semibold text-foreground">{{ character.display_name }}</div>
         <div class="truncate text-xs text-muted-foreground">{{ character.persona_name }}</div>
       </div>
-      <div>
-        <span
-          class="inline-block rounded-full border border-success/20 bg-success-muted px-2.5 py-0.5 text-[10px] font-medium text-success-muted-foreground"
-        >
-          {{ character.persona_name }}
-        </span>
-      </div>
       <div class="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
         <AudioLines class="mt-0.5 h-3 w-3 shrink-0 text-primary/70" />
         <span class="line-clamp-2">Speaking style: {{ character.voice_preset_name }}</span>
