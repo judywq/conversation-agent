@@ -92,27 +92,7 @@
       </div>
 
       <template v-if="editingSection === 'ocean'">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div v-for="trait in OCEAN_TRAITS" :key="trait.key" class="space-y-2">
-            <div class="space-y-1">
-              <label class="text-sm text-muted-foreground">{{ trait.label }}</label>
-              <div class="text-xs text-muted-foreground">{{ trait.description }}</div>
-            </div>
-            <Select
-              :model-value="oceanSelectValue(oceanModel[trait.key])"
-              @update:model-value="setOceanTrait(trait.key, $event)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="Select a level" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="lvl in OCEAN_LEVELS" :key="lvl" :value="lvl">
-                  {{ lvl }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <OceanTraitsFields ref="oceanFieldsRef" :model-value="oceanModel" />
         <div class="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -260,23 +240,14 @@
 import { reactive, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import OceanTraitsFields from '@/components/profile/OceanTraitsFields.vue'
 import { useToast } from '@/components/ui/toast/use-toast'
 import {
   aboutPayload,
   cefrPayload,
   emptyOceanModel,
-  OCEAN_LEVELS,
   OCEAN_TRAITS,
-  OCEAN_UNSET,
   oceanPayload,
-  type OceanTraitKey,
   validateStep,
 } from '@/lib/profileForm'
 import {
@@ -296,19 +267,12 @@ const editingSection = ref<EditSection | null>(null)
 const preferredName = ref(authStore.user?.preferred_name ?? '')
 const major = ref(authStore.user?.major ?? '')
 const oceanModel = reactive(emptyOceanModel(authStore.user))
+const oceanFieldsRef = ref<InstanceType<typeof OceanTraitsFields> | null>(null)
 const cefrSamples = ref<CefrSample[]>(authStore.user?.cefr_sample_choices ?? [])
 const selectedCefrLevel = ref<string | null>(authStore.user?.cefr_level ?? null)
 const isGeneratingCefr = ref(false)
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
-
-function oceanSelectValue(value: string): string | undefined {
-  return value === OCEAN_UNSET ? undefined : value
-}
-
-function setOceanTrait(key: OceanTraitKey, value: unknown) {
-  oceanModel[key] = typeof value === 'string' && value ? value : OCEAN_UNSET
-}
 
 function syncFromUser() {
   const user = authStore.user
@@ -350,16 +314,25 @@ function cancelEdit() {
 }
 
 async function saveSection(section: EditSection) {
-  const step = section === 'about' ? 1 : section === 'ocean' ? 2 : 3
-  const validationError = validateStep(step, formState())
-  if (validationError) {
-    generalError.value = validationError
-    toast({
-      title: 'Profile incomplete',
-      description: validationError,
-      variant: 'destructive',
-    })
-    return
+  if (section === 'ocean') {
+    const oceanValues = await oceanFieldsRef.value?.validateAndApply()
+    if (!oceanValues) {
+      generalError.value = null
+      return
+    }
+    Object.assign(oceanModel, oceanValues)
+  } else {
+    const step = section === 'about' ? 1 : 3
+    const validationError = validateStep(step, formState())
+    if (validationError) {
+      generalError.value = validationError
+      toast({
+        title: 'Profile incomplete',
+        description: validationError,
+        variant: 'destructive',
+      })
+      return
+    }
   }
 
   isSubmitting.value = true

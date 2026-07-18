@@ -1,5 +1,6 @@
 import type { User } from '@/types/auth'
 import type { CefrSample } from '@/services/conversationService'
+import { z } from 'zod'
 
 export const OCEAN_LEVELS = ['low', 'medium', 'high'] as const
 export const OCEAN_UNSET = '__unset__'
@@ -16,6 +17,21 @@ export type OceanTraitConfig = {
   label: string
   description: string
 }
+
+export const oceanLevelSchema = z.enum(OCEAN_LEVELS, {
+  required_error: 'Select a level',
+  invalid_type_error: 'Select a level',
+})
+
+export const oceanFormSchema = z.object({
+  openness: oceanLevelSchema,
+  conscientiousness: oceanLevelSchema,
+  extraversion: oceanLevelSchema,
+  agreeableness: oceanLevelSchema,
+  neuroticism: oceanLevelSchema,
+})
+
+export type OceanFormValues = z.infer<typeof oceanFormSchema>
 
 export const OCEAN_TRAITS: OceanTraitConfig[] = [
   {
@@ -49,6 +65,19 @@ export const OCEAN_TRAITS: OceanTraitConfig[] = [
       'Neuroticism describes how strongly you experience stress, worry, or emotional ups and downs. Higher neuroticism often means greater sensitivity to pressure, while lower neuroticism often means feeling calmer and steadier.',
   },
 ]
+
+export function oceanFormValuesFromModel(
+  ocean: Record<OceanTraitKey, string>,
+): Partial<OceanFormValues> {
+  const values: Partial<OceanFormValues> = {}
+  for (const { key } of OCEAN_TRAITS) {
+    const v = ocean[key]
+    if (v && v !== OCEAN_UNSET && OCEAN_LEVELS.includes(v as (typeof OCEAN_LEVELS)[number])) {
+      values[key] = v as (typeof OCEAN_LEVELS)[number]
+    }
+  }
+  return values
+}
 
 export type ProfileStep = 1 | 2 | 3
 
