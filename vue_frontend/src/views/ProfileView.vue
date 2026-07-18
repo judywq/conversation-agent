@@ -32,7 +32,7 @@
         <Button
           v-if="authStore.user?.profile_completed"
           class="h-11 w-full rounded-xl"
-          variant="outline"
+          variant="default"
           @click="handleGoToConversation"
         >
           Go to Conversation
