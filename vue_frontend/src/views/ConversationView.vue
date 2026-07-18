@@ -130,7 +130,11 @@ const avatarScale = useStorage('conv-game-avatar-scale', 1)
 const SCENE_OPTIONS = [
   { id: 'classroom', label: 'Sunny Classroom', url: '/scenes/classroom.png' },
   { id: 'library', label: 'Library Terrace', url: '/scenes/library.png' },
-  { id: 'sports-ground', label: 'Campus Café', url: '/scenes/sports-ground.png' },
+  { id: 'campus-cafe', label: 'Campus Café', url: '/scenes/campus-cafe.png' },
+  { id: 'sports-ground', label: 'Sports Ground', url: '/scenes/sports-ground.png' },
+  { id: 'meeting-room', label: 'Meeting Room', url: '/scenes/meeting-room.png' },
+  { id: 'outdoors', label: 'Outdoors', url: '/scenes/outdoors.png' },
+  { id: 'pathway', label: 'Pathway', url: '/scenes/pathway.png' },
 ] as const
 
 type SceneId = (typeof SCENE_OPTIONS)[number]['id']
