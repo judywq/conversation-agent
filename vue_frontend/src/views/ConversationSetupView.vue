@@ -298,27 +298,25 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <Card class="rounded-2xl border-border/80 bg-muted/20">
-          <CardHeader class="pb-3">
-            <CardTitle class="text-lg font-bold">Choose Classmates</CardTitle>
-            <CardDescription>
+        <div class="space-y-3">
+          <div class="space-y-1">
+            <div class="text-sm font-medium">Choose Classmates</div>
+            <p class="text-xs text-muted-foreground">
               Classmates who join you in the discussion.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <PartnerSelectPanel v-model="selectedCharacterIds" :disabled="isStarting" />
-            <div class="pt-1">
-              <Button
-                class="h-11 px-8 text-base font-semibold"
-                :disabled="!canStart"
-                @click="startSession"
-              >
-                {{ isStarting ? 'Starting…' : 'Start discussion' }}
-                <SakuraMark :size="16" class="text-primary-foreground" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </p>
+          </div>
+          <PartnerSelectPanel v-model="selectedCharacterIds" :disabled="isStarting" />
+          <div class="pt-1">
+            <Button
+              class="h-11 px-8 text-base font-semibold"
+              :disabled="!canStart"
+              @click="startSession"
+            >
+              {{ isStarting ? 'Starting…' : 'Start discussion' }}
+              <SakuraMark :size="16" class="text-primary-foreground" />
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
   </div>
