@@ -132,6 +132,17 @@ describe('useLive2D', () => {
     expect(fakeModel.automator.autoFocus).toBe(true)
   })
 
+  it('refit applies offsetX/offsetY on top of the fitted slot position', async () => {
+    const { init, refit } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    // screen width 360 → slot center at 180
+    expect(fakeModel.position.set).toHaveBeenCalledWith(180, 0)
+
+    fakeModel.position.set.mockClear()
+    refit({ url: '/m.model3.json', zoom: 2.4, offsetX: 40, offsetY: -25 })
+    expect(fakeModel.position.set).toHaveBeenCalledWith(220, -25)
+  })
+
   it('init returns false when stage element is missing', async () => {
     const { init, status } = useLive2D(ref<HTMLElement | null>(null))
     await expect(init({ url: '/m.model3.json' })).resolves.toBe(false)

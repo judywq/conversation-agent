@@ -50,6 +50,8 @@ export type Live2DPresetInput = {
   url: string
   zoom?: number // extra zoom on top of fit-to-panel; default 2.4 (upper-body framing)
   anchorY?: number // vertical anchor 0..1 from model top; default 0.05
+  offsetX?: number // px added after fit; default 0
+  offsetY?: number // px added after fit; default 0
   // Shared-stage layout: the canvas spans all slots and the model is fitted to
   // and centered in its own slot column, so it can overdraw without clipping.
   slots?: number // horizontal slot count; default 1 (model owns the whole canvas)
@@ -134,7 +136,10 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     )
     instance.scale.set(fit * (preset.zoom ?? 2.4))
     instance.anchor.set(0.5, preset.anchorY ?? 0.05)
-    instance.position.set(((slot + 0.5) / slots) * app.screen.width, 0)
+    instance.position.set(
+      ((slot + 0.5) / slots) * app.screen.width + (preset.offsetX ?? 0),
+      preset.offsetY ?? 0,
+    )
   }
 
   function clearWordMouthSync() {

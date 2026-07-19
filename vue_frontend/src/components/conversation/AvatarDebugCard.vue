@@ -39,6 +39,8 @@ const {
 
 // Use AVATAR_DEFAULT_ZOOM instead of hardcoded default
 const zoom = ref(props.preset.zoom ?? AVATAR_DEFAULT_ZOOM)
+const offsetX = ref(props.preset.offsetX ?? 0)
+const offsetY = ref(props.preset.offsetY ?? 0)
 const testAudioUrl = ref('')
 const selectedMotion = ref('')
 const motionPlaying = ref(false)
@@ -50,9 +52,13 @@ let photoTimeout: ReturnType<typeof setTimeout> | null = null
 
 const fileName = computed(() => props.preset.url.split('/').slice(-3).join('/'))
 const zoomLabel = computed(() => zoom.value.toFixed(2))
+const offsetXLabel = computed(() => String(Math.round(offsetX.value)))
+const offsetYLabel = computed(() => String(Math.round(offsetY.value)))
 const activePreset = computed(() => ({
   ...props.preset,
   zoom: zoom.value * (props.globalZoom ?? 1),
+  offsetX: offsetX.value,
+  offsetY: offsetY.value,
 }))
 const photoBusy = computed(() => photoCountdown.value != null)
 const photoCountdownLabel = computed(() => {
@@ -285,6 +291,38 @@ defineExpose({ load, status })
         class="w-12 shrink-0 select-all text-right font-mono text-xs tabular-nums"
         :title="'Copy into avatarPresets.ts as zoom: ' + zoomLabel"
       >{{ zoomLabel }}</code>
+    </div>
+    <div class="flex items-center gap-2 border-b px-3 py-2">
+      <span class="shrink-0 text-xs text-muted-foreground">x</span>
+      <input
+        v-model.number="offsetX"
+        type="range"
+        min="-200"
+        max="200"
+        step="1"
+        class="h-8 min-w-0 flex-1 accent-primary"
+        aria-label="Offset X"
+      />
+      <code
+        class="w-12 shrink-0 select-all text-right font-mono text-xs tabular-nums"
+        :title="'Copy into avatarPresets.ts as offsetX: ' + offsetXLabel"
+      >{{ offsetXLabel }}</code>
+    </div>
+    <div class="flex items-center gap-2 border-b px-3 py-2">
+      <span class="shrink-0 text-xs text-muted-foreground">y</span>
+      <input
+        v-model.number="offsetY"
+        type="range"
+        min="-200"
+        max="200"
+        step="1"
+        class="h-8 min-w-0 flex-1 accent-primary"
+        aria-label="Offset Y"
+      />
+      <code
+        class="w-12 shrink-0 select-all text-right font-mono text-xs tabular-nums"
+        :title="'Copy into avatarPresets.ts as offsetY: ' + offsetYLabel"
+      >{{ offsetYLabel }}</code>
     </div>
     <div class="flex justify-center overflow-auto bg-muted/30 p-2">
       <div class="relative shrink-0 bg-muted/40" :style="stageStyle">
