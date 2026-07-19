@@ -17,6 +17,8 @@ const props = defineProps<{
   snapshotRatio?: number
   /** Delay before capture, in seconds. */
   snapshotDelaySec?: number
+  /** When true, model tracks the mouse cursor. */
+  lookAtCursor?: boolean
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -31,6 +33,7 @@ const {
   setExpression,
   resetExpression,
   downloadSnapshot,
+  setAutoFocus,
   dispose,
 } = useLive2D(stageRef)
 
@@ -87,6 +90,13 @@ watch(activePreset, (preset) => {
   if (status.value === 'ready') refit(preset)
 })
 
+watch(
+  () => props.lookAtCursor,
+  (enabled) => {
+    if (status.value === 'ready') setAutoFocus(enabled !== false)
+  },
+)
+
 async function playSelectedMotion() {
   if (!selectedMotion.value || motionPlaying.value) return
   const [group, index] = selectedMotion.value.split(' ')
@@ -105,7 +115,7 @@ function applySelectedExpression() {
 async function load(): Promise<boolean> {
   if (status.value === 'ready' || status.value === 'loading') return true
   await nextTick()
-  return init(activePreset.value)
+  return init(activePreset.value, { autoFocus: props.lookAtCursor !== false })
 }
 
 async function reload() {

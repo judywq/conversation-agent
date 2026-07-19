@@ -14,8 +14,11 @@ const fakeModel = {
   destroy: vi.fn(),
   motion: vi.fn(),
   expression: vi.fn(),
+  focus: vi.fn(),
+  automator: { autoFocus: true },
   internalModel: {
     options: { lipSyncGain: 2.5, lipSyncWeight: 1.0 },
+    focusController: { focus: vi.fn() },
     motionManager: {
       definitions: {
         Idle: [{ File: 'motions/Hiyori_m01.motion3.json' }, { File: 'motions/Hiyori_m02.motion3.json' }],
@@ -103,7 +106,30 @@ describe('useLive2D', () => {
     expect(Live2DModel.from).toHaveBeenCalledWith('/live2d/x/runtime/x.model3.json', {
       lipSyncGain: 2.5,
       lipSyncWeight: 1.0,
+      autoFocus: true,
     })
+  })
+
+  it('init passes autoFocus false when requested', async () => {
+    const { init } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' }, { autoFocus: false })
+    expect(Live2DModel.from).toHaveBeenCalledWith('/m.model3.json', {
+      lipSyncGain: 2.5,
+      lipSyncWeight: 1.0,
+      autoFocus: false,
+    })
+  })
+
+  it('setAutoFocus toggles automator and resets gaze when disabling', async () => {
+    fakeModel.automator.autoFocus = true
+    const { init, setAutoFocus } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    setAutoFocus(false)
+    expect(fakeModel.automator.autoFocus).toBe(false)
+    expect(fakeModel.internalModel.focusController.focus).toHaveBeenCalledWith(0, 0, true)
+    expect(fakeModel.focus).not.toHaveBeenCalled()
+    setAutoFocus(true)
+    expect(fakeModel.automator.autoFocus).toBe(true)
   })
 
   it('init returns false when stage element is missing', async () => {

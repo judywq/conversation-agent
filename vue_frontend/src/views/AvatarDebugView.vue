@@ -22,6 +22,8 @@ const stageHeight = ref(400)
 const snapshotRatio = ref(1)
 /** Delay before capture (seconds). */
 const snapshotDelaySec = ref(1)
+/** When true, models track the mouse cursor (engine autoFocus). */
+const lookAtCursor = ref(true)
 /** Cards per row (1–10). */
 const columns = ref(5)
 
@@ -140,6 +142,16 @@ async function loadAll() {
         />
         s
       </label>
+      <span class="mx-1 hidden h-6 w-px bg-border sm:inline-block" aria-hidden="true" />
+      <label class="flex cursor-pointer items-center gap-2 text-sm font-medium">
+        <input
+          v-model="lookAtCursor"
+          type="checkbox"
+          class="h-4 w-4 accent-primary"
+          aria-label="Look at cursor"
+        />
+        Look at cursor
+      </label>
     </div>
 
     <section class="space-y-3">
@@ -155,6 +167,7 @@ async function loadAll() {
           :stage-height="stageHeight"
           :snapshot-ratio="snapshotRatio"
           :snapshot-delay-sec="snapshotDelaySec"
+          :look-at-cursor="lookAtCursor"
         />
       </div>
     </section>
@@ -172,6 +185,7 @@ async function loadAll() {
           :stage-height="stageHeight"
           :snapshot-ratio="snapshotRatio"
           :snapshot-delay-sec="snapshotDelaySec"
+          :look-at-cursor="lookAtCursor"
         />
       </div>
     </section>

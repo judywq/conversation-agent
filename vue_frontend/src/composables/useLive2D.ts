@@ -56,6 +56,11 @@ export type Live2DPresetInput = {
   slot?: number // this model's slot index; default 0
 }
 
+export type Live2DInitOptions = {
+  /** Track pointer for eye/head look-at. Default true (engine default). */
+  autoFocus?: boolean
+}
+
 export type Live2DMotionEntry = { index: number; name: string }
 
 export type Live2DCapabilities = {
@@ -188,13 +193,17 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     if (model.value) fitModel(model.value, preset)
   }
 
-  async function init(preset: Live2DPresetInput): Promise<boolean> {
+  async function init(
+    preset: Live2DPresetInput,
+    options?: Live2DInitOptions,
+  ): Promise<boolean> {
     if (model.value) return true
     if (initPromise) return initPromise
 
     disposed = false
     const gen = ++loadGen
     activePreset = preset
+    const autoFocus = options?.autoFocus ?? true
     const thisInit = (async () => {
       const stage = stageRef.value
       if (!stage) return false
@@ -220,6 +229,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         const instance = await Live2DModel.from(preset.url, {
           lipSyncGain: 2.5,
           lipSyncWeight: 1.0,
+          autoFocus,
         })
 
         // dispose()/newer init ran while awaiting from(); bail without attaching.
@@ -265,6 +275,18 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     initPromise = thisInit
 
     return thisInit
+  }
+
+  /** Enable/disable pointer look-at; when disabling, snap gaze to face the camera. */
+  function setAutoFocus(enabled: boolean) {
+    const instance = model.value
+    if (!instance) return
+    instance.automator.autoFocus = enabled
+    if (!enabled) {
+      // Live2DModel.focus(x,y) is world-space — (0,0) is stage top-left, not "forward".
+      // FocusController uses normalized [-1,1]; (0,0) faces the camera.
+      instance.internalModel.focusController.focus(0, 0, true)
+    }
   }
 
   async function speak(audioUrl: string, lipsync?: LipSyncPayload | null): Promise<boolean> {
@@ -465,6 +487,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     setExpression,
     resetExpression,
     setIdle,
+    setAutoFocus,
     downloadSnapshot,
     dispose,
   }
