@@ -28,7 +28,7 @@
           <Input v-model="preferredName" placeholder="E.g., Alex" class="w-full" />
         </div>
         <div class="space-y-2">
-          <div class="text-sm font-medium">What is your study major?</div>
+          <div class="text-sm font-medium">What is your study major / field of expertise?</div>
           <Input v-model="major" placeholder="E.g., Computer Science" class="w-full" />
         </div>
         <div class="flex flex-wrap gap-2">
@@ -77,7 +77,7 @@
           </dd>
         </div>
         <div>
-          <dt class="text-muted-foreground">Major</dt>
+          <dt class="text-muted-foreground">Major / Field of expertise</dt>
           <dd class="font-medium text-foreground">
             {{ authStore.user?.major || 'Not set' }}
           </dd>

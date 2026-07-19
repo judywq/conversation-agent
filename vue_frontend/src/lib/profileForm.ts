@@ -138,7 +138,7 @@ export function firstIncompleteStep(user?: User | null): ProfileStep {
 export function validateStep(step: ProfileStep, state: ProfileFormState): string | null {
   if (step === 1) {
     if (!state.preferredName.trim()) return 'Enter how we should address you.'
-    if (!state.major.trim()) return 'Enter your study major.'
+    if (!state.major.trim()) return 'Enter your study major / field of expertise.'
     return null
   }
   if (step === 2) {

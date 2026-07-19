@@ -67,10 +67,10 @@
             </div>
           </div>
           <div class="space-y-2">
-            <div class="text-sm font-medium">What is your study major?</div>
+            <div class="text-sm font-medium">What is your study major / field of expertise?</div>
             <Input v-model="major" placeholder="E.g., Computer Science" class="w-full" />
             <div class="text-xs text-muted-foreground">
-              Your partners will be classmates from the same major.
+              Your partners will be classmates from the same major / field of expertise.
             </div>
           </div>
         </template>
