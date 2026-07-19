@@ -55,6 +55,23 @@ class UserProfile(models.Model):
         blank=True,
         help_text="Latest generated CEFR listening samples for the selected topic.",
     )
+    class CefrSamplesStatus(models.TextChoices):
+        IDLE = "idle", "Idle"
+        PENDING = "pending", "Pending"
+        READY = "ready", "Ready"
+        FAILED = "failed", "Failed"
+
+    cefr_samples_status = models.CharField(
+        max_length=16,
+        choices=CefrSamplesStatus.choices,
+        default=CefrSamplesStatus.IDLE,
+        blank=True,
+        help_text="Background generation status for CEFR listening samples.",
+    )
+    cefr_samples_generation = models.PositiveIntegerField(
+        default=0,
+        help_text="Increments each time CEFR sample generation is started; used to ignore stale jobs.",
+    )
     proficiency_reference_utterance = models.TextField(
         blank=True,
         default="",

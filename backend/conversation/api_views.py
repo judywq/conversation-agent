@@ -1,5 +1,4 @@
 import logging
-import time
 
 from rest_framework import serializers
 from rest_framework.parsers import MultiPartParser
@@ -18,7 +17,6 @@ from backend.conversation.services.discussion_scenario import DISCUSSION_PROFILE
 from backend.conversation.services.discussion_scenario import apply_discussion_result_to_profile
 from backend.conversation.services.discussion_scenario import scenario_result_to_dict
 from backend.conversation.services.discussion_scenario import setup_discussion_context
-from backend.conversation.services.profile_audio import generate_cefr_topic_samples
 from backend.conversation.services.stt import transcribe_audio_file
 from backend.news.taxonomy import get_category
 from backend.news.taxonomy import get_subtopic
@@ -94,48 +92,66 @@ class DiscussionScenarioView(APIView):
 class CefrTopicSamplesView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        if not hasattr(request.user, "userprofile"):
+            return Response(
+                {
+                    "status": "idle",
+                    "topic": "",
+                    "samples": [],
+                },
+            )
+        profile = request.user.userprofile
+        return Response(
+            {
+                "status": profile.cefr_samples_status or "idle",
+                "topic": profile.cefr_sample_topic or "",
+                "samples": profile.cefr_sample_choices or [],
+            },
+        )
+
     def post(self, request):
-        t0 = time.perf_counter()
         serializer = CefrTopicSamplesRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        topic = serializer.validated_data["topic"]
+        topic = serializer.validated_data["topic"].strip()
         user_id = request.user.id
         topic_log = topic[:200]
-        logger.info("cefr_samples request_start user_id=%s topic=%s", user_id, topic_log)
-        try:
-            samples = generate_cefr_topic_samples(topic=topic, user=request.user)
-            if hasattr(request.user, "userprofile"):
-                logger.info("cefr_samples profile_save_start user_id=%s", user_id)
-                t_save0 = time.perf_counter()
-                request.user.userprofile.cefr_sample_choices = samples
-                request.user.userprofile.save(update_fields=["cefr_sample_choices"])
-                save_ms = int((time.perf_counter() - t_save0) * 1000)
-                logger.info(
-                    "cefr_samples profile_save_complete user_id=%s duration_ms=%d",
-                    user_id,
-                    save_ms,
-                )
-            else:
-                logger.info("cefr_samples profile_save_skipped user_id=%s", user_id)
-            total_ms = int((time.perf_counter() - t0) * 1000)
-            logger.info(
-                "cefr_samples request_complete user_id=%s topic=%s total_ms=%d sample_count=%d",
-                user_id,
-                topic_log,
-                total_ms,
-                len(samples),
-            )
-            return Response({"topic": topic, "samples": samples})
-        except Exception:
-            total_ms = int((time.perf_counter() - t0) * 1000)
-            logger.exception(
-                "cefr_samples request_failed user_id=%s topic=%s total_ms=%d",
-                user_id,
-                topic_log,
-                total_ms,
-            )
-            raise
 
+        if not hasattr(request.user, "userprofile"):
+            return Response({"detail": "User profile not found."}, status=400)
+
+        from backend.conversation.tasks import generate_cefr_samples_for_user
+        from backend.users.models import UserProfile
+
+        profile = request.user.userprofile
+        generation = profile.cefr_samples_generation + 1
+        profile.cefr_sample_topic = topic
+        profile.cefr_sample_choices = []
+        profile.cefr_samples_status = UserProfile.CefrSamplesStatus.PENDING
+        profile.cefr_samples_generation = generation
+        profile.save(
+            update_fields=[
+                "cefr_sample_topic",
+                "cefr_sample_choices",
+                "cefr_samples_status",
+                "cefr_samples_generation",
+            ],
+        )
+        logger.info(
+            "cefr_samples enqueue user_id=%s topic=%s generation=%s",
+            user_id,
+            topic_log,
+            generation,
+        )
+        generate_cefr_samples_for_user.delay(user_id, topic, generation)
+        return Response(
+            {
+                "status": UserProfile.CefrSamplesStatus.PENDING,
+                "topic": topic,
+                "samples": [],
+            },
+            status=202,
+        )
 
 class UserAudioUploadView(APIView):
     """

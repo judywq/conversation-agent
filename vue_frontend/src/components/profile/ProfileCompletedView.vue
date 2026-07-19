@@ -173,44 +173,74 @@
         <Button
           type="button"
           variant="outline"
+          class="inline-flex items-center gap-2"
           :disabled="isGeneratingCefr"
           @click="generateCefrSamples"
         >
-          {{ isGeneratingCefr ? 'Generating samples…' : 'Generate listening samples' }}
+          <Loader2 v-if="isGeneratingCefr" class="size-4 animate-spin" />
+          <RefreshCw v-else-if="hasCefrSamples" class="size-4" />
+          {{
+            isGeneratingCefr
+              ? 'Generating samples…'
+              : hasCefrSamples
+                ? 'Regenerate listening samples'
+                : 'Generate listening samples'
+          }}
         </Button>
-        <div v-if="cefrSamples.length === 0" class="text-sm text-muted-foreground">
-          Generate samples to choose your level, or keep your current selection.
-        </div>
         <div
-          v-for="(sample, idx) in cefrSamples"
-          :key="sample.level"
-          class="rounded-2xl border border-border/80 bg-card/40 p-3 backdrop-blur-sm"
+          v-if="isGeneratingCefr"
+          class="flex min-h-40 flex-col items-center justify-center gap-3 rounded-2xl border border-border/80 bg-card/40 p-6 text-center"
         >
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div class="flex flex-wrap items-center gap-3">
-              <div class="w-5 text-center font-medium">{{ idx + 1 }}</div>
-              <div class="font-medium">{{ sample.level }}</div>
-              <audio
-                v-if="sample.audio_url"
-                :src="sample.audio_url"
-                controls
-                class="h-8 max-w-[220px]"
-              />
-            </div>
-            <Button
-              type="button"
-              class="shrink-0"
-              :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
-              @click="selectedCefrLevel = sample.level"
-            >
-              {{ selectedCefrLevel === sample.level ? 'Selected' : 'Choose' }}
-            </Button>
+          <Loader2 class="size-8 animate-spin text-primary" />
+          <div class="space-y-1">
+            <p class="text-sm font-medium text-foreground">Generating listening samples…</p>
+            <p class="text-xs text-muted-foreground">
+              Related to {{ cefrTopic || 'your major' }}. You can leave and come back — generation continues in the background.
+            </p>
           </div>
         </div>
+        <div
+          v-else-if="cefrSamples.length === 0"
+          class="text-sm text-muted-foreground"
+        >
+          {{
+            cefrSamplesStatus === 'failed'
+              ? 'Sample generation failed. Try generating again.'
+              : 'Generate samples to choose your level, or keep your current selection.'
+          }}
+        </div>
+        <template v-else>
+          <div
+            v-for="(sample, idx) in cefrSamples"
+            :key="sample.level"
+            class="rounded-2xl border border-border/80 bg-card/40 p-3 backdrop-blur-sm"
+          >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-wrap items-center gap-3">
+                <div class="w-5 text-center font-medium">{{ idx + 1 }}</div>
+                <div class="font-medium">{{ sample.level }}</div>
+                <audio
+                  v-if="sample.audio_url"
+                  :src="sample.audio_url"
+                  controls
+                  class="h-8 max-w-[220px]"
+                />
+              </div>
+              <Button
+                type="button"
+                class="shrink-0"
+                :variant="selectedCefrLevel === sample.level ? 'default' : 'outline'"
+                @click="selectedCefrLevel = sample.level"
+              >
+                {{ selectedCefrLevel === sample.level ? 'Selected' : 'Choose' }}
+              </Button>
+            </div>
+          </div>
+        </template>
         <div class="flex flex-wrap gap-2">
           <Button
             type="button"
-            :disabled="isSubmitting"
+            :disabled="isSubmitting || isGeneratingCefr"
             @click="saveSection('cefr')"
           >
             {{ isSubmitting ? 'Saving…' : 'Save' }}
@@ -249,11 +279,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { Loader2, RefreshCw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import AvatarPicker from '@/components/profile/AvatarPicker.vue'
 import OceanTraitsFields from '@/components/profile/OceanTraitsFields.vue'
 import { useToast } from '@/components/ui/toast/use-toast'
+import { useCefrSamples } from '@/composables/useCefrSamples'
 import {
   aboutPayload,
   cefrPayload,
@@ -264,9 +296,8 @@ import {
 } from '@/lib/profileForm'
 import { profileAvatarById } from '@/config/profileAvatars'
 import {
-  ConversationService,
-  PROFILE_ONBOARDING_CEFR_TOPIC,
   type CefrSample,
+  type CefrSamplesStatus,
 } from '@/services/conversationService'
 import { AuthService } from '@/services/authService'
 import { useAuthStore } from '@/stores/auth'
@@ -283,12 +314,45 @@ const avatarId = ref(authStore.user?.avatar_id ?? '')
 const oceanModel = reactive(emptyOceanModel(authStore.user))
 const oceanFieldsRef = ref<InstanceType<typeof OceanTraitsFields> | null>(null)
 const cefrSamples = ref<CefrSample[]>(authStore.user?.cefr_sample_choices ?? [])
+const cefrSamplesStatus = ref<CefrSamplesStatus>(
+  (authStore.user?.cefr_samples_status as CefrSamplesStatus | undefined) ??
+    (authStore.user?.cefr_sample_choices?.length ? 'ready' : 'idle'),
+)
 const selectedCefrLevel = ref<string | null>(authStore.user?.cefr_level ?? null)
-const isGeneratingCefr = ref(false)
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
 
+const {
+  isGenerating: isGeneratingCefr,
+  hasSamples: hasCefrSamples,
+  startGeneration,
+  syncFromServer,
+} = useCefrSamples({
+  cefrSamples,
+  status: cefrSamplesStatus,
+  onReady: () => {
+    toast({
+      title: 'Samples ready',
+      description: 'Listen and choose the level you are comfortable with, then save.',
+    })
+  },
+  onFailed: (message) => {
+    toast({
+      title: 'Sample generation failed',
+      description: message,
+      variant: 'destructive',
+    })
+  },
+})
+
 const currentAvatar = computed(() => profileAvatarById(authStore.user?.avatar_id))
+const cefrTopic = computed(
+  () =>
+    major.value.trim() ||
+    authStore.user?.major?.trim() ||
+    authStore.user?.cefr_sample_topic?.trim() ||
+    '',
+)
 
 function syncFromUser() {
   const user = authStore.user
@@ -298,6 +362,9 @@ function syncFromUser() {
   Object.assign(oceanModel, emptyOceanModel(user))
   selectedCefrLevel.value = user?.cefr_level ?? null
   cefrSamples.value = user?.cefr_sample_choices ?? []
+  cefrSamplesStatus.value =
+    (user?.cefr_samples_status as CefrSamplesStatus | undefined) ??
+    (user?.cefr_sample_choices?.length ? 'ready' : 'idle')
 }
 
 watch(
@@ -307,6 +374,14 @@ watch(
     syncFromUser()
   },
 )
+
+watch(editingSection, (section) => {
+  if (section === 'cefr') {
+    void syncFromServer().catch(() => {
+      /* ignore */
+    })
+  }
+})
 
 function formState() {
   return {
@@ -361,7 +436,7 @@ async function saveSection(section: EditSection) {
         ? aboutPayload(formState())
         : section === 'ocean'
           ? oceanPayload(formState())
-          : cefrPayload(formState(), PROFILE_ONBOARDING_CEFR_TOPIC)
+          : cefrPayload(formState(), cefrTopic.value)
 
     const user = await AuthService.updateUser(payload)
     authStore.user = user
@@ -387,15 +462,9 @@ async function saveSection(section: EditSection) {
 }
 
 async function generateCefrSamples() {
-  isGeneratingCefr.value = true
   selectedCefrLevel.value = null
   try {
-    const result = await ConversationService.generateCefrSamples(PROFILE_ONBOARDING_CEFR_TOPIC)
-    cefrSamples.value = result.samples
-    toast({
-      title: 'Samples ready',
-      description: 'Listen and choose the level you are comfortable with, then save.',
-    })
+    await startGeneration(cefrTopic.value)
   } catch (err: unknown) {
     toast({
       title: 'Sample generation failed',
@@ -405,8 +474,6 @@ async function generateCefrSamples() {
           : 'Could not generate CEFR listening samples.',
       variant: 'destructive',
     })
-  } finally {
-    isGeneratingCefr.value = false
   }
 }
 </script>

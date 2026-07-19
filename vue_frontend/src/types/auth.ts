@@ -17,6 +17,7 @@ export interface User {
     text: string;
     audio_url?: string | null;
   }>;
+  cefr_samples_status?: 'idle' | 'pending' | 'ready' | 'failed' | null;
   preferred_name?: string | null;
   avatar_id?: string | null;
   major?: string | null;

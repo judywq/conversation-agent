@@ -234,6 +234,8 @@ class UserProfileAdmin(admin.ModelAdmin):
         "proficiency_reference_utterance",
         "cefr_sample_topic",
         "cefr_sample_choices",
+        "cefr_samples_status",
+        "cefr_samples_generation",
     ]
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):

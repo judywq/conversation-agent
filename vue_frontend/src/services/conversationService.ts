@@ -124,7 +124,13 @@ export interface AgentCharacter {
   voice_preset_name: string
 }
 
-export const PROFILE_ONBOARDING_CEFR_TOPIC = 'University life and learning English'
+export type CefrSamplesStatus = 'idle' | 'pending' | 'ready' | 'failed'
+
+export type CefrSamplesResult = {
+  status: CefrSamplesStatus
+  topic: string
+  samples: CefrSample[]
+}
 
 export class ConversationService {
   static async fetchAgentCharacters(): Promise<AgentCharacter[]> {
@@ -177,13 +183,22 @@ export class ConversationService {
     return res.data
   }
 
-  static async generateCefrSamples(topic: string): Promise<{ topic: string; samples: CefrSample[] }> {
-    const res = await api.post<{ topic: string; samples: CefrSample[] }>('/conversation/cefr-samples/', {
-      topic,
-    }, {
-      timeout: 180000,
-    })
-    return res.data
+  static async startCefrSamples(topic: string): Promise<CefrSamplesResult> {
+    const res = await api.post<CefrSamplesResult>('/conversation/cefr-samples/', { topic })
+    return {
+      status: res.data.status ?? 'pending',
+      topic: res.data.topic,
+      samples: res.data.samples ?? [],
+    }
+  }
+
+  static async fetchCefrSamples(): Promise<CefrSamplesResult> {
+    const res = await api.get<CefrSamplesResult>('/conversation/cefr-samples/')
+    return {
+      status: res.data.status ?? 'idle',
+      topic: res.data.topic ?? '',
+      samples: res.data.samples ?? [],
+    }
   }
 
   static async fetchArgumentSummary(sessionId: number): Promise<ArgumentSummaryResult> {

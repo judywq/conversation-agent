@@ -130,6 +130,13 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         allow_null=True,
     )
     cefr_sample_choices = UserProfileJSONField(profile_attr="cefr_sample_choices", required=False)
+    cefr_samples_status = UserProfileTextField(
+        profile_attr="cefr_samples_status",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        read_only=True,
+    )
     proficiency_reference_utterance = UserProfileTextField(
         profile_attr="proficiency_reference_utterance",
         required=False,
@@ -199,6 +206,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "profile_completed",
             "cefr_sample_topic",
             "cefr_sample_choices",
+            "cefr_samples_status",
             "proficiency_reference_utterance",
             "preferred_name",
             "avatar_id",
