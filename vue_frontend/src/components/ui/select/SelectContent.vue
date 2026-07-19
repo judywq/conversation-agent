@@ -19,6 +19,8 @@ const props = withDefaults(
   defineProps<SelectContentProps & { class?: HTMLAttributes['class'] }>(),
   {
     position: 'popper',
+    // Avoid locking document body scroll when the select opens (reka-ui#1670).
+    bodyLock: false,
   },
 )
 const emits = defineEmits<SelectContentEmits>()

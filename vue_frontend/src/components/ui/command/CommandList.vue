@@ -6,6 +6,8 @@ import { computed, type HTMLAttributes } from 'vue'
 
 const props = withDefaults(defineProps<ComboboxContentProps & { class?: HTMLAttributes['class'] }>(), {
   dismissable: false,
+  // Avoid locking document body scroll when the list opens (reka-ui#1670).
+  bodyLock: false,
 })
 const emits = defineEmits<ComboboxContentEmits>()
 
