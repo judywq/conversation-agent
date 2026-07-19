@@ -47,8 +47,11 @@ async function confirmProfileRequired() {
 
     <main class="relative z-10 flex-grow">
       <router-view v-slot="{ Component, route }">
-        <!-- path (not fullPath): query-only changes must not remount; out-in: avoid leave+enter stacking which jumps content up from below -->
-        <transition name="fade" mode="out-in" appear>
+        <!-- path (not fullPath): query-only changes must not remount; out-in: avoid leave+enter stacking which jumps content up from below.
+             :duration forces leave/enter to finish even if transitionend is cancelled
+             (e.g. exitFullscreen during route leave). Child views must be single-root
+             (no leading HTML comments) or out-in leaves main blank. -->
+        <transition name="fade" mode="out-in" appear :duration="200">
           <component :is="Component" :key="route.path" />
         </transition>
       </router-view>

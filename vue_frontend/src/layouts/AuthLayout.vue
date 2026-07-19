@@ -40,7 +40,7 @@ onMounted(() => {
     <main class="relative z-10 flex-grow flex items-start justify-center px-4 py-6 sm:py-10">
       <div class="w-full max-w-md">
         <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in" appear>
+          <transition name="fade" mode="out-in" appear :duration="200">
             <component :is="Component" />
           </transition>
         </router-view>

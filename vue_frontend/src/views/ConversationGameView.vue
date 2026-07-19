@@ -952,14 +952,23 @@ function lockLandscape() {
   )
 }
 
-function unlockOrientation() {
+/** Once true, further unlockOrientation calls are no-ops (exitToSetup + onUnmounted). */
+let orientationUnlocked = false
+
+/** Unlock landscape and exit fullscreen before route leave starts.
+ *  Exiting fullscreen during leave can cancel transitionend and brick
+ *  BaseLayout's mode="out-in" (blank pages until hard refresh). */
+async function unlockOrientation(): Promise<void> {
+  if (orientationUnlocked) return
+  orientationUnlocked = true
   screen.orientation?.unlock?.()
-  // Defer fullscreen exit: calling it synchronously during a route leave can
-  // cancel CSS transitionend, and BaseLayout's mode="out-in" then never mounts
-  // the next view (blank setup page).
-  window.setTimeout(() => {
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
-  }, 250)
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen()
+    } catch {
+      /* NotAllowedError / already exited — ignore */
+    }
+  }
 }
 
 function resumeSession(sessionIdToResume: number) {
@@ -978,6 +987,8 @@ function resumeSession(sessionIdToResume: number) {
         description: 'Could not connect to the conversation server. Please wait a moment and try again.',
         variant: 'destructive',
       })
+      hideAppNav.value = false
+      await unlockOrientation()
       void router.replace({ name: 'conversation' })
     }
   })()
@@ -993,13 +1004,15 @@ const notebookOpen = ref(false)
 
 function onExitClick() {
   if (isEnded.value) {
-    exitToSetup()
+    void exitToSetup()
     return
   }
   if (!sessionId.value) {
     hideAppNav.value = false
-    unlockOrientation()
-    void router.replace({ name: 'conversation' })
+    void (async () => {
+      await unlockOrientation()
+      void router.replace({ name: 'conversation' })
+    })()
     return
   }
   leaveSessionWithoutEnding()
@@ -1012,7 +1025,7 @@ function onExitClick() {
 /** Leave the game without ending: close WS so the server treats the
  *  session like a closed tab (interrupted, resumable from History). */
 function leaveSessionWithoutEnding() {
-  exitToSetup()
+  void exitToSetup()
 }
 
 function confirmEndSession() {
@@ -1021,9 +1034,9 @@ function confirmEndSession() {
 }
 
 /** Leave the game phase and return to session setup. */
-function exitToSetup() {
+async function exitToSetup() {
   hideAppNav.value = false
-  unlockOrientation()
+  await unlockOrientation()
   stopAllAudioPlayback()
   resetAvatars()
   clearRecordingPreview()
@@ -1297,7 +1310,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   hideAppNav.value = false
-  unlockOrientation()
+  void unlockOrientation()
   window.removeEventListener('keydown', handleRecordShortcut, true)
   window.removeEventListener('pointerdown', handleConversationInteraction)
   clearEndedSummaryPollTimer()
@@ -1312,9 +1325,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- Immersive fullscreen scene. z-[60] covers the NavBar (z-50);
-       portaled popover/menu content gets z-[70] to stay above this overlay. -->
   <div class="fixed inset-0 z-[60] overflow-hidden">
+    <!-- Immersive fullscreen scene. z-[60] covers the NavBar (z-50);
+         portaled popover/menu content gets z-[70] to stay above this overlay. -->
     <!-- Gradient stays visible while the scene image loads -->
     <div class="absolute inset-0 bg-gradient-to-b from-pink-200/80 via-sky-100 to-amber-50" />
     <div
