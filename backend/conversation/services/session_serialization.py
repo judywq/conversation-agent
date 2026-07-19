@@ -12,8 +12,6 @@ from backend.conversation.services.conversation_phase import should_terminate
 def can_continue_session(session: ConversationSession) -> bool:
     if session.terminate:
         return False
-    if session.turn_count <= 0:
-        return False
     return not should_terminate(session)
 
 

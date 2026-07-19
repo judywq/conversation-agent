@@ -65,10 +65,11 @@ def test_session_concluded_flags(user) -> None:
 
 @pytest.mark.django_db
 def test_can_continue_session_flags(user) -> None:
+    # Past hard cap (max_turns + extension) — should_terminate without relying on closing turns
     ended = ConversationSession.objects.create(
         user=user,
         topic="Finished",
-        turn_count=5,
+        turn_count=9,
         max_turns=5,
         terminate=False,
     )
@@ -97,9 +98,11 @@ def test_can_continue_session_flags(user) -> None:
     assert can_continue_session(ended) is False
     assert can_continue_session(stopped) is False
     assert can_continue_session(interrupted) is True
-    assert can_continue_session(empty) is False
+    assert can_continue_session(empty) is True
     assert session_summary_to_dict(interrupted)["can_continue"] is True
     assert session_summary_to_dict(stopped)["can_continue"] is False
+    assert session_summary_to_dict(empty)["can_continue"] is True
+    assert session_summary_to_dict(ended)["can_continue"] is False
 
 
 @pytest.mark.django_db
