@@ -5,7 +5,7 @@ import sharp from 'sharp'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-const srcDir = path.join(root, 'partner-thumbs-src')
+const srcDir = path.join(root, 'image-src', 'partner-thumbs-src')
 const outDir = path.join(root, 'public', 'partner-thumbs')
 
 const THUMB_HEIGHT = 400

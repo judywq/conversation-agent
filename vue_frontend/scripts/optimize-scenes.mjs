@@ -5,7 +5,7 @@ import sharp from 'sharp'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-const srcDir = path.join(root, 'scenes-src')
+const srcDir = path.join(root, 'image-src', 'scenes-src')
 const outDir = path.join(root, 'public', 'scenes')
 
 const DISPLAY_WIDTH = 1600

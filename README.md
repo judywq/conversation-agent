@@ -180,11 +180,11 @@ npm run dev
 
 ### Scene background images
 
-Scene masters are PNG files in `vue_frontend/scenes-src/`. The app serves optimized WebP assets from `vue_frontend/public/scenes/` (full-size display + `.thumb.webp` for the setup picker).
+Scene masters are PNG files in `vue_frontend/image-src/scenes-src/`. The app serves optimized WebP assets from `vue_frontend/public/scenes/` (full-size display + `.thumb.webp` for the setup picker).
 
 When you **add or replace** a scene master:
 
-1. Put the PNG in `vue_frontend/scenes-src/` (e.g. `new-scene.png`).
+1. Put the PNG in `vue_frontend/image-src/scenes-src/` (e.g. `new-scene.png`).
 2. Regenerate WebPs:
 
 ```sh
@@ -205,11 +205,11 @@ You do **not** need to run this for normal `npm run dev` or production builds â€
 
 ### Partner thumbnail images
 
-Partner select on Discussion Setup uses static WebP thumbs (not Live2D). Masters are PNG files named by character id in `vue_frontend/partner-thumbs-src/` (e.g. `haru.png`). Optimized assets are served from `vue_frontend/public/partner-thumbs/`.
+Partner select on Discussion Setup uses static WebP thumbs (not Live2D). Masters are PNG files named by character id in `vue_frontend/image-src/partner-thumbs-src/` (e.g. `haru.png`). Optimized assets are served from `vue_frontend/public/partner-thumbs/`.
 
 When you **add or replace** a partner thumb:
 
-1. Put the PNG in `vue_frontend/partner-thumbs-src/` using the character id as the filename.
+1. Put the PNG in `vue_frontend/image-src/partner-thumbs-src/` using the character id as the filename.
 2. Regenerate WebPs:
 
 ```sh
