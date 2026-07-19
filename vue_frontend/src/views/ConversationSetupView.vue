@@ -282,7 +282,8 @@ onUnmounted(() => {
               @click="sceneId = scene.id"
             >
               <div
-                class="h-24 bg-cover bg-center"
+                class="h-24 bg-cover bg-center transition-transform duration-300 ease-out group-hover:scale-110"
+                :class="sceneId === scene.id ? '' : 'grayscale opacity-60'"
                 :style="{ backgroundImage: `url(${scene.url})` }"
               />
               <div class="flex items-center justify-between gap-2 px-3 py-2">
