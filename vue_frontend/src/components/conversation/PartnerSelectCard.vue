@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { avatarPresetByUrl, resolveAvatarZoom } from '@/config/avatarPresets'
-import { useLive2D } from '@/composables/useLive2D'
+import { PARTNER_THUMB_PLACEHOLDER, partnerThumbUrl } from '@/config/partnerThumbs'
 import type { AgentCharacter } from '@/services/conversationService'
 import { AudioLines, Check } from 'lucide-vue-next'
 
@@ -15,37 +13,11 @@ const emit = defineEmits<{
   toggle: []
 }>()
 
-const stageRef = ref<HTMLElement | null>(null)
-const { status, errorMessage, init, dispose } = useLive2D(stageRef)
-
-async function load() {
-  if (status.value === 'ready' || status.value === 'loading') return
-  await nextTick()
-  if (!stageRef.value) return
-  const base = avatarPresetByUrl(props.character.live2d_url) ?? {
-    url: props.character.live2d_url,
-  }
-  await init({
-    ...base,
-    zoom: resolveAvatarZoom(base.zoom),
-  })
+function onThumbError(event: Event) {
+  const img = event.target as HTMLImageElement
+  if (img.src.endsWith(PARTNER_THUMB_PLACEHOLDER)) return
+  img.src = PARTNER_THUMB_PLACEHOLDER
 }
-
-watch(
-  () => props.character.live2d_url,
-  () => {
-    dispose()
-    void load()
-  },
-)
-
-onMounted(() => {
-  void load()
-})
-
-onUnmounted(() => {
-  dispose()
-})
 
 function onClick() {
   if (props.disabled && !props.selected) return
@@ -69,19 +41,12 @@ function onClick() {
     @click="onClick"
   >
     <div class="relative h-[180px] bg-muted/40">
-      <div ref="stageRef" class="absolute inset-0 z-0" />
-      <div
-        v-if="status === 'idle' || status === 'loading'"
-        class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-2 text-center text-xs text-muted-foreground"
-      >
-        Loading…
-      </div>
-      <div
-        v-else-if="status === 'error'"
-        class="absolute inset-0 z-10 flex items-center justify-center px-2 text-center text-xs text-destructive"
-      >
-        {{ errorMessage || 'Avatar unavailable' }}
-      </div>
+      <img
+        :src="partnerThumbUrl(character.id)"
+        :alt="character.display_name"
+        class="absolute inset-0 z-0 h-full w-full object-contain object-bottom"
+        @error="onThumbError"
+      />
       <span
         v-if="selected"
         class="absolute right-2.5 top-2.5 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow"

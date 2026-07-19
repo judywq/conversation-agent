@@ -131,3 +131,7 @@ setup-speaker-profiles-%:
 optimize-scenes:
 	cd vue_frontend && npm run optimize:scenes
 
+# Regenerate partner thumbnail WebPs from vue_frontend/partner-thumbs-src/
+optimize-partner-thumbs:
+	cd vue_frontend && npm run optimize:partner-thumbs
+

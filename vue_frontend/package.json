@@ -15,7 +15,8 @@
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
-    "optimize:scenes": "node scripts/optimize-scenes.mjs"
+    "optimize:scenes": "node scripts/optimize-scenes.mjs",
+    "optimize:partner-thumbs": "node scripts/optimize-partner-thumbs.mjs"
   },
   "dependencies": {
     "@tanstack/vue-table": "^8.20.5",

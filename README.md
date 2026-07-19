@@ -203,6 +203,28 @@ npm run optimize:scenes
 
 You do **not** need to run this for normal `npm run dev` or production builds — those use the committed WebPs in `public/scenes/`.
 
+### Partner thumbnail images
+
+Partner select on Discussion Setup uses static WebP thumbs (not Live2D). Masters are PNG files named by character id in `vue_frontend/partner-thumbs-src/` (e.g. `haru.png`). Optimized assets are served from `vue_frontend/public/partner-thumbs/`.
+
+When you **add or replace** a partner thumb:
+
+1. Put the PNG in `vue_frontend/partner-thumbs-src/` using the character id as the filename.
+2. Regenerate WebPs:
+
+```sh
+make optimize-partner-thumbs
+```
+
+Or from the frontend folder:
+
+```sh
+cd vue_frontend
+npm run optimize:partner-thumbs
+```
+
+Characters without a matching WebP fall back to `public/partner-thumbs/_placeholder_girl1.webp`. Commit the master PNG and the generated WebP.
+
 For more information, refer to the [Vue3 Vite Django Cookiecutter project](https://github.com/ilikerobots/cookiecutter-vue-django).
 
 
