@@ -60,6 +60,7 @@ export class AuthService {
     cefr_sample_topic?: string | null
     cefr_sample_choices?: Array<{ level: string; text: string; audio_url?: string | null }>
     preferred_name?: string | null
+    avatar_id?: string | null
     major?: string | null
   }): Promise<any> {
     await ensureCsrfToken()

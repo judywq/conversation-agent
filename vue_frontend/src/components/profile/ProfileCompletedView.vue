@@ -22,6 +22,7 @@
       </div>
 
       <template v-if="editingSection === 'about'">
+        <AvatarPicker v-model="avatarId" />
         <div class="space-y-2">
           <div class="text-sm font-medium">How should we address you?</div>
           <Input v-model="preferredName" placeholder="E.g., Alex" class="w-full" />
@@ -49,6 +50,26 @@
         </div>
       </template>
       <dl v-else class="grid gap-3 text-sm sm:grid-cols-2">
+        <div class="sm:col-span-2 flex items-center gap-3">
+          <img
+            v-if="currentAvatar"
+            :src="currentAvatar.url"
+            :alt="currentAvatar.label"
+            class="h-14 w-14 rounded-full object-cover border border-border"
+          />
+          <div
+            v-else
+            class="flex h-14 w-14 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground"
+          >
+            —
+          </div>
+          <div>
+            <dt class="text-muted-foreground">Avatar</dt>
+            <dd class="font-medium text-foreground">
+              {{ currentAvatar?.label || 'Not set' }}
+            </dd>
+          </div>
+        </div>
         <div>
           <dt class="text-muted-foreground">Preferred name</dt>
           <dd class="font-medium text-foreground">
@@ -227,9 +248,10 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import AvatarPicker from '@/components/profile/AvatarPicker.vue'
 import OceanTraitsFields from '@/components/profile/OceanTraitsFields.vue'
 import { useToast } from '@/components/ui/toast/use-toast'
 import {
@@ -240,6 +262,7 @@ import {
   oceanPayload,
   validateStep,
 } from '@/lib/profileForm'
+import { profileAvatarById } from '@/config/profileAvatars'
 import {
   ConversationService,
   PROFILE_ONBOARDING_CEFR_TOPIC,
@@ -256,6 +279,7 @@ const { toast } = useToast()
 const editingSection = ref<EditSection | null>(null)
 const preferredName = ref(authStore.user?.preferred_name ?? '')
 const major = ref(authStore.user?.major ?? '')
+const avatarId = ref(authStore.user?.avatar_id ?? '')
 const oceanModel = reactive(emptyOceanModel(authStore.user))
 const oceanFieldsRef = ref<InstanceType<typeof OceanTraitsFields> | null>(null)
 const cefrSamples = ref<CefrSample[]>(authStore.user?.cefr_sample_choices ?? [])
@@ -264,10 +288,13 @@ const isGeneratingCefr = ref(false)
 const isSubmitting = ref(false)
 const generalError = ref<string | null>(null)
 
+const currentAvatar = computed(() => profileAvatarById(authStore.user?.avatar_id))
+
 function syncFromUser() {
   const user = authStore.user
   preferredName.value = user?.preferred_name ?? ''
   major.value = user?.major ?? ''
+  avatarId.value = user?.avatar_id ?? ''
   Object.assign(oceanModel, emptyOceanModel(user))
   selectedCefrLevel.value = user?.cefr_level ?? null
   cefrSamples.value = user?.cefr_sample_choices ?? []
@@ -285,6 +312,7 @@ function formState() {
   return {
     preferredName: preferredName.value,
     major: major.value,
+    avatarId: avatarId.value,
     ocean: oceanModel,
     selectedCefrLevel: selectedCefrLevel.value,
     cefrSamples: cefrSamples.value,

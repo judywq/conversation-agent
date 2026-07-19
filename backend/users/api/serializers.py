@@ -20,6 +20,33 @@ REQUIRED_OCEAN_TRAITS = frozenset(
     },
 )
 
+ALLOWED_AVATAR_IDS = frozenset(
+    {
+        "boy1",
+        "boy2",
+        "boy3",
+        "boy4",
+        "boy5",
+        "girl1",
+        "girl2",
+        "girl3",
+        "girl4",
+        "girl5",
+        "fox",
+        "rabbit",
+        "cat",
+        "panda",
+        "bear",
+        "puppy",
+        "penguin",
+        "hamster",
+        "deer",
+        "chick",
+        "koala",
+        "frog",
+    },
+)
+
 
 def recompute_profile_completed(profile: UserProfile) -> bool:
     ocean = profile.ocean if isinstance(profile.ocean, dict) else {}
@@ -116,6 +143,12 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
         allow_blank=True,
         allow_null=True,
     )
+    avatar_id = UserProfileTextField(
+        profile_attr="avatar_id",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
     major = UserProfileTextField(
         profile_attr="major",
         required=False,
@@ -168,6 +201,7 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             "cefr_sample_choices",
             "proficiency_reference_utterance",
             "preferred_name",
+            "avatar_id",
             "major",
             "discussion_category",
             "discussion_subtopic",
@@ -181,12 +215,25 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             return obj.userprofile.must_change_password
         return False
 
+    def validate_avatar_id(self, value):
+        if value is None:
+            return ""
+        avatar_id = str(value).strip()
+        if not avatar_id:
+            return ""
+        if avatar_id not in ALLOWED_AVATAR_IDS:
+            raise serializers.ValidationError(
+                f"Invalid avatar_id. Allowed: {', '.join(sorted(ALLOWED_AVATAR_IDS))}."
+            )
+        return avatar_id
+
     def update(self, instance, validated_data):
         ocean = validated_data.pop("ocean", serializers.empty)
         cefr_level = validated_data.pop("cefr_level", serializers.empty)
         cefr_sample_topic = validated_data.pop("cefr_sample_topic", serializers.empty)
         cefr_sample_choices = validated_data.pop("cefr_sample_choices", serializers.empty)
         preferred_name = validated_data.pop("preferred_name", serializers.empty)
+        avatar_id = validated_data.pop("avatar_id", serializers.empty)
         major = validated_data.pop("major", serializers.empty)
         discussion_category = validated_data.pop("discussion_category", serializers.empty)
         discussion_subtopic = validated_data.pop("discussion_subtopic", serializers.empty)
@@ -209,6 +256,9 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
             if preferred_name is not serializers.empty:
                 user.userprofile.preferred_name = (preferred_name or "").strip()
                 update_fields.append("preferred_name")
+            if avatar_id is not serializers.empty:
+                user.userprofile.avatar_id = (avatar_id or "").strip()
+                update_fields.append("avatar_id")
             if major is not serializers.empty:
                 user.userprofile.major = (major or "").strip()
                 update_fields.append("major")

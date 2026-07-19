@@ -18,6 +18,7 @@ export interface User {
     audio_url?: string | null;
   }>;
   preferred_name?: string | null;
+  avatar_id?: string | null;
   major?: string | null;
   discussion_category?: string | null;
   discussion_subtopic?: string | null;

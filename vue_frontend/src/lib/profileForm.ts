@@ -84,6 +84,7 @@ export type ProfileStep = 1 | 2 | 3
 export type ProfileFormState = {
   preferredName: string
   major: string
+  avatarId: string
   ocean: Record<OceanTraitKey, string>
   selectedCefrLevel: string | null
   cefrSamples: CefrSample[]
@@ -151,10 +152,11 @@ export function validateStep(step: ProfileStep, state: ProfileFormState): string
   return null
 }
 
-export function aboutPayload(state: Pick<ProfileFormState, 'preferredName' | 'major'>) {
+export function aboutPayload(state: Pick<ProfileFormState, 'preferredName' | 'major' | 'avatarId'>) {
   return {
     preferred_name: state.preferredName,
     major: state.major,
+    avatar_id: state.avatarId,
   }
 }
 

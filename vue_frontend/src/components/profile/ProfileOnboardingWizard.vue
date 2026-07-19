@@ -58,6 +58,7 @@
               Your name and study background help your discussion partners get to know you.
             </p>
           </div>
+          <AvatarPicker v-model="avatarId" />
           <div class="space-y-2">
             <div class="text-sm font-medium">How should we address you?</div>
             <Input v-model="preferredName" placeholder="E.g., Alex" class="w-full" />
@@ -176,6 +177,7 @@ import { reactive, ref } from 'vue'
 import { Check, Circle, Dot } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import AvatarPicker from '@/components/profile/AvatarPicker.vue'
 import OceanTraitsFields from '@/components/profile/OceanTraitsFields.vue'
 import {
   Stepper,
@@ -215,6 +217,7 @@ const steps = [
 const stepIndex = ref<ProfileStep>(firstIncompleteStep(authStore.user))
 const preferredName = ref(authStore.user?.preferred_name ?? '')
 const major = ref(authStore.user?.major ?? '')
+const avatarId = ref(authStore.user?.avatar_id ?? '')
 const oceanModel = reactive(emptyOceanModel(authStore.user))
 const oceanFieldsRef = ref<InstanceType<typeof OceanTraitsFields> | null>(null)
 const cefrSamples = ref<CefrSample[]>(authStore.user?.cefr_sample_choices ?? [])
@@ -227,6 +230,7 @@ function formState() {
   return {
     preferredName: preferredName.value,
     major: major.value,
+    avatarId: avatarId.value,
     ocean: oceanModel,
     selectedCefrLevel: selectedCefrLevel.value,
     cefrSamples: cefrSamples.value,

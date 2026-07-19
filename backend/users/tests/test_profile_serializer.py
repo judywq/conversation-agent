@@ -57,3 +57,29 @@ def test_major_round_trips_through_serializer(user):
     user.refresh_from_db()
     assert user.userprofile.major == "Computer Science"
     assert serializer.data["major"] == "Computer Science"
+
+
+@pytest.mark.django_db
+def test_avatar_id_round_trips_through_serializer(user):
+    serializer = CustomUserDetailsSerializer(
+        instance=user,
+        data={"avatar_id": "fox"},
+        partial=True,
+    )
+    assert serializer.is_valid(), serializer.errors
+    serializer.save()
+
+    user.refresh_from_db()
+    assert user.userprofile.avatar_id == "fox"
+    assert serializer.data["avatar_id"] == "fox"
+
+
+@pytest.mark.django_db
+def test_avatar_id_rejects_unknown_value(user):
+    serializer = CustomUserDetailsSerializer(
+        instance=user,
+        data={"avatar_id": "dragon"},
+        partial=True,
+    )
+    assert not serializer.is_valid()
+    assert "avatar_id" in serializer.errors

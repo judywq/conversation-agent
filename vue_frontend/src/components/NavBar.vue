@@ -14,6 +14,7 @@ import SakuraMark from '@/components/SakuraMark.vue'
 import { CircleUser, Menu } from 'lucide-vue-next'
 
 import { defaultAuthenticatedRoute, isStaffUser } from '@/lib/authNavigation'
+import { profileAvatarById } from '@/config/profileAvatars'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
@@ -21,6 +22,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const username = computed(() => authStore.user?.username || '')
+const userAvatar = computed(() => profileAvatarById(authStore.user?.avatar_id))
 const showStaffNav = computed(() => isStaffUser(authStore.user))
 const homeRoute = computed(() =>
   isAuthenticated.value ? defaultAuthenticatedRoute() : { name: 'home' as const },
@@ -119,8 +121,14 @@ const isSheetOpen = ref(false)
       <div class="ml-auto flex-1 sm:flex-initial"></div>
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="secondary" size="icon" class="rounded-full">
-            <CircleUser class="h-5 w-5" />
+          <Button variant="secondary" size="icon" class="rounded-full overflow-hidden p-0">
+            <img
+              v-if="userAvatar"
+              :src="userAvatar.url"
+              :alt="userAvatar.label"
+              class="h-full w-full object-cover"
+            />
+            <CircleUser v-else class="h-5 w-5" />
             <span class="sr-only">Toggle user menu</span>
           </Button>
         </DropdownMenuTrigger>

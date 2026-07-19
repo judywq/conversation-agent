@@ -68,6 +68,13 @@ class UserProfile(models.Model):
         help_text="How the user would like to be addressed in the conversation.",
     )
 
+    avatar_id = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Selected profile avatar preset id (e.g. fox, rabbit, cat).",
+    )
+
     major = models.CharField(
         max_length=120,
         blank=True,

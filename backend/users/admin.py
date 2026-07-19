@@ -22,6 +22,7 @@ from .forms import UserAdminCreationForm
 from .forms import UserBatchUploadForm
 from .models import User
 from .models import UserProfile
+from backend.users.api.serializers import ALLOWED_AVATAR_IDS
 
 if settings.DJANGO_ADMIN_FORCE_ALLAUTH:
     # Force the `admin` sign in process to go through the `django-allauth` workflow:
@@ -207,11 +208,24 @@ class UserAdmin(auth_admin.UserAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "must_change_password", "is_demo_account", "profile_completed", "cefr_level"]
-    list_filter = ["is_demo_account", "must_change_password", "profile_completed", "cefr_level"]
-    search_fields = ["user__name", "user__email"]
+    list_display = [
+        "id",
+        "user",
+        "preferred_name",
+        "avatar_id",
+        "major",
+        "must_change_password",
+        "is_demo_account",
+        "profile_completed",
+        "cefr_level",
+    ]
+    list_filter = ["is_demo_account", "must_change_password", "profile_completed", "cefr_level", "avatar_id"]
+    search_fields = ["user__name", "user__email", "preferred_name", "major", "avatar_id"]
     fields = [
         "user",
+        "preferred_name",
+        "avatar_id",
+        "major",
         "must_change_password",
         "is_demo_account",
         "ocean",
@@ -221,3 +235,16 @@ class UserProfileAdmin(admin.ModelAdmin):
         "cefr_sample_topic",
         "cefr_sample_choices",
     ]
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "avatar_id":
+            from django import forms
+
+            choices = [("", "---------")] + [(aid, aid) for aid in sorted(ALLOWED_AVATAR_IDS)]
+            return forms.ChoiceField(
+                choices=choices,
+                required=False,
+                label=db_field.verbose_name,
+                help_text=db_field.help_text,
+            )
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
