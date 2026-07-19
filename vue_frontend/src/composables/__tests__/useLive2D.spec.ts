@@ -36,6 +36,8 @@ const fakeModel = {
   },
 }
 
+const extractDownload = vi.fn()
+
 const appInstance = {
   init: vi.fn().mockResolvedValue(undefined),
   canvas: null as HTMLCanvasElement | null,
@@ -43,6 +45,7 @@ const appInstance = {
   stage: { addChild: vi.fn(), removeChild: vi.fn() },
   ticker: { stop: vi.fn() },
   destroy: vi.fn(),
+  renderer: { extract: { download: extractDownload } },
 }
 
 vi.mock('pixi.js', () => ({
@@ -60,7 +63,7 @@ vi.mock('untitled-pixi-live2d-engine/cubism', () => ({
 }))
 
 import { Live2DModel } from 'untitled-pixi-live2d-engine/cubism'
-import { useLive2D } from '../useLive2D'
+import { snapshotResolution, useLive2D } from '../useLive2D'
 
 function makeStage() {
   return ref<HTMLElement | null>(document.createElement('div'))
@@ -428,5 +431,48 @@ describe('useLive2D', () => {
     await init({ url: '/m.model3.json' })
     dispose()
     expect(capabilities.value).toBeNull()
+  })
+
+  it('downloadSnapshot extracts a transparent PNG of the stage', async () => {
+    const { init, downloadSnapshot } = useLive2D(makeStage())
+    expect(downloadSnapshot('before-init.png')).toBe(false)
+    await init({ url: '/live2d/hiyori/Hiyori.model3.json' })
+    expect(downloadSnapshot('hiyori.png')).toBe(true)
+    expect(extractDownload).toHaveBeenCalledWith({
+      target: appInstance.stage,
+      filename: 'hiyori.png',
+      clearColor: [0, 0, 0, 0],
+      antialias: true,
+    })
+  })
+
+  it('downloadSnapshot uses contain resolution for a max size box', async () => {
+    // appInstance.screen is 360×240
+    const { init, downloadSnapshot } = useLive2D(makeStage())
+    await init({ url: '/live2d/hiyori/Hiyori.model3.json' })
+
+    expect(downloadSnapshot('w.png', { width: 720 })).toBe(true)
+    expect(extractDownload).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filename: 'w.png', resolution: 2 }),
+    )
+
+    expect(downloadSnapshot('box.png', { width: 800, height: 400 })).toBe(true)
+    expect(extractDownload).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filename: 'box.png',
+        resolution: 400 / 240,
+      }),
+    )
+  })
+})
+
+describe('snapshotResolution', () => {
+  it('contains within both maxima and ignores invalid dims', () => {
+    expect(snapshotResolution(360, 240)).toBeUndefined()
+    expect(snapshotResolution(360, 240, { width: 720 })).toBe(2)
+    expect(snapshotResolution(360, 240, { height: 480 })).toBe(2)
+    expect(snapshotResolution(360, 240, { width: 800, height: 400 })).toBe(400 / 240)
+    expect(snapshotResolution(360, 240, { width: 10 })).toBe(64 / 360)
+    expect(snapshotResolution(360, 240, { width: Number.NaN })).toBeUndefined()
   })
 })

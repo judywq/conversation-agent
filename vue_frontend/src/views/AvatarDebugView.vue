@@ -15,6 +15,9 @@ const cards = ref<CardInstance[]>([])
 const loadingAll = ref(false)
 /** Preview multiplier; seed from config. Copy into AVATAR_GLOBAL_ZOOM when happy. */
 const globalZoom = ref(AVATAR_GLOBAL_ZOOM)
+/** Shared max export box for every card's Take photo. */
+const snapshotWidth = ref(800)
+const snapshotHeight = ref(800)
 
 function setCardRef(el: Element | ComponentPublicInstance | null) {
   if (el) {
@@ -63,6 +66,32 @@ async function loadAll() {
         title="Copy into avatarPresets.ts as AVATAR_GLOBAL_ZOOM"
         >{{ globalZoom.toFixed(2) }}</code
       >
+      <span class="mx-1 hidden h-6 w-px bg-border sm:inline-block" aria-hidden="true" />
+      <span class="shrink-0 text-sm font-medium">Photo size</span>
+      <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
+        W
+        <input
+          v-model.number="snapshotWidth"
+          type="number"
+          min="64"
+          max="4096"
+          step="1"
+          class="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
+          aria-label="Snapshot max width"
+        />
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
+        H
+        <input
+          v-model.number="snapshotHeight"
+          type="number"
+          min="64"
+          max="4096"
+          step="1"
+          class="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
+          aria-label="Snapshot max height"
+        />
+      </label>
     </div>
 
     <section class="space-y-3">
@@ -74,6 +103,8 @@ async function loadAll() {
           :ref="setCardRef"
           :preset="preset"
           :global-zoom="globalZoom"
+          :snapshot-width="snapshotWidth"
+          :snapshot-height="snapshotHeight"
         />
       </div>
     </section>
@@ -87,6 +118,8 @@ async function loadAll() {
           :ref="setCardRef"
           :preset="preset"
           :global-zoom="globalZoom"
+          :snapshot-width="snapshotWidth"
+          :snapshot-height="snapshotHeight"
         />
       </div>
     </section>

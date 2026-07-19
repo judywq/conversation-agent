@@ -9,6 +9,33 @@ import { mouthOpenFromWords } from '@/lib/wordMouthSync'
 
 extensions.add(Live2DPlugin)
 
+const SNAPSHOT_SIZE_MIN = 64
+const SNAPSHOT_SIZE_MAX = 4096
+
+/** Clamp a user size input into 64–4096; invalid → undefined. */
+function clampSnapshotDim(value: number | undefined): number | undefined {
+  if (value == null || !Number.isFinite(value)) return undefined
+  return Math.min(SNAPSHOT_SIZE_MAX, Math.max(SNAPSHOT_SIZE_MIN, Math.round(value)))
+}
+
+/**
+ * Pixi extract resolution for a contain fit inside an optional max box.
+ * Preserves stage aspect; both output dims stay ≤ provided maxima.
+ */
+export function snapshotResolution(
+  stageW: number,
+  stageH: number,
+  size?: { width?: number; height?: number },
+): number | undefined {
+  if (stageW <= 0 || stageH <= 0) return undefined
+  const maxW = clampSnapshotDim(size?.width)
+  const maxH = clampSnapshotDim(size?.height)
+  if (maxW == null && maxH == null) return undefined
+  const scaleW = maxW != null ? maxW / stageW : Infinity
+  const scaleH = maxH != null ? maxH / stageH : Infinity
+  return Math.min(scaleW, scaleH)
+}
+
 /** Minimal shape of @pixi/sound Sound used for word-timed mouth sync. */
 type PlayingSound = {
   isPlaying: boolean
@@ -349,6 +376,53 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     }
   }
 
+  /**
+   * Download the current stage as a PNG with transparent background.
+   * Uses Pixi extract (not DOM screenshot) so CSS card chrome is omitted.
+   * Optional size is a max box (contain): output dims stay ≤ width/height, aspect preserved.
+   */
+  function downloadSnapshot(
+    filename = 'avatar.png',
+    size?: { width?: number; height?: number },
+  ): boolean {
+    if (!app || !model.value) return false
+    try {
+      const stageW = app.screen.width
+      const stageH = app.screen.height
+      const resolution = snapshotResolution(stageW, stageH, size)
+      const extractOptions = {
+        target: app.stage,
+        filename,
+        clearColor: [0, 0, 0, 0] as [number, number, number, number],
+        antialias: true,
+        ...(resolution != null ? { resolution } : {}),
+      }
+      const effectiveRes = resolution ?? 1
+      console.debug('[Live2D snapshot]', {
+        filename,
+        requestedMax: size ?? null,
+        stageCssPx: { width: stageW, height: stageH },
+        rendererResolution: app.renderer.resolution,
+        extractResolution: resolution ?? '(default 1)',
+        expectedOutputPx: {
+          width: Math.round(stageW * effectiveRes),
+          height: Math.round(stageH * effectiveRes),
+        },
+        extractOptions: {
+          filename: extractOptions.filename,
+          clearColor: extractOptions.clearColor,
+          antialias: extractOptions.antialias,
+          resolution: extractOptions.resolution,
+        },
+      })
+      app.renderer.extract.download(extractOptions)
+      return true
+    } catch (error) {
+      console.error('Live2D snapshot failed:', error)
+      return false
+    }
+  }
+
   function dispose() {
     disposed = true
     loadGen++
@@ -396,6 +470,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     setExpression,
     resetExpression,
     setIdle,
+    downloadSnapshot,
     dispose,
   }
 }

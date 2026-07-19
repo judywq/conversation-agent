@@ -8,6 +8,9 @@ const props = defineProps<{
   preset: AvatarPreset
   /** Page-level multiplier; per-model zoom readout stays the config value. */
   globalZoom?: number
+  /** Shared max export box for Take photo (contain fit). */
+  snapshotWidth?: number
+  snapshotHeight?: number
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -21,6 +24,7 @@ const {
   playMotion,
   setExpression,
   resetExpression,
+  downloadSnapshot,
   dispose,
 } = useLive2D(stageRef)
 
@@ -82,6 +86,18 @@ async function reload() {
   await load()
 }
 
+function snapshotFilename(): string {
+  const base = props.preset.url.split('/').filter(Boolean).at(-2) ?? 'avatar'
+  return `${base}.png`
+}
+
+function takePhoto() {
+  downloadSnapshot(snapshotFilename(), {
+    width: props.snapshotWidth,
+    height: props.snapshotHeight,
+  })
+}
+
 onUnmounted(() => {
   dispose()
 })
@@ -96,15 +112,24 @@ defineExpose({ load, status })
         <div class="truncate text-sm font-medium" :title="preset.url">{{ fileName }}</div>
         <div class="text-xs text-muted-foreground">{{ statusLabel }}</div>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        class="shrink-0"
-        :disabled="status === 'loading'"
-        @click="status === 'idle' ? load() : reload()"
-      >
-        {{ status === 'idle' ? 'Load' : 'Reload' }}
-      </Button>
+      <div class="flex shrink-0 items-center gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="status !== 'ready'"
+          @click="takePhoto"
+        >
+          Take photo
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="status === 'loading'"
+          @click="status === 'idle' ? load() : reload()"
+        >
+          {{ status === 'idle' ? 'Load' : 'Reload' }}
+        </Button>
+      </div>
     </div>
     <div class="flex items-center gap-2 border-b px-3 py-2">
       <input
