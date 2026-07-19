@@ -230,12 +230,15 @@ defineExpose({ load, status })
         {{ motionPlaying ? 'Playing…' : 'Play' }}
       </Button>
     </div>
-    <div v-if="capabilities && capabilities.expressions.length" class="flex items-center gap-2 border-b px-3 py-2">
+    <div v-if="capabilities" class="flex items-center gap-2 border-b px-3 py-2">
       <select
         v-model="selectedExpression"
         class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+        :disabled="!capabilities.expressions.length"
       >
-        <option value="" disabled>Expression…</option>
+        <option value="" disabled>
+          {{ capabilities.expressions.length ? 'Expression…' : 'No expressions' }}
+        </option>
         <option v-for="name in capabilities.expressions" :key="name" :value="name">
           {{ name }}
         </option>
@@ -243,12 +246,17 @@ defineExpose({ load, status })
       <Button
         variant="outline"
         size="sm"
-        :disabled="status !== 'ready' || !selectedExpression"
+        :disabled="status !== 'ready' || !selectedExpression || !capabilities.expressions.length"
         @click="applySelectedExpression"
       >
         Apply
       </Button>
-      <Button variant="outline" size="sm" :disabled="status !== 'ready'" @click="resetExpression">
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="status !== 'ready' || !capabilities.expressions.length"
+        @click="resetExpression"
+      >
         Reset
       </Button>
     </div>
