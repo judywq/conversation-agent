@@ -1011,7 +1011,7 @@ function onExitClick() {
     hideAppNav.value = false
     void (async () => {
       await unlockOrientation()
-      void router.replace({ name: 'conversation' })
+      void router.replace({ name: 'history' })
     })()
     return
   }
@@ -1033,7 +1033,7 @@ function confirmEndSession() {
   sendOrToast(() => sendSessionMessage({ type: 'end_session' }))
 }
 
-/** Leave the game phase and return to session setup. */
+/** Leave the game phase and go to History. */
 async function exitToSetup() {
   hideAppNav.value = false
   await unlockOrientation()
@@ -1054,7 +1054,7 @@ async function exitToSetup() {
   exitConfirmOpen.value = false
   wsSessionBound.value = false
   ws.close()
-  void router.replace({ name: 'conversation' })
+  void router.replace({ name: 'history' })
 }
 
 const statusText = computed(() => {
