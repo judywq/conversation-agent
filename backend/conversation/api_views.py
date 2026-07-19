@@ -20,6 +20,7 @@ from backend.conversation.services.discussion_scenario import setup_discussion_c
 from backend.conversation.services.stt import transcribe_audio_file
 from backend.news.taxonomy import get_category
 from backend.news.taxonomy import get_subtopic
+from backend.utils.urls import absolute_media_url
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +188,7 @@ class UserAudioUploadView(APIView):
         return Response(
             {
                 "id": clip.id,
-                "audio_url": clip.audio_file.url,
+                "audio_url": absolute_media_url(clip.audio_file.name),
             },
         )
 
