@@ -38,6 +38,7 @@ const fakeModel = {
 
 const extractDownload = vi.fn()
 
+// CSS screen 360×240 @ resolution 2 → render pixels 720×480
 const appInstance = {
   init: vi.fn().mockResolvedValue(undefined),
   canvas: null as HTMLCanvasElement | null,
@@ -45,16 +46,36 @@ const appInstance = {
   stage: { addChild: vi.fn(), removeChild: vi.fn() },
   ticker: { stop: vi.fn() },
   destroy: vi.fn(),
-  renderer: { extract: { download: extractDownload } },
+  renderer: {
+    width: 720,
+    height: 480,
+    resolution: 2,
+    extract: { download: extractDownload },
+  },
 }
 
-vi.mock('pixi.js', () => ({
-  Application: vi.fn().mockImplementation(() => {
-    appInstance.canvas = document.createElement('canvas')
-    return appInstance
-  }),
-  extensions: { add: vi.fn() },
-}))
+vi.mock('pixi.js', () => {
+  class FakeRectangle {
+    x: number
+    y: number
+    width: number
+    height: number
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x
+      this.y = y
+      this.width = width
+      this.height = height
+    }
+  }
+  return {
+    Application: vi.fn().mockImplementation(() => {
+      appInstance.canvas = document.createElement('canvas')
+      return appInstance
+    }),
+    Rectangle: FakeRectangle,
+    extensions: { add: vi.fn() },
+  }
+})
 
 vi.mock('untitled-pixi-live2d-engine/cubism', () => ({
   Live2DPlugin: {},
@@ -63,7 +84,7 @@ vi.mock('untitled-pixi-live2d-engine/cubism', () => ({
 }))
 
 import { Live2DModel } from 'untitled-pixi-live2d-engine/cubism'
-import { snapshotResolution, useLive2D } from '../useLive2D'
+import { snapshotExtractResolution, useLive2D } from '../useLive2D'
 
 function makeStage() {
   return ref<HTMLElement | null>(document.createElement('div'))
@@ -438,41 +459,55 @@ describe('useLive2D', () => {
     expect(downloadSnapshot('before-init.png')).toBe(false)
     await init({ url: '/live2d/hiyori/Hiyori.model3.json' })
     expect(downloadSnapshot('hiyori.png')).toBe(true)
-    expect(extractDownload).toHaveBeenCalledWith({
-      target: appInstance.stage,
-      filename: 'hiyori.png',
-      clearColor: [0, 0, 0, 0],
-      antialias: true,
-    })
+    expect(extractDownload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: appInstance.stage,
+        filename: 'hiyori.png',
+        clearColor: [0, 0, 0, 0],
+        antialias: true,
+        frame: expect.objectContaining({ x: 0, y: 0, width: 360, height: 240 }),
+      }),
+    )
+    expect(extractDownload.mock.calls[0][0].resolution).toBeUndefined()
   })
 
-  it('downloadSnapshot uses contain resolution for a max size box', async () => {
-    // appInstance.screen is 360×240
+  it('downloadSnapshot uses contain resolution from render pixels', async () => {
+    // render 720×480 @ dpr 2, screen CSS 360×240
     const { init, downloadSnapshot } = useLive2D(makeStage())
     await init({ url: '/live2d/hiyori/Hiyori.model3.json' })
 
+    // width-only: scale = 720/720 = 1 → extractRes = 2 * 1 = 2
     expect(downloadSnapshot('w.png', { width: 720 })).toBe(true)
     expect(extractDownload).toHaveBeenLastCalledWith(
-      expect.objectContaining({ filename: 'w.png', resolution: 2 }),
+      expect.objectContaining({
+        filename: 'w.png',
+        resolution: 2,
+        frame: expect.objectContaining({ width: 360, height: 240 }),
+      }),
     )
 
+    // box 800×400: scale = min(800/720, 400/480) = 400/480
+    // extractRes = 2 * (400/480); output ≈ 600×400 (both ≤)
     expect(downloadSnapshot('box.png', { width: 800, height: 400 })).toBe(true)
     expect(extractDownload).toHaveBeenLastCalledWith(
       expect.objectContaining({
         filename: 'box.png',
-        resolution: 400 / 240,
+        resolution: 2 * (400 / 480),
       }),
     )
   })
 })
 
-describe('snapshotResolution', () => {
-  it('contains within both maxima and ignores invalid dims', () => {
-    expect(snapshotResolution(360, 240)).toBeUndefined()
-    expect(snapshotResolution(360, 240, { width: 720 })).toBe(2)
-    expect(snapshotResolution(360, 240, { height: 480 })).toBe(2)
-    expect(snapshotResolution(360, 240, { width: 800, height: 400 })).toBe(400 / 240)
-    expect(snapshotResolution(360, 240, { width: 10 })).toBe(64 / 360)
-    expect(snapshotResolution(360, 240, { width: Number.NaN })).toBeUndefined()
+describe('snapshotExtractResolution', () => {
+  it('contains within both maxima using render pixels and dpr', () => {
+    // render 720×480, dpr 2
+    expect(snapshotExtractResolution(720, 480, 2)).toBeUndefined()
+    expect(snapshotExtractResolution(720, 480, 2, { width: 720 })).toBe(2)
+    expect(snapshotExtractResolution(720, 480, 2, { height: 480 })).toBe(2)
+    expect(snapshotExtractResolution(720, 480, 2, { width: 800, height: 400 })).toBe(
+      2 * (400 / 480),
+    )
+    expect(snapshotExtractResolution(720, 480, 2, { width: 10 })).toBe(2 * (64 / 720))
+    expect(snapshotExtractResolution(720, 480, 2, { width: Number.NaN })).toBeUndefined()
   })
 })

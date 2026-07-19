@@ -1,5 +1,5 @@
 import { ref, shallowRef, type Ref } from 'vue'
-import { Application, extensions } from 'pixi.js'
+import { Application, extensions, Rectangle } from 'pixi.js'
 // Modern-only bundle (Cubism 3/4/5): needs just live2dcubismcore.min.js.
 // The bare entry point also pulls in the Cubism 2 runtime and throws
 // "requires live2d.min.js" at import time.
@@ -19,21 +19,25 @@ function clampSnapshotDim(value: number | undefined): number | undefined {
 }
 
 /**
- * Pixi extract resolution for a contain fit inside an optional max box.
- * Preserves stage aspect; both output dims stay ≤ provided maxima.
+ * Pixi extract.resolution for a contain fit inside an optional max box.
+ * Uses real canvas pixels (renderer.width/height), not CSS screen size.
+ * Output dims stay ≤ provided maxima; aspect preserved.
+ *
+ * extractResolution = rendererResolution * min(maxW/renderW, maxH/renderH)
  */
-export function snapshotResolution(
-  stageW: number,
-  stageH: number,
+export function snapshotExtractResolution(
+  renderW: number,
+  renderH: number,
+  rendererResolution: number,
   size?: { width?: number; height?: number },
 ): number | undefined {
-  if (stageW <= 0 || stageH <= 0) return undefined
+  if (renderW <= 0 || renderH <= 0 || rendererResolution <= 0) return undefined
   const maxW = clampSnapshotDim(size?.width)
   const maxH = clampSnapshotDim(size?.height)
   if (maxW == null && maxH == null) return undefined
-  const scaleW = maxW != null ? maxW / stageW : Infinity
-  const scaleH = maxH != null ? maxH / stageH : Infinity
-  return Math.min(scaleW, scaleH)
+  const scaleW = maxW != null ? maxW / renderW : Infinity
+  const scaleH = maxH != null ? maxH / renderH : Infinity
+  return rendererResolution * Math.min(scaleW, scaleH)
 }
 
 /** Minimal shape of @pixi/sound Sound used for word-timed mouth sync. */
@@ -380,6 +384,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
    * Download the current stage as a PNG with transparent background.
    * Uses Pixi extract (not DOM screenshot) so CSS card chrome is omitted.
    * Optional size is a max box (contain): output dims stay ≤ width/height, aspect preserved.
+   * Scale is based on real canvas pixels (renderer.width/height), not CSS screen size.
    */
   function downloadSnapshot(
     filename = 'avatar.png',
@@ -387,29 +392,37 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   ): boolean {
     if (!app || !model.value) return false
     try {
-      const stageW = app.screen.width
-      const stageH = app.screen.height
-      const resolution = snapshotResolution(stageW, stageH, size)
+      const renderW = app.renderer.width
+      const renderH = app.renderer.height
+      const dpr = app.renderer.resolution
+      const screenW = app.screen.width
+      const screenH = app.screen.height
+      const resolution = snapshotExtractResolution(renderW, renderH, dpr, size)
+      const scale =
+        resolution != null && dpr > 0 ? resolution / dpr : 1
       const extractOptions = {
         target: app.stage,
         filename,
+        frame: new Rectangle(0, 0, screenW, screenH),
         clearColor: [0, 0, 0, 0] as [number, number, number, number],
         antialias: true,
         ...(resolution != null ? { resolution } : {}),
       }
-      const effectiveRes = resolution ?? 1
       console.debug('[Live2D snapshot]', {
         filename,
         requestedMax: size ?? null,
-        stageCssPx: { width: stageW, height: stageH },
-        rendererResolution: app.renderer.resolution,
-        extractResolution: resolution ?? '(default 1)',
+        renderPx: { width: renderW, height: renderH },
+        screenCssPx: { width: screenW, height: screenH },
+        rendererResolution: dpr,
+        extractResolution: resolution ?? `(default ${dpr})`,
+        containScale: scale,
         expectedOutputPx: {
-          width: Math.round(stageW * effectiveRes),
-          height: Math.round(stageH * effectiveRes),
+          width: Math.round(renderW * scale),
+          height: Math.round(renderH * scale),
         },
         extractOptions: {
           filename: extractOptions.filename,
+          frame: { x: 0, y: 0, width: screenW, height: screenH },
           clearColor: extractOptions.clearColor,
           antialias: extractOptions.antialias,
           resolution: extractOptions.resolution,
