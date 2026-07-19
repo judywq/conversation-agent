@@ -1234,6 +1234,16 @@ const micButtonEnabled = computed(() => {
   return (micState.value === 'idle' || micState.value === 'error') && canStartMic.value
 })
 
+const exitButtonLabel = computed(() =>
+  isEnded.value ? 'Back to history' : 'Leave without ending',
+)
+
+const micButtonLabel = computed(() => {
+  if (micState.value === 'recording') return 'Stop recording'
+  if (micState.value === 'transcribing' || micState.value === 'requesting') return 'Working…'
+  return 'Speak'
+})
+
 function onMicClick() {
   if (micState.value === 'recording') {
     stopRecording()
@@ -1375,7 +1385,8 @@ onUnmounted(() => {
       variant="secondary"
       size="icon"
       class="absolute left-4 top-4 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
-      aria-label="Exit without ending session"
+      :aria-label="exitButtonLabel"
+      :title="exitButtonLabel"
       @click="onExitClick"
     >
       <LogOut class="h-5 w-5" />
@@ -1388,6 +1399,7 @@ onUnmounted(() => {
       size="icon"
       class="absolute left-[4.75rem] top-4 h-11 w-11 border border-white/30 bg-white/85 text-destructive shadow-lg backdrop-blur hover:bg-white"
       aria-label="End session"
+      title="End session"
       @click="exitConfirmOpen = true"
     >
       <Square class="h-5 w-5 fill-current" />
@@ -1409,6 +1421,7 @@ onUnmounted(() => {
           size="icon"
           class="absolute right-4 top-4 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
           aria-label="Settings"
+          title="Settings"
         >
           <Settings class="h-5 w-5" />
         </Button>
@@ -1517,7 +1530,8 @@ onUnmounted(() => {
               : 'cursor-not-allowed bg-muted-foreground/40'
         "
         :disabled="!micButtonEnabled"
-        aria-label="Speak"
+        :aria-label="micButtonLabel"
+        :title="micButtonLabel"
         @click="onMicClick"
       >
         <Square v-if="micState === 'recording'" class="h-7 w-7" />
@@ -1542,6 +1556,7 @@ onUnmounted(() => {
       size="icon"
       class="absolute bottom-6 right-4 z-10 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
       aria-label="Speaker opinions"
+      title="Speaker opinions"
       @click="notebookOpen = !notebookOpen"
     >
       <NotebookPen class="h-5 w-5" />

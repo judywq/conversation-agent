@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronDown, Minus } from 'lucide-vue-next'
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import {
   explanationLabel,
   explanationLine,
@@ -31,6 +31,9 @@ const summary = ref<ArgumentSummaryResult | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const minimized = ref(false)
+const minimizeButtonLabel = computed(() =>
+  minimized.value ? 'Expand speaker opinions' : 'Minimize speaker opinions',
+)
 const deferredResult = ref<ArgumentSummaryResult | null>(null)
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -227,7 +230,8 @@ onUnmounted(() => {
         <button
           type="button"
           class="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          :aria-label="minimized ? 'Expand speaker opinions' : 'Minimize speaker opinions'"
+          :aria-label="minimizeButtonLabel"
+          :title="minimizeButtonLabel"
           @click="minimized = !minimized"
         >
           <ChevronDown v-if="minimized" class="h-4 w-4" />
