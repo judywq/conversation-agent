@@ -127,3 +127,7 @@ sync-news-%:
 setup-speaker-profiles-%:
 	docker compose -f docker-compose.$*.yml run --rm django python manage.py setup_langmem_store
 
+# Regenerate scene WebP display + thumb assets from vue_frontend/scenes-src/
+optimize-scenes:
+	cd vue_frontend && npm run optimize:scenes
+

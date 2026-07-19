@@ -178,6 +178,31 @@ npm install
 npm run dev
 ````
 
+### Scene background images
+
+Scene masters are PNG files in `vue_frontend/scenes-src/`. The app serves optimized WebP assets from `vue_frontend/public/scenes/` (full-size display + `.thumb.webp` for the setup picker).
+
+When you **add or replace** a scene master:
+
+1. Put the PNG in `vue_frontend/scenes-src/` (e.g. `new-scene.png`).
+2. Regenerate WebPs:
+
+```sh
+make optimize-scenes
+```
+
+Or from the frontend folder:
+
+```sh
+cd vue_frontend
+npm run optimize:scenes
+```
+
+3. Register the scene in `vue_frontend/src/lib/conversationScenes.ts` with `url` and `thumbUrl` pointing at the new `.webp` / `.thumb.webp` files.
+4. Commit the master PNG, the generated WebPs, and the TypeScript change.
+
+You do **not** need to run this for normal `npm run dev` or production builds — those use the committed WebPs in `public/scenes/`.
+
 For more information, refer to the [Vue3 Vite Django Cookiecutter project](https://github.com/ilikerobots/cookiecutter-vue-django).
 
 
