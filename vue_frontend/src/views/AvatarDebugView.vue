@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import {
   AVATAR_GLOBAL_ZOOM,
@@ -15,9 +15,17 @@ const cards = ref<CardInstance[]>([])
 const loadingAll = ref(false)
 /** Preview multiplier; seed from config. Copy into AVATAR_GLOBAL_ZOOM when happy. */
 const globalZoom = ref(AVATAR_GLOBAL_ZOOM)
-/** Shared max export box for every card's Take photo. */
-const snapshotWidth = ref(800)
-const snapshotHeight = ref(800)
+/** Shared Live2D stage CSS size — controls framing / aspect for preview + photo. */
+const stageWidth = ref(300)
+const stageHeight = ref(400)
+/** Multiplier on stage CSS size for Take photo (1 = Stage W×H pixels). */
+const snapshotRatio = ref(1)
+/** Cards per row (1–10). */
+const columns = ref(5)
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${columns.value}, minmax(0, 1fr))`,
+}))
 
 function setCardRef(el: Element | ComponentPublicInstance | null) {
   if (el) {
@@ -36,7 +44,7 @@ async function loadAll() {
 </script>
 
 <template>
-  <div class="container mx-auto max-w-6xl space-y-6 px-4 py-6">
+  <div class="w-full space-y-6 px-4 py-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 class="text-2xl font-semibold">Avatar debug</h1>
@@ -51,6 +59,18 @@ async function loadAll() {
     </div>
 
     <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+      <span class="shrink-0 text-sm font-medium">Columns</span>
+      <input
+        v-model.number="columns"
+        type="range"
+        min="1"
+        max="10"
+        step="1"
+        class="h-8 w-32 accent-primary"
+        aria-label="Cards per row"
+      />
+      <code class="w-4 shrink-0 text-right font-mono text-sm tabular-nums">{{ columns }}</code>
+      <span class="mx-1 hidden h-6 w-px bg-border sm:inline-block" aria-hidden="true" />
       <span class="shrink-0 text-sm font-medium">Global zoom</span>
       <input
         v-model.number="globalZoom"
@@ -67,59 +87,73 @@ async function loadAll() {
         >{{ globalZoom.toFixed(2) }}</code
       >
       <span class="mx-1 hidden h-6 w-px bg-border sm:inline-block" aria-hidden="true" />
-      <span class="shrink-0 text-sm font-medium">Photo size</span>
+      <span class="shrink-0 text-sm font-medium">Stage</span>
       <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
         W
         <input
-          v-model.number="snapshotWidth"
+          v-model.number="stageWidth"
           type="number"
-          min="64"
-          max="4096"
+          min="120"
+          max="1200"
           step="1"
           class="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
-          aria-label="Snapshot max width"
+          aria-label="Stage width"
         />
       </label>
       <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
         H
         <input
-          v-model.number="snapshotHeight"
+          v-model.number="stageHeight"
           type="number"
-          min="64"
-          max="4096"
+          min="120"
+          max="1200"
           step="1"
           class="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
-          aria-label="Snapshot max height"
+          aria-label="Stage height"
         />
       </label>
+      <span class="mx-1 hidden h-6 w-px bg-border sm:inline-block" aria-hidden="true" />
+      <span class="shrink-0 text-sm font-medium">Photo ratio</span>
+      <input
+        v-model.number="snapshotRatio"
+        type="number"
+        min="0.25"
+        max="8"
+        step="0.25"
+        class="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
+        aria-label="Snapshot scale ratio"
+        title="Export size = Stage CSS × ratio (ignores display DPR)"
+      />
     </div>
 
     <section class="space-y-3">
       <h2 class="text-lg font-medium">Female presets ({{ FEMALE_AVATAR_PRESETS.length }})</h2>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="grid gap-4" :style="gridStyle">
         <AvatarDebugCard
           v-for="preset in FEMALE_AVATAR_PRESETS"
           :key="`F-${preset.url}`"
           :ref="setCardRef"
           :preset="preset"
           :global-zoom="globalZoom"
-          :snapshot-width="snapshotWidth"
-          :snapshot-height="snapshotHeight"
+          :stage-width="stageWidth"
+          :stage-height="stageHeight"
+          :snapshot-ratio="snapshotRatio"
         />
       </div>
     </section>
 
     <section class="space-y-3">
       <h2 class="text-lg font-medium">Male presets ({{ MALE_AVATAR_PRESETS.length }})</h2>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="grid gap-4" :style="gridStyle">
         <AvatarDebugCard
           v-for="preset in MALE_AVATAR_PRESETS"
           :key="`M-${preset.url}`"
           :ref="setCardRef"
           :preset="preset"
           :global-zoom="globalZoom"
-          :snapshot-width="snapshotWidth"
-          :snapshot-height="snapshotHeight"
+          :stage-width="stageWidth"
+          :stage-height="stageHeight"
+          :snapshot-ratio="snapshotRatio"
         />
       </div>
     </section>

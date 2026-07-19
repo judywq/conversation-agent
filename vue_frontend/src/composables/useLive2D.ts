@@ -9,35 +9,22 @@ import { mouthOpenFromWords } from '@/lib/wordMouthSync'
 
 extensions.add(Live2DPlugin)
 
-const SNAPSHOT_SIZE_MIN = 64
-const SNAPSHOT_SIZE_MAX = 4096
+const SNAPSHOT_RATIO_MIN = 0.25
+const SNAPSHOT_RATIO_MAX = 8
 
-/** Clamp a user size input into 64–4096; invalid → undefined. */
-function clampSnapshotDim(value: number | undefined): number | undefined {
-  if (value == null || !Number.isFinite(value)) return undefined
-  return Math.min(SNAPSHOT_SIZE_MAX, Math.max(SNAPSHOT_SIZE_MIN, Math.round(value)))
+/** Clamp photo scale ratio; invalid → undefined. */
+function clampSnapshotRatio(value: number | undefined): number | undefined {
+  if (value == null || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.min(SNAPSHOT_RATIO_MAX, Math.max(SNAPSHOT_RATIO_MIN, value))
 }
 
 /**
- * Pixi extract.resolution for a contain fit inside an optional max box.
- * Uses real canvas pixels (renderer.width/height), not CSS screen size.
- * Output dims stay ≤ provided maxima; aspect preserved.
- *
- * extractResolution = rendererResolution * min(maxW/renderW, maxH/renderH)
+ * Pixi extract.resolution for a CSS-space frame (app.screen).
+ * Output pixels ≈ screenCss × ratio — independent of devicePixelRatio.
+ * Must always be passed explicitly; omitting lets Pixi default to renderer.resolution (DPR).
  */
-export function snapshotExtractResolution(
-  renderW: number,
-  renderH: number,
-  rendererResolution: number,
-  size?: { width?: number; height?: number },
-): number | undefined {
-  if (renderW <= 0 || renderH <= 0 || rendererResolution <= 0) return undefined
-  const maxW = clampSnapshotDim(size?.width)
-  const maxH = clampSnapshotDim(size?.height)
-  if (maxW == null && maxH == null) return undefined
-  const scaleW = maxW != null ? maxW / renderW : Infinity
-  const scaleH = maxH != null ? maxH / renderH : Infinity
-  return rendererResolution * Math.min(scaleW, scaleH)
+export function snapshotExtractResolution(ratio?: number): number | undefined {
+  return clampSnapshotRatio(ratio)
 }
 
 /** Minimal shape of @pixi/sound Sound used for word-timed mouth sync. */
@@ -383,13 +370,9 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
   /**
    * Download the current stage as a PNG with transparent background.
    * Uses Pixi extract (not DOM screenshot) so CSS card chrome is omitted.
-   * Optional size is a max box (contain): output dims stay ≤ width/height, aspect preserved.
-   * Scale is based on real canvas pixels (renderer.width/height), not CSS screen size.
+   * Ratio multiplies stage CSS size: output ≈ screenCss × ratio (DPR-independent).
    */
-  function downloadSnapshot(
-    filename = 'avatar.png',
-    size?: { width?: number; height?: number },
-  ): boolean {
+  function downloadSnapshot(filename = 'avatar.png', ratio = 1): boolean {
     if (!app || !model.value) return false
     try {
       const renderW = app.renderer.width
@@ -397,28 +380,27 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
       const dpr = app.renderer.resolution
       const screenW = app.screen.width
       const screenH = app.screen.height
-      const resolution = snapshotExtractResolution(renderW, renderH, dpr, size)
-      const scale =
-        resolution != null && dpr > 0 ? resolution / dpr : 1
+      const scale = clampSnapshotRatio(ratio) ?? 1
+      // Always set resolution explicitly — Pixi's default is renderer.resolution (DPR).
+      const resolution = scale
       const extractOptions = {
         target: app.stage,
         filename,
         frame: new Rectangle(0, 0, screenW, screenH),
         clearColor: [0, 0, 0, 0] as [number, number, number, number],
         antialias: true,
-        ...(resolution != null ? { resolution } : {}),
+        resolution,
       }
       console.debug('[Live2D snapshot]', {
         filename,
-        requestedMax: size ?? null,
+        ratio: scale,
         renderPx: { width: renderW, height: renderH },
         screenCssPx: { width: screenW, height: screenH },
         rendererResolution: dpr,
-        extractResolution: resolution ?? `(default ${dpr})`,
-        containScale: scale,
+        extractResolution: resolution,
         expectedOutputPx: {
-          width: Math.round(renderW * scale),
-          height: Math.round(renderH * scale),
+          width: Math.round(screenW * scale),
+          height: Math.round(screenH * scale),
         },
         extractOptions: {
           filename: extractOptions.filename,

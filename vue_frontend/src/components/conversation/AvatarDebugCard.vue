@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { AvatarPreset } from '@/config/avatarPresets'
+import { AVATAR_DEFAULT_ZOOM } from '@/config/avatarPresets'
 import { useLive2D } from '@/composables/useLive2D'
 import { Button } from '@/components/ui/button'
 
@@ -8,9 +9,11 @@ const props = defineProps<{
   preset: AvatarPreset
   /** Page-level multiplier; per-model zoom readout stays the config value. */
   globalZoom?: number
-  /** Shared max export box for Take photo (contain fit). */
-  snapshotWidth?: number
-  snapshotHeight?: number
+  /** Shared Live2D stage CSS size (framing / aspect). */
+  stageWidth?: number
+  stageHeight?: number
+  /** Multiplier on stage CSS size for Take photo (1 = Stage W×H pixels). */
+  snapshotRatio?: number
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -28,7 +31,8 @@ const {
   dispose,
 } = useLive2D(stageRef)
 
-const zoom = ref(props.preset.zoom ?? 2.4)
+// Use AVATAR_DEFAULT_ZOOM instead of hardcoded default
+const zoom = ref(props.preset.zoom ?? AVATAR_DEFAULT_ZOOM)
 const testAudioUrl = ref('')
 const selectedMotion = ref('')
 const motionPlaying = ref(false)
@@ -39,6 +43,15 @@ const activePreset = computed(() => ({
   ...props.preset,
   zoom: zoom.value * (props.globalZoom ?? 1),
 }))
+
+const stageStyle = computed(() => {
+  const w = props.stageWidth
+  const h = props.stageHeight
+  return {
+    width: `${Number.isFinite(w) && (w as number) > 0 ? w : 360}px`,
+    height: `${Number.isFinite(h) && (h as number) > 0 ? h : 240}px`,
+  }
+})
 
 const statusLabel = computed(() => {
   if (status.value === 'loading') return 'Loading…'
@@ -92,10 +105,7 @@ function snapshotFilename(): string {
 }
 
 function takePhoto() {
-  downloadSnapshot(snapshotFilename(), {
-    width: props.snapshotWidth,
-    height: props.snapshotHeight,
-  })
+  downloadSnapshot(snapshotFilename(), props.snapshotRatio ?? 1)
 }
 
 onUnmounted(() => {
@@ -203,19 +213,21 @@ defineExpose({ load, status })
         :title="'Copy into avatarPresets.ts as zoom: ' + zoomLabel"
       >{{ zoomLabel }}</code>
     </div>
-    <div class="relative h-[240px] bg-muted/30">
-      <div ref="stageRef" class="absolute inset-0 z-0" />
-      <div
-        v-if="status === 'idle' || status === 'loading'"
-        class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-xs text-muted-foreground"
-      >
-        {{ status === 'loading' ? 'Loading avatar…' : 'Not loaded yet' }}
-      </div>
-      <div
-        v-else-if="status === 'error'"
-        class="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-destructive"
-      >
-        {{ errorMessage || 'Avatar unavailable' }}
+    <div class="flex justify-center overflow-auto bg-muted/30 p-2">
+      <div class="relative shrink-0 bg-muted/40" :style="stageStyle">
+        <div ref="stageRef" class="absolute inset-0 z-0" />
+        <div
+          v-if="status === 'idle' || status === 'loading'"
+          class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-xs text-muted-foreground"
+        >
+          {{ status === 'loading' ? 'Loading avatar…' : 'Not loaded yet' }}
+        </div>
+        <div
+          v-else-if="status === 'error'"
+          class="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-destructive"
+        >
+          {{ errorMessage || 'Avatar unavailable' }}
+        </div>
       </div>
     </div>
   </div>

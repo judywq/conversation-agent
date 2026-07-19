@@ -466,48 +466,32 @@ describe('useLive2D', () => {
         clearColor: [0, 0, 0, 0],
         antialias: true,
         frame: expect.objectContaining({ x: 0, y: 0, width: 360, height: 240 }),
+        resolution: 1, // CSS × ratio; ignores dpr
       }),
     )
-    expect(extractDownload.mock.calls[0][0].resolution).toBeUndefined()
   })
 
-  it('downloadSnapshot uses contain resolution from render pixels', async () => {
-    // render 720×480 @ dpr 2, screen CSS 360×240
+  it('downloadSnapshot scales extract resolution by ratio (DPR-independent)', async () => {
     const { init, downloadSnapshot } = useLive2D(makeStage())
     await init({ url: '/live2d/hiyori/Hiyori.model3.json' })
 
-    // width-only: scale = 720/720 = 1 → extractRes = 2 * 1 = 2
-    expect(downloadSnapshot('w.png', { width: 720 })).toBe(true)
+    expect(downloadSnapshot('x2.png', 2)).toBe(true)
     expect(extractDownload).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        filename: 'w.png',
-        resolution: 2,
+        filename: 'x2.png',
+        resolution: 2, // ratio only — not dpr * ratio
         frame: expect.objectContaining({ width: 360, height: 240 }),
-      }),
-    )
-
-    // box 800×400: scale = min(800/720, 400/480) = 400/480
-    // extractRes = 2 * (400/480); output ≈ 600×400 (both ≤)
-    expect(downloadSnapshot('box.png', { width: 800, height: 400 })).toBe(true)
-    expect(extractDownload).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        filename: 'box.png',
-        resolution: 2 * (400 / 480),
       }),
     )
   })
 })
 
 describe('snapshotExtractResolution', () => {
-  it('contains within both maxima using render pixels and dpr', () => {
-    // render 720×480, dpr 2
-    expect(snapshotExtractResolution(720, 480, 2)).toBeUndefined()
-    expect(snapshotExtractResolution(720, 480, 2, { width: 720 })).toBe(2)
-    expect(snapshotExtractResolution(720, 480, 2, { height: 480 })).toBe(2)
-    expect(snapshotExtractResolution(720, 480, 2, { width: 800, height: 400 })).toBe(
-      2 * (400 / 480),
-    )
-    expect(snapshotExtractResolution(720, 480, 2, { width: 10 })).toBe(2 * (64 / 720))
-    expect(snapshotExtractResolution(720, 480, 2, { width: Number.NaN })).toBeUndefined()
+  it('returns the clamped ratio for CSS-space extract', () => {
+    expect(snapshotExtractResolution()).toBeUndefined()
+    expect(snapshotExtractResolution(1)).toBe(1)
+    expect(snapshotExtractResolution(2)).toBe(2)
+    expect(snapshotExtractResolution(0.5)).toBe(0.5)
+    expect(snapshotExtractResolution(Number.NaN)).toBeUndefined()
   })
 })
