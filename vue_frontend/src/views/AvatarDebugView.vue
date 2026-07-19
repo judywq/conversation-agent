@@ -20,6 +20,8 @@ const stageWidth = ref(300)
 const stageHeight = ref(400)
 /** Multiplier on stage CSS size for Take photo (1 = Stage W×H pixels). */
 const snapshotRatio = ref(1)
+/** Delay before capture (seconds). */
+const snapshotDelaySec = ref(1)
 /** Cards per row (1–10). */
 const columns = ref(5)
 
@@ -124,6 +126,20 @@ async function loadAll() {
         aria-label="Snapshot scale ratio"
         title="Export size = Stage CSS × ratio (ignores display DPR)"
       />
+      <span class="mx-1 hidden h-6 w-px bg-border sm:inline-block" aria-hidden="true" />
+      <span class="shrink-0 text-sm font-medium">Photo delay</span>
+      <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <input
+          v-model.number="snapshotDelaySec"
+          type="number"
+          min="0"
+          max="10"
+          step="0.5"
+          class="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
+          aria-label="Snapshot delay seconds"
+        />
+        s
+      </label>
     </div>
 
     <section class="space-y-3">
@@ -138,6 +154,7 @@ async function loadAll() {
           :stage-width="stageWidth"
           :stage-height="stageHeight"
           :snapshot-ratio="snapshotRatio"
+          :snapshot-delay-sec="snapshotDelaySec"
         />
       </div>
     </section>
@@ -154,6 +171,7 @@ async function loadAll() {
           :stage-width="stageWidth"
           :stage-height="stageHeight"
           :snapshot-ratio="snapshotRatio"
+          :snapshot-delay-sec="snapshotDelaySec"
         />
       </div>
     </section>

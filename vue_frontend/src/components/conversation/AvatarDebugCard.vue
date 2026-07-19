@@ -4,6 +4,7 @@ import type { AvatarPreset } from '@/config/avatarPresets'
 import { AVATAR_DEFAULT_ZOOM } from '@/config/avatarPresets'
 import { useLive2D } from '@/composables/useLive2D'
 import { Button } from '@/components/ui/button'
+import { Camera } from 'lucide-vue-next'
 
 const props = defineProps<{
   preset: AvatarPreset
@@ -14,6 +15,8 @@ const props = defineProps<{
   stageHeight?: number
   /** Multiplier on stage CSS size for Take photo (1 = Stage W×H pixels). */
   snapshotRatio?: number
+  /** Delay before capture, in seconds. */
+  snapshotDelaySec?: number
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -37,12 +40,23 @@ const testAudioUrl = ref('')
 const selectedMotion = ref('')
 const motionPlaying = ref(false)
 const selectedExpression = ref('')
+/** Remaining countdown seconds while waiting to snap; null when idle. */
+const photoCountdown = ref<number | null>(null)
+let photoTimer: ReturnType<typeof setInterval> | null = null
+let photoTimeout: ReturnType<typeof setTimeout> | null = null
+
 const fileName = computed(() => props.preset.url.split('/').slice(-3).join('/'))
 const zoomLabel = computed(() => zoom.value.toFixed(2))
 const activePreset = computed(() => ({
   ...props.preset,
   zoom: zoom.value * (props.globalZoom ?? 1),
 }))
+const photoBusy = computed(() => photoCountdown.value != null)
+const photoCountdownLabel = computed(() => {
+  const t = photoCountdown.value
+  if (t == null) return null
+  return String(Math.max(1, Math.ceil(t)))
+})
 
 const stageStyle = computed(() => {
   const w = props.stageWidth
@@ -104,11 +118,46 @@ function snapshotFilename(): string {
   return `${base}.png`
 }
 
+function clearPhotoTimers() {
+  if (photoTimer != null) {
+    clearInterval(photoTimer)
+    photoTimer = null
+  }
+  if (photoTimeout != null) {
+    clearTimeout(photoTimeout)
+    photoTimeout = null
+  }
+  photoCountdown.value = null
+}
+
 function takePhoto() {
-  downloadSnapshot(snapshotFilename(), props.snapshotRatio ?? 1)
+  if (status.value !== 'ready' || photoBusy.value) return
+
+  const delaySec = Math.max(0, Number(props.snapshotDelaySec) || 0)
+  if (delaySec <= 0) {
+    downloadSnapshot(snapshotFilename(), props.snapshotRatio ?? 1)
+    return
+  }
+
+  const started = performance.now()
+  const delayMs = delaySec * 1000
+  photoCountdown.value = delaySec
+
+  photoTimer = setInterval(() => {
+    const left = delaySec - (performance.now() - started) / 1000
+    photoCountdown.value = left > 0 ? left : 0
+  }, 100)
+
+  photoTimeout = setTimeout(() => {
+    clearPhotoTimers()
+    if (status.value === 'ready') {
+      downloadSnapshot(snapshotFilename(), props.snapshotRatio ?? 1)
+    }
+  }, delayMs)
 }
 
 onUnmounted(() => {
+  clearPhotoTimers()
   dispose()
 })
 
@@ -126,10 +175,16 @@ defineExpose({ load, status })
         <Button
           variant="outline"
           size="sm"
-          :disabled="status !== 'ready'"
+          class="min-w-9 px-2"
+          :disabled="status !== 'ready' || photoBusy"
+          :aria-label="photoBusy ? `Capturing in ${photoCountdownLabel}` : 'Take photo'"
           @click="takePhoto"
         >
-          Take photo
+          <span
+            v-if="photoBusy"
+            class="w-4 text-center font-mono text-xs tabular-nums"
+          >{{ photoCountdownLabel }}</span>
+          <Camera v-else class="h-4 w-4" aria-hidden="true" />
         </Button>
         <Button
           variant="outline"
