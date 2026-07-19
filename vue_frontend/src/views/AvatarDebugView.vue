@@ -11,8 +11,25 @@ import { Button } from '@/components/ui/button'
 
 type CardInstance = InstanceType<typeof AvatarDebugCard>
 
-const cards = ref<CardInstance[]>([])
+type CharacterSettings = { zoom: number; offsetX: number; offsetY: number }
+
+type SettingsFile = {
+  version: 1
+  global: {
+    columns: number
+    globalZoom: number
+    stageWidth: number
+    stageHeight: number
+    snapshotRatio: number
+    snapshotDelaySec: number
+    lookAtCursor: boolean
+  }
+  characters: Record<string, CharacterSettings>
+}
+
+const cardsByUrl = ref(new Map<string, CardInstance>())
 const loadingAll = ref(false)
+const importInputRef = ref<HTMLInputElement | null>(null)
 /** Preview multiplier; seed from config. Copy into AVATAR_GLOBAL_ZOOM when happy. */
 const globalZoom = ref(AVATAR_GLOBAL_ZOOM)
 /** Shared Live2D stage CSS size — controls framing / aspect for preview + photo. */
@@ -31,18 +48,138 @@ const gridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${columns.value}, minmax(0, 1fr))`,
 }))
 
-function setCardRef(el: Element | ComponentPublicInstance | null) {
+function setCardRef(url: string, el: Element | ComponentPublicInstance | null) {
   if (el) {
-    cards.value.push(el as CardInstance)
+    cardsByUrl.value.set(url, el as CardInstance)
+  } else {
+    cardsByUrl.value.delete(url)
   }
 }
 
 async function loadAll() {
   loadingAll.value = true
   try {
-    await Promise.all(cards.value.map((card) => card.load()))
+    await Promise.all([...cardsByUrl.value.values()].map((card) => card.load()))
   } finally {
     loadingAll.value = false
+  }
+}
+
+function exportSettings() {
+  const characters: Record<string, CharacterSettings> = {}
+  for (const card of cardsByUrl.value.values()) {
+    const { url, zoom, offsetX, offsetY } = card.getSettings()
+    characters[url] = { zoom, offsetX, offsetY }
+  }
+
+  const payload: SettingsFile = {
+    version: 1,
+    global: {
+      columns: columns.value,
+      globalZoom: globalZoom.value,
+      stageWidth: stageWidth.value,
+      stageHeight: stageHeight.value,
+      snapshotRatio: snapshotRatio.value,
+      snapshotDelaySec: snapshotDelaySec.value,
+      lookAtCursor: lookAtCursor.value,
+    },
+    characters,
+  }
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const href = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = href
+  a.download = 'avatar-debug-settings.json'
+  a.click()
+  URL.revokeObjectURL(href)
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v)
+}
+
+function validateSettings(data: unknown): SettingsFile | null {
+  if (!data || typeof data !== 'object') return null
+  const root = data as Record<string, unknown>
+  if (root.version !== 1) return null
+  if (!root.global || typeof root.global !== 'object') return null
+  if (!root.characters || typeof root.characters !== 'object') return null
+
+  const g = root.global as Record<string, unknown>
+  if (
+    !isFiniteNumber(g.columns) ||
+    !isFiniteNumber(g.globalZoom) ||
+    !isFiniteNumber(g.stageWidth) ||
+    !isFiniteNumber(g.stageHeight) ||
+    !isFiniteNumber(g.snapshotRatio) ||
+    !isFiniteNumber(g.snapshotDelaySec) ||
+    typeof g.lookAtCursor !== 'boolean'
+  ) {
+    return null
+  }
+
+  const characters: Record<string, CharacterSettings> = {}
+  for (const [url, raw] of Object.entries(root.characters as Record<string, unknown>)) {
+    if (!raw || typeof raw !== 'object') return null
+    const c = raw as Record<string, unknown>
+    if (!isFiniteNumber(c.zoom) || !isFiniteNumber(c.offsetX) || !isFiniteNumber(c.offsetY)) {
+      return null
+    }
+    characters[url] = { zoom: c.zoom, offsetX: c.offsetX, offsetY: c.offsetY }
+  }
+
+  return {
+    version: 1,
+    global: {
+      columns: g.columns,
+      globalZoom: g.globalZoom,
+      stageWidth: g.stageWidth,
+      stageHeight: g.stageHeight,
+      snapshotRatio: g.snapshotRatio,
+      snapshotDelaySec: g.snapshotDelaySec,
+      lookAtCursor: g.lookAtCursor,
+    },
+    characters,
+  }
+}
+
+function applyImportedSettings(settings: SettingsFile) {
+  columns.value = settings.global.columns
+  globalZoom.value = settings.global.globalZoom
+  stageWidth.value = settings.global.stageWidth
+  stageHeight.value = settings.global.stageHeight
+  snapshotRatio.value = settings.global.snapshotRatio
+  snapshotDelaySec.value = settings.global.snapshotDelaySec
+  lookAtCursor.value = settings.global.lookAtCursor
+
+  for (const [url, character] of Object.entries(settings.characters)) {
+    const card = cardsByUrl.value.get(url)
+    if (card) card.applySettings(character)
+  }
+}
+
+function openImportPicker() {
+  importInputRef.value?.click()
+}
+
+async function onImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  try {
+    const text = await file.text()
+    const parsed: unknown = JSON.parse(text)
+    const settings = validateSettings(parsed)
+    if (!settings) {
+      console.error('Invalid avatar debug settings JSON', parsed)
+      return
+    }
+    applyImportedSettings(settings)
+  } catch (err) {
+    console.error('Failed to import avatar debug settings', err)
   }
 }
 </script>
@@ -57,9 +194,20 @@ async function loadAll() {
           all at once.
         </p>
       </div>
-      <Button :disabled="loadingAll" @click="loadAll">
-        {{ loadingAll ? 'Loading…' : 'Load all avatars' }}
-      </Button>
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="outline" @click="exportSettings">Export settings</Button>
+        <Button variant="outline" @click="openImportPicker">Import settings</Button>
+        <input
+          ref="importInputRef"
+          type="file"
+          accept="application/json,.json"
+          class="hidden"
+          @change="onImportFile"
+        />
+        <Button :disabled="loadingAll" @click="loadAll">
+          {{ loadingAll ? 'Loading…' : 'Load all avatars' }}
+        </Button>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
@@ -160,7 +308,7 @@ async function loadAll() {
         <AvatarDebugCard
           v-for="preset in FEMALE_AVATAR_PRESETS"
           :key="`F-${preset.url}`"
-          :ref="setCardRef"
+          :ref="(el) => setCardRef(preset.url, el)"
           :preset="preset"
           :global-zoom="globalZoom"
           :stage-width="stageWidth"
@@ -178,7 +326,7 @@ async function loadAll() {
         <AvatarDebugCard
           v-for="preset in MALE_AVATAR_PRESETS"
           :key="`M-${preset.url}`"
-          :ref="setCardRef"
+          :ref="(el) => setCardRef(preset.url, el)"
           :preset="preset"
           :global-zoom="globalZoom"
           :stage-width="stageWidth"

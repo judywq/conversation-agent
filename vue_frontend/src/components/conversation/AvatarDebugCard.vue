@@ -177,7 +177,28 @@ onUnmounted(() => {
   dispose()
 })
 
-defineExpose({ load, status })
+function getSettings() {
+  return {
+    url: props.preset.url,
+    zoom: zoom.value,
+    offsetX: offsetX.value,
+    offsetY: offsetY.value,
+  }
+}
+
+function applySettings(partial: { zoom?: number; offsetX?: number; offsetY?: number }) {
+  if (typeof partial.zoom === 'number' && Number.isFinite(partial.zoom)) {
+    zoom.value = partial.zoom
+  }
+  if (typeof partial.offsetX === 'number' && Number.isFinite(partial.offsetX)) {
+    offsetX.value = partial.offsetX
+  }
+  if (typeof partial.offsetY === 'number' && Number.isFinite(partial.offsetY)) {
+    offsetY.value = partial.offsetY
+  }
+}
+
+defineExpose({ load, status, getSettings, applySettings })
 </script>
 
 <template>
