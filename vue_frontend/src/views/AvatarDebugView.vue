@@ -21,7 +21,7 @@ const stageHeight = ref(400)
 /** Multiplier on stage CSS size for Take photo (1 = Stage W×H pixels). */
 const snapshotRatio = ref(1)
 /** Delay before capture (seconds). */
-const snapshotDelaySec = ref(1)
+const snapshotDelaySec = ref(0)
 /** When true, models track the mouse cursor (engine autoFocus). */
 const lookAtCursor = ref(true)
 /** Cards per row (1–10). */
