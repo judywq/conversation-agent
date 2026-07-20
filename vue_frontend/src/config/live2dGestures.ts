@@ -134,3 +134,15 @@ export function resolveGestureMotion(
   }
   return null
 }
+
+/** Pick a random motion from a logical gesture group (empty → null). */
+export function resolveRandomGestureMotion(
+  capabilities: Live2DCapabilities,
+  gestureMap: Live2DGestureMap,
+  gesture: Live2DGesture,
+): ResolvedGestureMotion | null {
+  const names = gestureMap[gesture] ?? []
+  if (names.length === 0) return null
+  const index = Math.floor(Math.random() * names.length)
+  return resolveGestureMotion(capabilities, gestureMap, gesture, index)
+}

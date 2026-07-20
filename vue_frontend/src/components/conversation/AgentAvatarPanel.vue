@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { avatarPresetByUrl, avatarPresetForAgent, resolveAvatarZoom } from '@/config/avatarPresets'
+import {
+  gesturesForUrl,
+  resolveRandomGestureMotion,
+  type Live2DGesture,
+} from '@/config/live2dGestures'
 import { useLive2D } from '@/composables/useLive2D'
 import type { LipSyncPayload } from '@/types/lipsync'
 
@@ -23,7 +28,17 @@ const props = defineProps<{
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
-const { status, errorMessage, init, refit, speak, setIdle, dispose } = useLive2D(stageRef)
+const {
+  status,
+  errorMessage,
+  capabilities,
+  init,
+  refit,
+  speak,
+  playMotion,
+  setIdle,
+  dispose,
+} = useLive2D(stageRef)
 
 const preset = computed(() => {
   const base = props.live2dUrl
@@ -62,6 +77,29 @@ async function ensureInit() {
   await init(preset.value)
 }
 
+async function playLogicalGesture(gesture: Extract<Live2DGesture, 'speak' | 'think'>) {
+  await ensureInit()
+  if (status.value === 'error' || !capabilities.value) return
+  const map = gesturesForUrl(preset.value.url)
+  if (!map) return
+  const resolved = resolveRandomGestureMotion(capabilities.value, map, gesture)
+  if (!resolved) return
+  void playMotion(resolved.group, resolved.index)
+}
+
+watch(
+  () => [props.agentStatus, props.active] as const,
+  ([agentStatus, active]) => {
+    if (
+      active &&
+      (agentStatus === 'thinking' || agentStatus === 'searching_online')
+    ) {
+      void playLogicalGesture('think')
+    }
+  },
+  { immediate: true },
+)
+
 watch(
   () => props.live2dUrl,
   () => {
@@ -88,6 +126,7 @@ onUnmounted(() => {
 async function speakTurn(audioUrl: string, lipsync: LipSyncPayload): Promise<boolean> {
   await ensureInit()
   if (status.value === 'error') return false
+  void playLogicalGesture('speak')
   return speak(audioUrl, lipsync)
 }
 

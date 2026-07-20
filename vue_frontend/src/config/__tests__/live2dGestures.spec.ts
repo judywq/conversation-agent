@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Live2DCapabilities } from '@/composables/useLive2D'
 import {
   LIVE2D_GESTURES,
   gesturesForUrl,
   live2dModelKeyFromUrl,
   resolveGestureMotion,
+  resolveRandomGestureMotion,
 } from '@/config/live2dGestures'
 
 const caps: Live2DCapabilities = {
@@ -76,5 +77,27 @@ describe('resolveGestureMotion', () => {
   it('returns null when the motion name is missing from capabilities', () => {
     const orphan = { ...map, speak: ['missing_motion'] }
     expect(resolveGestureMotion(caps, orphan, 'speak', 0)).toBeNull()
+  })
+})
+
+describe('resolveRandomGestureMotion', () => {
+  const map = LIVE2D_GESTURES.haru!
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('returns null for an empty logical group', () => {
+    const empty = { ...map, think: [] as string[] }
+    expect(resolveRandomGestureMotion(caps, empty, 'think')).toBeNull()
+  })
+
+  it('resolves a random index into a capability-backed motion', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    expect(resolveRandomGestureMotion(caps, map, 'speak')).toEqual({
+      group: 'TapBody',
+      index: 0,
+      name: 'haru_g_m26',
+    })
   })
 })
