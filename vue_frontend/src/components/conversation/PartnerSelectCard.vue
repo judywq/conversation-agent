@@ -3,7 +3,7 @@ import { partnerCardBgUrl } from '@/config/partnerCardBgs'
 import { PARTNER_THUMB_PLACEHOLDER, partnerThumbUrl } from '@/config/partnerThumbs'
 import type { AgentCharacter } from '@/services/conversationService'
 import { AudioLines, Check } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 /** Max rotation (degrees) at the card edge; center stays flat. */
 const TILT_MAX_DEG = 8
@@ -13,6 +13,8 @@ const TILT_PERSPECTIVE_PX = 900
 const TILT_SCALE = 1.02
 /** Duration (ms) for transform to ease back when the pointer leaves. */
 const TILT_RESET_MS = 200
+/** Duration (ms) to ease into the first tilt pose on enter. */
+const TILT_ENTER_MS = 180
 /** Blur (px) on the decorative background. */
 const BG_BLUR_PX = 1
 /** Background scale at rest (slightly oversize so blur edges stay clipped). */
@@ -45,25 +47,35 @@ const cardRef = ref<HTMLButtonElement | null>(null)
 const rotateX = ref(0)
 const rotateY = ref(0)
 const scale = ref(1)
+/** Pointer is over the card and driving tilt/parallax. */
 const tilting = ref(false)
+/** Enter settle finished — use snappy (no) transform transition while tracking. */
+const tiltReady = ref(false)
 const bgHovered = ref(false)
 /** Normalized pointer offset from center, range [-1, 1]. */
 const parallaxX = ref(0)
 const parallaxY = ref(0)
+let enterSettleTimer: ReturnType<typeof setTimeout> | null = null
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const isInteractionLocked = computed(() => props.disabled && !props.selected)
 
-const layerTransition = computed(() =>
-  tilting.value ? 'none' : `transform ${TILT_RESET_MS}ms ease-out`,
-)
+const motionTransition = computed(() => {
+  if (!tilting.value) return `transform ${TILT_RESET_MS}ms ease-out`
+  if (!tiltReady.value) return `transform ${TILT_ENTER_MS}ms ease-out`
+  return 'none'
+})
+
+const layerTransition = computed(() => motionTransition.value)
 
 const tiltStyle = computed(() => ({
   transform: `perspective(${TILT_PERSPECTIVE_PX}px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) scale3d(${scale.value}, ${scale.value}, ${scale.value})`,
   transition: tilting.value
-    ? 'box-shadow 150ms ease, border-color 150ms ease'
+    ? tiltReady.value
+      ? 'box-shadow 150ms ease, border-color 150ms ease'
+      : `transform ${TILT_ENTER_MS}ms ease-out, box-shadow 150ms ease, border-color 150ms ease`
     : `transform ${TILT_RESET_MS}ms ease-out, box-shadow 150ms ease, border-color 150ms ease`,
 }))
 
@@ -99,8 +111,26 @@ const fgStyle = computed(() => {
   }
 })
 
+function clearEnterSettleTimer() {
+  if (enterSettleTimer != null) {
+    clearTimeout(enterSettleTimer)
+    enterSettleTimer = null
+  }
+}
+
+function beginEnterSettle() {
+  tiltReady.value = false
+  clearEnterSettleTimer()
+  enterSettleTimer = setTimeout(() => {
+    tiltReady.value = true
+    enterSettleTimer = null
+  }, TILT_ENTER_MS)
+}
+
 function resetMotion() {
+  clearEnterSettleTimer()
   tilting.value = false
+  tiltReady.value = false
   rotateX.value = 0
   rotateY.value = 0
   scale.value = 1
@@ -118,7 +148,10 @@ function onMouseMove(event: MouseEvent) {
   const el = cardRef.value
   if (!el) return
 
+  const starting = !tilting.value
   tilting.value = true
+  if (starting) beginEnterSettle()
+
   const rect = el.getBoundingClientRect()
   const nx = ((event.clientX - rect.left) / rect.width - 0.5) * 2
   const ny = ((event.clientY - rect.top) / rect.height - 0.5) * 2
@@ -133,6 +166,10 @@ function onMouseLeave() {
   bgHovered.value = false
   resetMotion()
 }
+
+onBeforeUnmount(() => {
+  clearEnterSettleTimer()
+})
 
 function onThumbError(event: Event) {
   const img = event.target as HTMLImageElement
