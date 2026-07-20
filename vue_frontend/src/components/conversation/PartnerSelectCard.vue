@@ -21,6 +21,10 @@ const BG_SCALE = 1.08
 const BG_HOVER_SCALE = 1.18
 /** Duration (ms) for background zoom in/out. */
 const BG_ZOOM_MS = 300
+/** Enter zoom curve: fast rise, then soft settle (approx. expo-out). */
+const BG_ZOOM_ENTER_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'
+/** Leave zoom curve. */
+const BG_ZOOM_LEAVE_EASE = 'ease-out'
 /** Max bg translate (px) opposite the pointer — farther layer. */
 const PARALLAX_BG_PX = 6
 /** Max character translate (px) toward the pointer — nearer layer. */
@@ -63,20 +67,26 @@ const tiltStyle = computed(() => ({
     : `transform ${TILT_RESET_MS}ms ease-out, box-shadow 150ms ease, border-color 150ms ease`,
 }))
 
-const bgStyle = computed(() => {
+const bgParallaxStyle = computed(() => {
+  const tx = parallaxX.value * -PARALLAX_BG_PX
+  const ty = parallaxY.value * -PARALLAX_BG_PX
+  return {
+    transform: `translate(${tx}px, ${ty}px)`,
+    transition: layerTransition.value,
+  }
+})
+
+const bgZoomStyle = computed(() => {
   const zoom =
     bgHovered.value && !isInteractionLocked.value && !prefersReducedMotion()
       ? BG_HOVER_SCALE
       : BG_SCALE
-  const tx = parallaxX.value * -PARALLAX_BG_PX
-  const ty = parallaxY.value * -PARALLAX_BG_PX
   return {
     backgroundImage: `url(${partnerCardBgUrl(props.backgroundIndex)})`,
     filter: `blur(${BG_BLUR_PX}px)`,
-    transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
-    transition: tilting.value
-      ? 'none'
-      : `transform ${bgHovered.value ? BG_ZOOM_MS : TILT_RESET_MS}ms ease-out`,
+    transform: `scale(${zoom})`,
+    // Expo-out on enter (jumps then settles); ease-out on leave
+    transition: `transform ${BG_ZOOM_MS}ms ${bgHovered.value ? BG_ZOOM_ENTER_EASE : BG_ZOOM_LEAVE_EASE}`,
   }
 })
 
@@ -158,10 +168,15 @@ function onClick() {
   >
     <div class="relative h-[180px] overflow-hidden bg-muted/40">
       <div
-        class="absolute inset-0 z-0 bg-cover bg-center will-change-transform"
-        :style="bgStyle"
+        class="absolute inset-0 z-0 will-change-transform"
+        :style="bgParallaxStyle"
         aria-hidden="true"
-      />
+      >
+        <div
+          class="absolute inset-0 bg-cover bg-center will-change-transform"
+          :style="bgZoomStyle"
+        />
+      </div>
       <div
         class="absolute inset-0 z-[1] bg-gradient-to-t from-card/80 via-transparent to-transparent"
         aria-hidden="true"
