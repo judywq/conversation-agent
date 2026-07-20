@@ -135,3 +135,7 @@ optimize-scenes:
 optimize-partner-thumbs:
 	cd vue_frontend && npm run optimize:partner-thumbs
 
+# Regenerate partner card background WebPs from vue_frontend/image-src/partner-card-bgs-src/
+optimize-partner-card-bgs:
+	cd vue_frontend && npm run optimize:partner-card-bgs
+

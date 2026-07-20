@@ -225,6 +225,30 @@ npm run optimize:partner-thumbs
 
 Characters without a matching WebP fall back to `public/partner-thumbs/_placeholder_girl1.webp`. Commit the master PNG and the generated WebP.
 
+### Partner card backgrounds
+
+Partner select cards show a decorative scene behind each portrait. Masters are PNG files in `vue_frontend/image-src/partner-card-bgs-src/` (e.g. `sakura-classroom.png`). Optimized assets are served from `vue_frontend/public/partner-card-bgs/`. Backgrounds cycle by partner list order (1st card → 1st background, 2nd → 2nd, then wrap).
+
+When you **add or replace** a card background:
+
+1. Put the PNG in `vue_frontend/image-src/partner-card-bgs-src/` using a kebab-case slug as the filename.
+2. Regenerate WebPs:
+
+```sh
+make optimize-partner-card-bgs
+```
+
+Or from the frontend folder:
+
+```sh
+cd vue_frontend
+npm run optimize:partner-card-bgs
+```
+
+3. Append the slug (filename without `.png`) to `PARTNER_CARD_BG_SLUGS` in `vue_frontend/src/config/partnerCardBgs.ts` to control cycling order.
+
+Commit the master PNG, the generated WebP, and the config change.
+
 For more information, refer to the [Vue3 Vite Django Cookiecutter project](https://github.com/ilikerobots/cookiecutter-vue-django).
 
 

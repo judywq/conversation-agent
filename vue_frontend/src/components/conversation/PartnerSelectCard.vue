@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { partnerCardBgUrl } from '@/config/partnerCardBgs'
 import { PARTNER_THUMB_PLACEHOLDER, partnerThumbUrl } from '@/config/partnerThumbs'
 import type { AgentCharacter } from '@/services/conversationService'
 import { AudioLines, Check } from 'lucide-vue-next'
@@ -15,6 +16,7 @@ const TILT_RESET_MS = 200
 
 const props = defineProps<{
   character: AgentCharacter
+  backgroundIndex: number
   selected: boolean
   disabled: boolean
 }>()
@@ -98,10 +100,19 @@ function onClick() {
     @mouseleave="onMouseLeave"
   >
     <div class="relative h-[180px] bg-muted/40">
+      <div
+        class="absolute inset-0 z-0 bg-cover bg-center"
+        :style="{ backgroundImage: `url(${partnerCardBgUrl(backgroundIndex)})` }"
+        aria-hidden="true"
+      />
+      <div
+        class="absolute inset-0 z-[1] bg-gradient-to-t from-card/80 via-transparent to-transparent"
+        aria-hidden="true"
+      />
       <img
         :src="partnerThumbUrl(character.id)"
         :alt="character.display_name"
-        class="absolute inset-0 z-0 h-full w-full object-contain object-bottom"
+        class="absolute inset-0 z-10 h-full w-full object-contain object-bottom"
         @error="onThumbError"
       />
       <span

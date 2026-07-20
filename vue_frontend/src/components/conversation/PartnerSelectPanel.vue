@@ -101,9 +101,10 @@ function isCardDisabled(id: string) {
     <p v-else-if="loadError" class="text-sm text-destructive">{{ loadError }}</p>
     <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <PartnerSelectCard
-        v-for="character in characters"
+        v-for="(character, index) in characters"
         :key="character.id"
         :character="character"
+        :background-index="index"
         :selected="selectedSet.has(character.id)"
         :disabled="isCardDisabled(character.id)"
         @toggle="toggle(character.id)"

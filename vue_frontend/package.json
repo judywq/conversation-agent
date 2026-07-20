@@ -16,7 +16,8 @@
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
     "optimize:scenes": "node scripts/optimize-scenes.mjs",
-    "optimize:partner-thumbs": "node scripts/optimize-partner-thumbs.mjs"
+    "optimize:partner-thumbs": "node scripts/optimize-partner-thumbs.mjs",
+    "optimize:partner-card-bgs": "node scripts/optimize-partner-card-bgs.mjs"
   },
   "dependencies": {
     "@tanstack/vue-table": "^8.20.5",
