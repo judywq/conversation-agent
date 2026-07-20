@@ -1035,26 +1035,18 @@ function confirmEndSession() {
   sendOrToast(() => sendSessionMessage({ type: 'end_session' }))
 }
 
-/** Leave the game phase and go to History. */
+/** Leave the game phase and go to History.
+ *  Do not null sessionId / status flags here — that flips sessionBound false and
+ *  flashes the resume loading shell as "Listening…" until History mounts.
+ *  Component teardown happens in onUnmounted. */
 async function exitToSetup() {
   hideAppNav.value = false
   await unlockOrientation()
   stopAllAudioPlayback()
   resetAvatars()
   clearRecordingPreview()
-  sessionId.value = null
-  isEnded.value = false
-  isResuming.value = false
-  turns.value = []
-  participants.value = []
-  endedArgumentSummary.value = null
-  needUserTurn.value = false
-  needFirstTurnChoice.value = false
-  agentStatus.value = 'idle'
-  micState.value = 'idle'
   notebookOpen.value = false
   exitConfirmOpen.value = false
-  wsSessionBound.value = false
   ws.close()
   void router.replace({ name: 'history' })
 }
