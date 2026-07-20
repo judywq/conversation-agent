@@ -35,6 +35,7 @@ const fakeModel = {
         | undefined,
       once: vi.fn(),
       off: vi.fn(),
+      stopAllMotions: vi.fn(),
     },
   },
 }
@@ -457,6 +458,24 @@ describe('useLive2D', () => {
     dispose()
 
     await expect(promise).resolves.toBe(false)
+    expect(manager.off).toHaveBeenCalledWith('motionFinish', handler)
+  })
+
+  it('stopMotion stops the manager and settles a pending playMotion with false', async () => {
+    fakeModel.motion.mockResolvedValue(true)
+    const { init, playMotion, stopMotion } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const manager = fakeModel.internalModel.motionManager
+
+    const promise = playMotion('TapBody', 0)
+    await Promise.resolve()
+    await Promise.resolve()
+    const handler = manager.once.mock.calls.find((call) => call[0] === 'motionFinish')![1] as () => void
+
+    stopMotion()
+
+    await expect(promise).resolves.toBe(false)
+    expect(manager.stopAllMotions).toHaveBeenCalled()
     expect(manager.off).toHaveBeenCalledWith('motionFinish', handler)
   })
 

@@ -375,6 +375,20 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     })
   }
 
+  /** Stop the current FORCE motion (if any) and settle a pending playMotion promise. */
+  function stopMotion() {
+    const instance = model.value
+    if (!instance) {
+      settlePendingMotion(false)
+      return
+    }
+    const manager = instance.internalModel.motionManager as unknown as {
+      stopAllMotions?: () => void
+    }
+    manager.stopAllMotions?.()
+    settlePendingMotion(false)
+  }
+
   async function setExpression(id: string | number): Promise<boolean> {
     const instance = model.value
     if (!instance) return false
@@ -489,6 +503,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     refit,
     speak,
     playMotion,
+    stopMotion,
     setExpression,
     resetExpression,
     setIdle,

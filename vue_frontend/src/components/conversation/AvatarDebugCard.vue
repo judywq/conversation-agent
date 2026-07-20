@@ -36,6 +36,7 @@ const {
   refit,
   speak,
   playMotion,
+  stopMotion,
   setExpression,
   resetExpression,
   downloadSnapshot,
@@ -129,8 +130,12 @@ watch(
 )
 
 async function playSelectedGesture() {
+  if (motionPlaying.value) {
+    stopMotion()
+    return
+  }
   const resolved = gestureResolved.value
-  if (!resolved || motionPlaying.value) return
+  if (!resolved) return
   motionPlaying.value = true
   try {
     await playMotion(resolved.group, resolved.index)
@@ -140,7 +145,11 @@ async function playSelectedGesture() {
 }
 
 async function playSelectedMotion() {
-  if (!selectedMotion.value || motionPlaying.value) return
+  if (motionPlaying.value) {
+    stopMotion()
+    return
+  }
+  if (!selectedMotion.value) return
   const [group, index] = selectedMotion.value.split(' ')
   motionPlaying.value = true
   try {
@@ -307,11 +316,17 @@ defineExpose({ load, status, getSettings, applySettings })
       <Button
         variant="outline"
         size="sm"
-        :disabled="status !== 'ready' || !gestureResolved || motionPlaying"
-        :title="gestureResolved ? gestureResolved.name : 'No motion for this gesture/index'"
+        :disabled="status !== 'ready' || (!motionPlaying && !gestureResolved)"
+        :title="
+          motionPlaying
+            ? 'Stop motion'
+            : gestureResolved
+              ? gestureResolved.name
+              : 'No motion for this gesture/index'
+        "
         @click="playSelectedGesture"
       >
-        {{ motionPlaying ? 'Playing…' : 'Play' }}
+        {{ motionPlaying ? 'Stop' : 'Play' }}
       </Button>
     </div>
     <div v-if="capabilities" class="flex items-center gap-2 border-b px-3 py-2">
@@ -327,10 +342,10 @@ defineExpose({ load, status, getSettings, applySettings })
       <Button
         variant="outline"
         size="sm"
-        :disabled="status !== 'ready' || !selectedMotion || motionPlaying"
+        :disabled="status !== 'ready' || (!motionPlaying && !selectedMotion)"
         @click="playSelectedMotion"
       >
-        {{ motionPlaying ? 'Playing…' : 'Play' }}
+        {{ motionPlaying ? 'Stop' : 'Play' }}
       </Button>
     </div>
     <div v-if="capabilities" class="flex items-center gap-2 border-b px-3 py-2">
