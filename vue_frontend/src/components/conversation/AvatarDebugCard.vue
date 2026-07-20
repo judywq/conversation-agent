@@ -2,6 +2,12 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { AvatarPreset } from '@/config/avatarPresets'
 import { AVATAR_DEFAULT_ZOOM } from '@/config/avatarPresets'
+import {
+  LIVE2D_GESTURES_LIST,
+  gesturesForUrl,
+  resolveGestureMotion,
+  type Live2DGesture,
+} from '@/config/live2dGestures'
 import { useLive2D } from '@/composables/useLive2D'
 import { Button } from '@/components/ui/button'
 import { Camera } from 'lucide-vue-next'
@@ -42,6 +48,8 @@ const zoom = ref(props.preset.zoom ?? AVATAR_DEFAULT_ZOOM)
 const offsetX = ref(props.preset.offsetX ?? 0)
 const offsetY = ref(props.preset.offsetY ?? 0)
 const testAudioUrl = ref('')
+const selectedGesture = ref<Live2DGesture>('idle')
+const gestureIndex = ref(0)
 const selectedMotion = ref('')
 const motionPlaying = ref(false)
 const selectedExpression = ref('')
@@ -83,6 +91,19 @@ const statusLabel = computed(() => {
   return 'Not loaded'
 })
 
+const gestureMap = computed(() => gesturesForUrl(props.preset.url))
+const gestureNames = computed(() => gestureMap.value?.[selectedGesture.value] ?? [])
+const gestureMaxIndex = computed(() => Math.max(0, gestureNames.value.length - 1))
+const gestureResolved = computed(() => {
+  if (!capabilities.value || !gestureMap.value) return null
+  return resolveGestureMotion(
+    capabilities.value,
+    gestureMap.value,
+    selectedGesture.value,
+    gestureIndex.value,
+  )
+})
+
 const motionOptions = computed(() =>
   (capabilities.value?.motionGroups ?? []).flatMap(({ group, motions }) =>
     motions.map((m) => ({
@@ -91,6 +112,10 @@ const motionOptions = computed(() =>
     })),
   ),
 )
+
+watch(selectedGesture, () => {
+  if (gestureIndex.value > gestureMaxIndex.value) gestureIndex.value = 0
+})
 
 watch(activePreset, (preset) => {
   if (status.value === 'ready') refit(preset)
@@ -102,6 +127,17 @@ watch(
     if (status.value === 'ready') setAutoFocus(enabled !== false)
   },
 )
+
+async function playSelectedGesture() {
+  const resolved = gestureResolved.value
+  if (!resolved || motionPlaying.value) return
+  motionPlaying.value = true
+  try {
+    await playMotion(resolved.group, resolved.index)
+  } finally {
+    motionPlaying.value = false
+  }
+}
 
 async function playSelectedMotion() {
   if (!selectedMotion.value || motionPlaying.value) return
@@ -246,6 +282,36 @@ defineExpose({ load, status, getSettings, applySettings })
         @click="speak(testAudioUrl)"
       >
         Speak
+      </Button>
+    </div>
+    <div v-if="capabilities" class="flex items-center gap-2 border-b px-3 py-2">
+      <select
+        v-model="selectedGesture"
+        class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+        :disabled="!gestureMap"
+      >
+        <option v-for="g in LIVE2D_GESTURES_LIST" :key="g" :value="g">
+          {{ g }}{{ gestureMap ? ` (${gestureMap[g].length})` : '' }}
+        </option>
+      </select>
+      <input
+        v-model.number="gestureIndex"
+        type="number"
+        min="0"
+        :max="gestureMaxIndex"
+        step="1"
+        class="h-8 w-14 shrink-0 rounded-md border border-input bg-background px-2 text-xs tabular-nums"
+        aria-label="Gesture motion index"
+        :disabled="!gestureMap || gestureNames.length === 0"
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="status !== 'ready' || !gestureResolved || motionPlaying"
+        :title="gestureResolved ? gestureResolved.name : 'No motion for this gesture/index'"
+        @click="playSelectedGesture"
+      >
+        {{ motionPlaying ? 'Playing…' : 'Play' }}
       </Button>
     </div>
     <div v-if="capabilities" class="flex items-center gap-2 border-b px-3 py-2">
