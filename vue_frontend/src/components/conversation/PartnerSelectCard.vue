@@ -21,6 +21,10 @@ const BG_SCALE = 1.08
 const BG_HOVER_SCALE = 1.18
 /** Duration (ms) for background zoom in/out. */
 const BG_ZOOM_MS = 300
+/** Max bg translate (px) opposite the pointer — farther layer. */
+const PARALLAX_BG_PX = 6
+/** Max character translate (px) toward the pointer — nearer layer. */
+const PARALLAX_FG_PX = 3
 
 const props = defineProps<{
   character: AgentCharacter
@@ -39,11 +43,18 @@ const rotateY = ref(0)
 const scale = ref(1)
 const tilting = ref(false)
 const bgHovered = ref(false)
+/** Normalized pointer offset from center, range [-1, 1]. */
+const parallaxX = ref(0)
+const parallaxY = ref(0)
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const isInteractionLocked = computed(() => props.disabled && !props.selected)
+
+const layerTransition = computed(() =>
+  tilting.value ? 'none' : `transform ${TILT_RESET_MS}ms ease-out`,
+)
 
 const tiltStyle = computed(() => ({
   transform: `perspective(${TILT_PERSPECTIVE_PX}px) rotateX(${rotateX.value}deg) rotateY(${rotateY.value}deg) scale3d(${scale.value}, ${scale.value}, ${scale.value})`,
@@ -57,19 +68,34 @@ const bgStyle = computed(() => {
     bgHovered.value && !isInteractionLocked.value && !prefersReducedMotion()
       ? BG_HOVER_SCALE
       : BG_SCALE
+  const tx = parallaxX.value * -PARALLAX_BG_PX
+  const ty = parallaxY.value * -PARALLAX_BG_PX
   return {
     backgroundImage: `url(${partnerCardBgUrl(props.backgroundIndex)})`,
     filter: `blur(${BG_BLUR_PX}px)`,
-    transform: `scale(${zoom})`,
-    transition: `transform ${BG_ZOOM_MS}ms ease-out`,
+    transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
+    transition: tilting.value
+      ? 'none'
+      : `transform ${bgHovered.value ? BG_ZOOM_MS : TILT_RESET_MS}ms ease-out`,
   }
 })
 
-function resetTilt() {
+const fgStyle = computed(() => {
+  const tx = parallaxX.value * PARALLAX_FG_PX
+  const ty = parallaxY.value * PARALLAX_FG_PX
+  return {
+    transform: `translate(${tx}px, ${ty}px)`,
+    transition: layerTransition.value,
+  }
+})
+
+function resetMotion() {
   tilting.value = false
   rotateX.value = 0
   rotateY.value = 0
   scale.value = 1
+  parallaxX.value = 0
+  parallaxY.value = 0
 }
 
 function onMouseEnter() {
@@ -84,16 +110,18 @@ function onMouseMove(event: MouseEvent) {
 
   tilting.value = true
   const rect = el.getBoundingClientRect()
-  const x = (event.clientX - rect.left) / rect.width
-  const y = (event.clientY - rect.top) / rect.height
-  rotateY.value = (x - 0.5) * 2 * TILT_MAX_DEG
-  rotateX.value = (0.5 - y) * 2 * TILT_MAX_DEG
+  const nx = ((event.clientX - rect.left) / rect.width - 0.5) * 2
+  const ny = ((event.clientY - rect.top) / rect.height - 0.5) * 2
+  rotateY.value = nx * TILT_MAX_DEG
+  rotateX.value = -ny * TILT_MAX_DEG
   scale.value = TILT_SCALE
+  parallaxX.value = nx
+  parallaxY.value = ny
 }
 
 function onMouseLeave() {
   bgHovered.value = false
-  resetTilt()
+  resetMotion()
 }
 
 function onThumbError(event: Event) {
@@ -141,7 +169,8 @@ function onClick() {
       <img
         :src="partnerThumbUrl(character.id)"
         :alt="character.display_name"
-        class="absolute inset-0 z-10 h-full w-full object-contain object-bottom"
+        class="absolute inset-0 z-10 h-full w-full object-contain object-bottom will-change-transform"
+        :style="fgStyle"
         @error="onThumbError"
       />
       <span
