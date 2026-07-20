@@ -18,7 +18,7 @@ const BG_BLUR_PX = 1
 /** Background scale at rest (slightly oversize so blur edges stay clipped). */
 const BG_SCALE = 1.08
 /** Background scale while the pointer is over the card. */
-const BG_HOVER_SCALE = 1.18
+const BG_HOVER_SCALE = 1.08
 /** Duration (ms) for background zoom in/out. */
 const BG_ZOOM_MS = 300
 /** Enter zoom curve: fast rise, then soft settle (approx. expo-out). */
