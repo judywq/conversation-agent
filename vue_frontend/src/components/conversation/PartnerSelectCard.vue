@@ -13,6 +13,14 @@ const TILT_PERSPECTIVE_PX = 900
 const TILT_SCALE = 1.02
 /** Duration (ms) for transform to ease back when the pointer leaves. */
 const TILT_RESET_MS = 200
+/** Blur (px) on the decorative background. */
+const BG_BLUR_PX = 1
+/** Background scale at rest (slightly oversize so blur edges stay clipped). */
+const BG_SCALE = 1.08
+/** Background scale while the pointer is over the card. */
+const BG_HOVER_SCALE = 1.18
+/** Duration (ms) for background zoom in/out. */
+const BG_ZOOM_MS = 300
 
 const props = defineProps<{
   character: AgentCharacter
@@ -30,6 +38,7 @@ const rotateX = ref(0)
 const rotateY = ref(0)
 const scale = ref(1)
 const tilting = ref(false)
+const bgHovered = ref(false)
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -43,11 +52,29 @@ const tiltStyle = computed(() => ({
     : `transform ${TILT_RESET_MS}ms ease-out, box-shadow 150ms ease, border-color 150ms ease`,
 }))
 
+const bgStyle = computed(() => {
+  const zoom =
+    bgHovered.value && !isInteractionLocked.value && !prefersReducedMotion()
+      ? BG_HOVER_SCALE
+      : BG_SCALE
+  return {
+    backgroundImage: `url(${partnerCardBgUrl(props.backgroundIndex)})`,
+    filter: `blur(${BG_BLUR_PX}px)`,
+    transform: `scale(${zoom})`,
+    transition: `transform ${BG_ZOOM_MS}ms ease-out`,
+  }
+})
+
 function resetTilt() {
   tilting.value = false
   rotateX.value = 0
   rotateY.value = 0
   scale.value = 1
+}
+
+function onMouseEnter() {
+  if (isInteractionLocked.value) return
+  bgHovered.value = true
 }
 
 function onMouseMove(event: MouseEvent) {
@@ -65,6 +92,7 @@ function onMouseMove(event: MouseEvent) {
 }
 
 function onMouseLeave() {
+  bgHovered.value = false
   resetTilt()
 }
 
@@ -96,13 +124,14 @@ function onClick() {
     :aria-label="`Select ${character.display_name}`"
     :disabled="isInteractionLocked"
     @click="onClick"
+    @mouseenter="onMouseEnter"
     @mousemove="onMouseMove"
     @mouseleave="onMouseLeave"
   >
-    <div class="relative h-[180px] bg-muted/40">
+    <div class="relative h-[180px] overflow-hidden bg-muted/40">
       <div
-        class="absolute inset-0 z-0 bg-cover bg-center"
-        :style="{ backgroundImage: `url(${partnerCardBgUrl(backgroundIndex)})` }"
+        class="absolute inset-0 z-0 bg-cover bg-center will-change-transform"
+        :style="bgStyle"
         aria-hidden="true"
       />
       <div
