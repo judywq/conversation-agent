@@ -59,14 +59,16 @@ export const LIVE2D_GESTURES: Record<string, Live2DGestureMap> = {
       'Hiyori_m01',
       'Hiyori_m02',
       'Hiyori_m03',
-      'Hiyori_m05',
       'Hiyori_m06',
       'Hiyori_m07',
       'Hiyori_m08',
       'Hiyori_m09',
       'Hiyori_m10',
     ],
-    speak: ['Hiyori_m04'],
+    speak: [
+      'Hiyori_m04',
+      'Hiyori_m05',
+    ],
     think: [],
   },
   // No Idle group; language intro clips treated as speak.
