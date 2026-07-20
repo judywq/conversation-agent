@@ -150,7 +150,7 @@ function onClick() {
   <button
     ref="cardRef"
     type="button"
-    class="group relative flex flex-col overflow-hidden rounded-2xl border bg-card/80 text-left shadow-sm backdrop-blur-md will-change-transform"
+    class="group relative flex flex-col overflow-hidden rounded-2xl border bg-transparent text-left shadow-sm will-change-transform"
     :class="[
       selected
         ? 'border-primary shadow-md ring-2 ring-primary/30'
@@ -166,7 +166,7 @@ function onClick() {
     @mousemove="onMouseMove"
     @mouseleave="onMouseLeave"
   >
-    <div class="relative h-[180px] overflow-hidden bg-muted/40">
+    <div class="relative h-[180px] overflow-hidden bg-transparent">
       <div
         class="absolute inset-0 z-0 will-change-transform"
         :style="bgParallaxStyle"
@@ -178,7 +178,7 @@ function onClick() {
         />
       </div>
       <div
-        class="absolute inset-0 z-[1] bg-gradient-to-t from-card/80 via-transparent to-transparent"
+        class="absolute inset-0 z-[1] bg-gradient-to-t from-black/25 via-transparent to-transparent"
         aria-hidden="true"
       />
       <img
