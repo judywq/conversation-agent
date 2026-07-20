@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Footer from '@/components/Footer.vue';
 import NavBar from '@/components/NavBar.vue';
+import SakuraFall from '@/components/SakuraFall.vue';
 import SceneBackdrop from '@/components/SceneBackdrop.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -60,6 +61,9 @@ async function confirmProfileRequired() {
     <div v-if="showFooter" class="relative z-10">
       <Footer />
     </div>
+
+    <!-- Above page content, below NavBar/dialogs (z-50) and game shell (z-60). -->
+    <SakuraFall class="fixed inset-0 z-[40]" />
 
     <Dialog v-model:open="profileRequiredDialogOpen">
       <DialogContent @open-auto-focus.prevent>

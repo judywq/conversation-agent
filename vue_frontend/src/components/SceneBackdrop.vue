@@ -4,6 +4,6 @@
       class="absolute inset-0 scale-105 bg-cover bg-center blur-sm brightness-95"
       style="background-image: url('/scenes/pathway.webp')"
     />
-    <div class="absolute inset-0 bg-background/55 sakura-petals" />
+    <div class="absolute inset-0 bg-background/55" />
   </div>
 </template>

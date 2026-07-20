@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next'
 import AgentAvatarGrid from '@/components/conversation/AgentAvatarGrid.vue'
 import ArgumentSummaryPanel from '@/components/conversation/ArgumentSummaryPanel.vue'
+import SakuraFall from '@/components/SakuraFall.vue'
 import SakuraMark from '@/components/SakuraMark.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,7 @@ import {
 } from '@/services/conversationWs'
 import { useAuthStore } from '@/stores/auth'
 import { hideAppNav } from '@/composables/useLayoutChrome'
+import { sakuraFallEnabled } from '@/composables/useSakuraFall'
 import { isLipSyncPayload } from '@/types/lipsync'
 import {
   buildExportFilename,
@@ -1348,6 +1350,9 @@ onUnmounted(() => {
       }"
     />
 
+    <!-- Above scene/avatars; below Settings popover (z-[70]). -->
+    <SakuraFall class="absolute inset-0 z-[65]" />
+
     <!-- Loading shell while resume binds (never show setup on this route). -->
     <div
       v-if="!sessionBound"
@@ -1431,6 +1436,10 @@ onUnmounted(() => {
         <label class="flex items-center justify-between gap-3 text-sm">
           Show speech bubble
           <input v-model="showSpeechBubble" type="checkbox" class="h-4 w-4 accent-primary" />
+        </label>
+        <label class="flex items-center justify-between gap-3 text-sm">
+          Sakura petals
+          <input v-model="sakuraFallEnabled" type="checkbox" class="h-4 w-4 accent-primary" />
         </label>
         <label class="flex items-center justify-between gap-3 text-sm">
           Character size

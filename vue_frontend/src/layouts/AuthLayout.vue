@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Footer from '@/components/Footer.vue';
+import SakuraFall from '@/components/SakuraFall.vue';
 import SakuraMark from '@/components/SakuraMark.vue';
 import SceneBackdrop from '@/components/SceneBackdrop.vue';
 import { defaultAuthenticatedRoute } from '@/lib/authNavigation';
@@ -50,6 +51,8 @@ onMounted(() => {
     <div class="relative z-10">
       <Footer />
     </div>
+
+    <SakuraFall class="fixed inset-0 z-[40]" />
   </div>
 </template>
 
