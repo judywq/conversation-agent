@@ -31,6 +31,12 @@ onMounted(async () => {
   try {
     characters.value = await ConversationService.fetchAgentCharacters()
     emit('characters-loaded', characters.value)
+    if (props.modelValue.length === 0 && characters.value.length > 0) {
+      emit(
+        'update:modelValue',
+        characters.value.slice(0, MAX_SELECTED).map((c) => c.id),
+      )
+    }
   } catch {
     loadError.value = 'Could not load partners. Refresh and try again.'
   } finally {
