@@ -19,6 +19,7 @@ import {
 import { useToast } from '@/components/ui/toast/use-toast'
 import {
   ConversationService,
+  type AgentCharacter,
   type DiscussionScenarioResult,
   type NewsCategory,
 } from '@/services/conversationService'
@@ -41,6 +42,7 @@ const isGeneratingScenario = ref(false)
 const scenarioArticles = ref<DiscussionScenarioResult['articles']>([])
 const MAX_AGENT_COUNT = 3
 const selectedCharacterIds = ref<string[]>([])
+const characterRoster = ref<AgentCharacter[]>([])
 const isStarting = ref(false)
 
 const sceneId = useStorage<SceneId>('conv-game-scene', randomSceneId())
@@ -88,10 +90,17 @@ function startSession() {
   void (async () => {
     try {
       await ws.ready()
+      const rosterById = new Map(characterRoster.value.map((c) => [c.id, c]))
+      const character_personas: Record<string, string> = {}
+      for (const id of selectedCharacterIds.value) {
+        const persona = rosterById.get(id)?.persona_name
+        if (persona) character_personas[id] = persona
+      }
       ws.send({
         type: 'start_session',
         topic: topic.value.trim(),
         character_ids: selectedCharacterIds.value,
+        character_personas,
       })
     } catch {
       isStarting.value = false
@@ -306,7 +315,11 @@ onUnmounted(() => {
               Classmates who join you in the discussion.
             </p>
           </div>
-          <PartnerSelectPanel v-model="selectedCharacterIds" :disabled="isStarting" />
+          <PartnerSelectPanel
+            v-model="selectedCharacterIds"
+            :disabled="isStarting"
+            @characters-loaded="characterRoster = $event"
+          />
           <div class="pt-1">
             <Button
               class="h-11 px-8 text-base font-semibold"

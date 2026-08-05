@@ -23,6 +23,8 @@ from backend.conversation.services.agent_selection import (
 )
 from backend.conversation.services.agent_characters import AgentCharacter
 from backend.conversation.services.agent_characters import AgentCharacterError
+from backend.conversation.services.agent_characters import apply_persona_overrides
+from backend.conversation.services.agent_characters import assign_random_personas
 from backend.conversation.services.agent_characters import resolve_character_ids
 from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_voice_preset_for_persona
@@ -204,6 +206,14 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             character_ids: list[str] | None = None
             if isinstance(raw_character_ids, list) and raw_character_ids:
                 character_ids = [str(cid).strip() for cid in raw_character_ids if str(cid).strip()]
+            character_personas: dict[str, str] | None = None
+            raw_personas = content.get("character_personas")
+            if isinstance(raw_personas, dict) and raw_personas:
+                character_personas = {
+                    str(cid).strip(): str(persona).strip()
+                    for cid, persona in raw_personas.items()
+                    if str(cid).strip() and str(persona).strip()
+                } or None
             try:
                 agent_count = int(requested_agent_count) if requested_agent_count is not None else None
             except Exception:
@@ -224,6 +234,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     topic=topic,
                     agent_count=agent_count,
                     character_ids=character_ids,
+                    character_personas=character_personas,
                     discussion=discussion,
                 )
             except AgentCharacterError as exc:
@@ -599,6 +610,7 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         topic: str,
         agent_count: int | None = None,
         character_ids: list[str] | None = None,
+        character_personas: dict[str, str] | None = None,
         discussion: dict | None = None,
     ) -> ConversationSession:
         user_model = get_user_model()
@@ -613,6 +625,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         selected_characters = None
         if character_ids:
             selected_characters = resolve_character_ids(character_ids)
+            if character_personas:
+                selected_characters = apply_persona_overrides(selected_characters, character_personas)
+            else:
+                selected_characters = assign_random_personas(selected_characters)
             desired_count = len(selected_characters)
         else:
             desired_count = agent_count
@@ -667,12 +683,14 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         topic: str,
         agent_count: int | None = None,
         character_ids: list[str] | None = None,
+        character_personas: dict[str, str] | None = None,
         discussion: dict | None = None,
     ) -> ConversationSession:
         return await database_sync_to_async(self._create_session_sync)(
             topic=topic,
             agent_count=agent_count,
             character_ids=character_ids,
+            character_personas=character_personas,
             discussion=discussion,
         )
 

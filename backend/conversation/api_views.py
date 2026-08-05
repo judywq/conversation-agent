@@ -10,6 +10,7 @@ from backend.conversation.models import ConversationSession
 from backend.conversation.models import UserAudio
 from backend.conversation.services.argument_summary import get_argument_summary_for_session
 from backend.conversation.services.agent_characters import AgentCharacterError
+from backend.conversation.services.agent_characters import assign_random_personas
 from backend.conversation.services.agent_characters import get_agent_characters
 from backend.conversation.services.session_serialization import session_detail_to_dict
 from backend.conversation.services.session_serialization import session_summary_to_dict
@@ -30,7 +31,7 @@ class AgentCharactersView(APIView):
 
     def get(self, request):
         try:
-            characters = get_agent_characters()
+            characters = assign_random_personas(list(get_agent_characters()))
         except AgentCharacterError as exc:
             return Response({"detail": str(exc)}, status=500)
         return Response({"characters": [c.to_dict() for c in characters]})

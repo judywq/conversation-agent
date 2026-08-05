@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [string[]]
+  'characters-loaded': [AgentCharacter[]]
 }>()
 
 const characters = ref<AgentCharacter[]>([])
@@ -29,6 +30,7 @@ onMounted(async () => {
   loadError.value = ''
   try {
     characters.value = await ConversationService.fetchAgentCharacters()
+    emit('characters-loaded', characters.value)
   } catch {
     loadError.value = 'Could not load partners. Refresh and try again.'
   } finally {

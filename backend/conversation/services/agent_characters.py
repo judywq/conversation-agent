@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -86,6 +88,56 @@ def resolve_character_ids(
             raise AgentCharacterError(f"Unknown character id: {cid}")
         resolved.append(character)
     return resolved
+
+
+def _persona_name_pool() -> list[str]:
+    return [p.persona_name for p in load_agent_persona_prompts()]
+
+
+def assign_random_personas(
+    characters: list[AgentCharacter],
+    *,
+    rng: random.Random | None = None,
+) -> list[AgentCharacter]:
+    """Assign a unique persona from the prompt catalog to each character.
+
+    Voices and appearance fields are left unchanged. With fewer characters than
+    personas, some personas are left unused.
+    """
+    if not characters:
+        return []
+    pool = _persona_name_pool()
+    if len(characters) > len(pool):
+        raise AgentCharacterError(
+            f"Need at least {len(characters)} personas; only {len(pool)} available",
+        )
+    r = rng or random.Random()
+    assigned = r.sample(pool, k=len(characters))
+    return [replace(character, persona_name=persona) for character, persona in zip(characters, assigned)]
+
+
+def apply_persona_overrides(
+    characters: list[AgentCharacter],
+    persona_by_id: dict[str, str],
+) -> list[AgentCharacter]:
+    """Apply per-character persona names from the setup UI mapping."""
+    if not characters:
+        return []
+    known = set(_persona_name_pool())
+    seen: set[str] = set()
+    updated: list[AgentCharacter] = []
+    for character in characters:
+        raw = persona_by_id.get(character.id)
+        if raw is None or not str(raw).strip():
+            raise AgentCharacterError(f"Missing persona for character id: {character.id}")
+        persona_name = str(raw).strip()
+        if persona_name not in known:
+            raise AgentCharacterError(f"Unknown persona_name: {persona_name}")
+        if persona_name in seen:
+            raise AgentCharacterError(f"Duplicate persona_name in selection: {persona_name}")
+        seen.add(persona_name)
+        updated.append(replace(character, persona_name=persona_name))
+    return updated
 
 
 def _parse_character(item: object, *, index: int) -> AgentCharacter:
