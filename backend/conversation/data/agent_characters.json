@@ -8,14 +8,6 @@
     "voice_preset_name": "Ava"
   },
   {
-    "id": "shizuku",
-    "display_name": "Shizuku",
-    "live2d_url": "/live2d/shizuku/shizuku.model3.json",
-    "persona_name": "Supportive Builder",
-    "gender": "female",
-    "voice_preset_name": "Emma"
-  },
-  {
     "id": "chitose",
     "display_name": "Chitose",
     "live2d_url": "/live2d/chitose/chitose.model3.json",
@@ -30,5 +22,13 @@
     "persona_name": "Tense Skeptic",
     "gender": "female",
     "voice_preset_name": "Isabella"
+  },
+  {
+    "id": "shizuku",
+    "display_name": "Shizuku",
+    "live2d_url": "/live2d/shizuku/shizuku.model3.json",
+    "persona_name": "Supportive Builder",
+    "gender": "female",
+    "voice_preset_name": "Emma"
   }
 ]
