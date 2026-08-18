@@ -5,12 +5,12 @@
 # DJANGO_READ_DOT_ENV_FILE=True
 
 DJANGO_DEBUG=True
-DJANGO_DOMAIN_NAME=conv.judywang.jp
+DJANGO_DOMAIN_NAME=conv.edutek.jp
 
 DJANGO_SETTINGS_MODULE=config.settings.staging
 # DJANGO_SECRET_KEY=YOUR_SECRET_KEY_HERE
 # DJANGO_ADMIN_URL=admin/
-DJANGO_ALLOWED_HOSTS=conv.judywang.jp
+DJANGO_ALLOWED_HOSTS=conv.edutek.jp
 
 # Security
 # ------------------------------------------------------------------------------
@@ -33,4 +33,4 @@ DJANGO_SECURE_SSL_REDIRECT=False
 WEB_SEARCH_TIMEOUT_SEC=30
 
 # Vue
-VITE_API_BASE_URL=http://conv.judywang.jp/api
+VITE_API_BASE_URL=http://conv.edutek.jp/api
