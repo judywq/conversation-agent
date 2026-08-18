@@ -26,6 +26,7 @@
         <th>{% translate "Matched speaker" %}</th>
         <th>{% translate "Similar utterance" %}</th>
         <th>{% translate "Utterance" %}</th>
+        <th>{% translate "Play / download" %}</th>
         <th>{% translate "Created" %}</th>
       </tr>
     </thead>
@@ -100,6 +101,13 @@
             {% endif %}
           </td>
           <td class="utterance">{{ t.utterance|truncatechars:140 }}</td>
+          <td>
+            {% if t.audio_url %}
+              <a href="{{ t.audio_url }}" target="_blank" rel="noopener">{% translate "Open" %}</a>
+            {% else %}
+              <span class="quiet">—</span>
+            {% endif %}
+          </td>
           <td>{{ t.created_at }}</td>
         </tr>
       {% endfor %}
