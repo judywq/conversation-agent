@@ -1,0 +1,15 @@
+---
+description: After changing Vue frontend code, run vue-tsc. Docker production builds fail on type errors.
+globs: vue_frontend/**/*.vue, vue_frontend/**/*.ts, vue_frontend/**/*.tsx
+alwaysApply: false
+---
+
+# Frontend type-check
+
+`npm run build` (and Docker) runs `vue-tsc --build`. Type errors fail the image.
+
+After changing any file matching these globs:
+
+1. From `vue_frontend/`, run `npm run type-check`
+2. Fix every error before finishing
+3. Ignore Vite chunk-size warnings — they are not type-check failures
