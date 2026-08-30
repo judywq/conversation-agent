@@ -1356,9 +1356,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Stage: partner characters side-by-side. bottom-0 so characters clip at the
-         screen edge instead of floating above a background strip. -->
-    <div v-if="sessionBound" class="absolute inset-x-0 bottom-0 top-16">
+    <!-- Stage: bottom 2/3 of the overlay so the upper scene stays clear.
+         sm+ right inset matches ArgumentSummaryPanel (22rem + right-4 + 1rem gap)
+         so agents never sit under Speaker opinions. -->
+    <div
+      v-if="sessionBound"
+      class="absolute inset-x-0 bottom-0 h-2/3 sm:right-[calc(min(22rem,calc(100vw-2rem))+2rem)]"
+    >
       <AgentAvatarGrid
         ref="avatarGridRef"
         game
@@ -1504,7 +1508,7 @@ onUnmounted(() => {
       </Card>
     </div>
 
-    <!-- Mic cluster (bottom-center) -->
+    <!-- Mic cluster: viewport-centered, not the inset agent stage. -->
     <div
       v-if="!isEnded && sessionBound"
       class="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2"

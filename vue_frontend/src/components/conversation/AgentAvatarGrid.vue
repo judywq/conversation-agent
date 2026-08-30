@@ -199,7 +199,7 @@ defineExpose({
     >
       <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
       <div
-        class="pointer-events-auto relative max-h-48 w-[min(56rem,92vw)] overflow-visible rounded-2xl border border-primary/15 bg-white/60 px-6 py-5 pr-14 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
+        class="pointer-events-auto relative max-h-48 w-[min(56rem,100%)] overflow-visible rounded-2xl border border-primary/15 bg-white/60 px-6 py-5 pr-14 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
       >
         <div
           class="absolute -top-3 left-5 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground shadow"
