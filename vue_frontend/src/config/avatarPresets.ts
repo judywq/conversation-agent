@@ -37,15 +37,15 @@ export function resolveAvatarOffset(
 export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
   { url: '/live2d/hiyori/Hiyori.model3.json' },
   { url: '/live2d/haru/Haru.model3.json' },
-  { url: '/live2d/mao/Mao.model3.json', zoom: 4.8 },
-  { url: '/live2d/epsilon/Epsilon_free.model3.json', zoom: 1.4 },
+  { url: '/live2d/mao/Mao.model3.json', zoom: 2.0, offsetY: -40 },
+  { url: '/live2d/epsilon/Epsilon_free.model3.json', zoom: 0.5 },
   { url: '/live2d/hibiki/hibiki.model3.json', offsetX: 40, offsetY: 40 },
   { url: '/live2d/shizuku/shizuku.model3.json', zoom: 0.6, offsetY: 30 },
-  { url: '/live2d/kei/kei_basic_free.model3.json', zoom: 0.9 },
+  { url: '/live2d/kei/kei_basic_free.model3.json', zoom: 0.3, offsetY: 40 },
 ]
 
 export const MALE_AVATAR_PRESETS: AvatarPreset[] = [
-  { url: '/live2d/natori/Natori.model3.json', zoom: 3.8 },
+  { url: '/live2d/natori/Natori.model3.json', zoom: 1.6 },
   { url: '/live2d/chitose/chitose.model3.json' },
 ]
 

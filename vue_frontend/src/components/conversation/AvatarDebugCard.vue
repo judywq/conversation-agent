@@ -382,7 +382,7 @@ defineExpose({ load, status, getSettings, applySettings })
       <input
         v-model.number="zoom"
         type="range"
-        min="0.5"
+        min="0.1"
         max="5"
         step="0.05"
         class="h-8 min-w-0 flex-1 accent-primary"
