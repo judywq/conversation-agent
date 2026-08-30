@@ -83,14 +83,20 @@ async function ensureInit() {
   await init(preset.value)
 }
 
-async function playLogicalGesture(gesture: Extract<Live2DGesture, 'speak' | 'think'>) {
+async function playLogicalGesture(gesture: Live2DGesture): Promise<boolean> {
   await ensureInit()
-  if (status.value === 'error' || !capabilities.value) return
+  if (status.value === 'error' || !capabilities.value) return false
   const map = gesturesForUrl(preset.value.url)
-  if (!map) return
+  if (!map) return false
   const resolved = resolveRandomGestureMotion(capabilities.value, map, gesture)
-  if (!resolved) return
-  void playMotion(resolved.group, resolved.index)
+  if (!resolved) return false
+  return playMotion(resolved.group, resolved.index, {
+    loop: gesture === 'idle',
+  })
+}
+
+function restoreIdle() {
+  void playLogicalGesture('idle')
 }
 
 watch(
@@ -132,13 +138,23 @@ onUnmounted(() => {
 async function speakTurn(audioUrl: string, lipsync: LipSyncPayload): Promise<boolean> {
   await ensureInit()
   if (status.value === 'error') return false
-  void playLogicalGesture('speak')
-  return speak(audioUrl, lipsync)
+  void (async () => {
+    const done = await playLogicalGesture('speak')
+    if (done && status.value === 'speaking') restoreIdle()
+  })()
+  const ok = await speak(audioUrl, lipsync)
+  restoreIdle()
+  return ok
+}
+
+function setIdleAndRestore() {
+  setIdle()
+  restoreIdle()
 }
 
 defineExpose({
   speakTurn,
-  setIdle,
+  setIdle: setIdleAndRestore,
   dispose,
   ensureInit,
   status,

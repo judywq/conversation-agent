@@ -63,6 +63,11 @@ export type Live2DInitOptions = {
   autoFocus?: boolean
 }
 
+export type PlayMotionOptions = {
+  loop?: boolean
+  priority?: MotionPriority
+}
+
 export type Live2DMotionEntry = { index: number; name: string }
 
 export type Live2DCapabilities = {
@@ -323,7 +328,11 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     })
   }
 
-  async function playMotion(group: string, index: number): Promise<boolean> {
+  async function playMotion(
+    group: string,
+    index: number,
+    options?: PlayMotionOptions,
+  ): Promise<boolean> {
     const instance = model.value
     if (!instance) return false
 
@@ -337,14 +346,15 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     // This call's own settle; onError must not touch the shared slot, or a stale
     // audio error from a superseded motion would settle the NEWER call's promise.
     let localSettle: ((value: boolean) => void) | null = null
+    const loop = options?.loop ?? false
+    const priority = options?.priority ?? MotionPriority.FORCE
 
     let started: boolean
     try {
-      started = await instance.motion(group, index, MotionPriority.FORCE, {
-        // Every official sample motion has Loop:true in its motion3.json; a looping
-        // motion never finishes, so 'motionFinish' would never fire. loop:false
-        // overrides the JSON metadata → play once, then resolve.
-        loop: false,
+      started = await instance.motion(group, index, priority, {
+        // Default loop:false: sample motions ship Loop:true and would never finish.
+        // Callers that want a looping idle pass loop:true and we resolve on start.
+        loop,
         onError: (error: Error) => {
           console.error('Live2D motion failed:', error)
           localSettle?.(false)
@@ -354,6 +364,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
       return false
     }
     if (!started) return false
+    if (loop) return true
 
     return new Promise<boolean>((resolve) => {
       // 'motionFinish' is emitted by MotionManager.update() when the current motion

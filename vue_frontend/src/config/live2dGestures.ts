@@ -51,7 +51,7 @@ export const LIVE2D_GESTURES: Record<string, Live2DGestureMap> = {
   },
   hibiki: {
     idle: ['hibiki_01', 'hibiki_02', 'hibiki_05'],
-    speak: ['hibiki_04'],
+    speak: ['hibiki_02'],
     think: ['hibiki_03'],
   },
   hiyori: {

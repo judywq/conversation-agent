@@ -413,6 +413,42 @@ describe('useLive2D', () => {
     await expect(promise).resolves.toBe(true)
   })
 
+  it('playMotion with loop:true resolves on start and does not wait for motionFinish', async () => {
+    fakeModel.motion.mockResolvedValue(true)
+    const { init, playMotion } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+
+    await expect(playMotion('Idle', 0, { loop: true })).resolves.toBe(true)
+    expect(fakeModel.motion).toHaveBeenCalledWith(
+      'Idle',
+      0,
+      3,
+      expect.objectContaining({ loop: true }),
+    )
+    expect(fakeModel.internalModel.motionManager.once).not.toHaveBeenCalled()
+  })
+
+  it('playMotion passes a custom priority through to the engine', async () => {
+    fakeModel.motion.mockResolvedValue(true)
+    const { init, playMotion } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+
+    const promise = playMotion('Idle', 0, { priority: 1 })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fakeModel.motion).toHaveBeenCalledWith(
+      'Idle',
+      0,
+      1,
+      expect.objectContaining({ loop: false }),
+    )
+    const handler = fakeModel.internalModel.motionManager.once.mock.calls.find(
+      (call) => call[0] === 'motionFinish',
+    )![1] as () => void
+    handler()
+    await expect(promise).resolves.toBe(true)
+  })
+
   it('playMotion resolves false when the engine refuses to start the motion', async () => {
     fakeModel.motion.mockResolvedValue(false) // never calls onFinish
     const { init, playMotion } = useLive2D(makeStage())
