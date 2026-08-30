@@ -309,7 +309,7 @@ const sessionBound = computed(() => !!sessionId.value || isEnded.value)
 
 hideAppNav.value = true
 
-const showArgumentSummary = computed(() => !!sessionId.value && turns.value.length > 0)
+const showArgumentSummary = computed(() => !!sessionId.value)
 
 function nextLocalTurnIndex(): number {
   const lastTurn = turns.value.length > 0 ? turns.value[turns.value.length - 1] : undefined
@@ -1002,7 +1002,7 @@ function volunteer() {
 }
 
 const exitConfirmOpen = ref(false)
-const notebookOpen = ref(false)
+const notebookOpen = ref(true)
 
 function onExitClick() {
   if (isEnded.value) {
@@ -1358,7 +1358,7 @@ onUnmounted(() => {
 
     <!-- Stage: bottom 2/3 of the overlay so the upper scene stays clear.
          sm+ right inset matches ArgumentSummaryPanel (22rem + right-4 + 1rem gap)
-         so agents never sit under Speaker opinions. -->
+         so agents never sit under Topic & opinions. -->
     <div
       v-if="sessionBound"
       class="absolute inset-x-0 bottom-0 h-2/3 sm:right-[calc(min(22rem,calc(100vw-2rem))+2rem)]"
@@ -1554,14 +1554,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Notebook: speaker opinions (bottom-right) -->
+    <!-- Notebook: topic & opinions (bottom-right) -->
     <Button
       v-if="sessionBound"
       variant="secondary"
       size="icon"
       class="absolute bottom-6 right-4 z-10 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
-      aria-label="Speaker opinions"
-      title="Speaker opinions"
+      aria-label="Topic & opinions"
+      title="Topic & opinions"
       @click="notebookOpen = !notebookOpen"
     >
       <NotebookPen class="h-5 w-5" />
@@ -1570,6 +1570,7 @@ onUnmounted(() => {
       v-if="sessionBound"
       class="!bottom-20"
       :session-id="sessionId"
+      :topic="topic"
       :settled-turn-count="effectiveSettledTurnCount"
       :playback-busy="agentPlaybackBusy"
       :session-ended="isEnded"

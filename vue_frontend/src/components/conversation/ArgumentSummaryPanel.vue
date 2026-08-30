@@ -11,17 +11,21 @@ import {
   type ArgumentSummaryResult,
 } from '@/services/conversationService'
 
-const props = defineProps<{
-  sessionId: number | null
-  visible: boolean
-  /** Turns fully revealed in the UI (excludes agent audio still queued/playing). */
-  settledTurnCount: number
-  /** Agent turn audio is playing or queued. */
-  playbackBusy: boolean
-  /** When true, show the latest summary regardless of playback/settled turn deferral. */
-  sessionEnded?: boolean
-  embedded?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    sessionId: number | null
+    visible: boolean
+    /** Turns fully revealed in the UI (excludes agent audio still queued/playing). */
+    settledTurnCount: number
+    /** Agent turn audio is playing or queued. */
+    playbackBusy: boolean
+    /** When true, show the latest summary regardless of playback/settled turn deferral. */
+    sessionEnded?: boolean
+    embedded?: boolean
+    topic?: string
+  }>(),
+  { topic: '' },
+)
 
 const emit = defineEmits<{
   'summary-updated': [summary: ArgumentSummaryResult]
@@ -32,8 +36,9 @@ const loading = ref(false)
 const errorMessage = ref('')
 const minimized = ref(false)
 const minimizeButtonLabel = computed(() =>
-  minimized.value ? 'Expand speaker opinions' : 'Minimize speaker opinions',
+  minimized.value ? 'Expand topic & opinions' : 'Minimize topic & opinions',
 )
+const topicText = computed(() => (props.topic || '').trim())
 const deferredResult = ref<ArgumentSummaryResult | null>(null)
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -226,7 +231,7 @@ onUnmounted(() => {
       "
     >
       <div class="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
-        <div class="text-sm font-medium">Speaker opinions</div>
+        <div class="text-sm font-medium">Topic & opinions</div>
         <button
           type="button"
           class="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -248,58 +253,66 @@ onUnmounted(() => {
           "
         >
           <div class="space-y-3 text-sm">
-            <div v-if="loading && !speakersFromSummary(summary).length" class="text-muted-foreground">
-              Building summary…
+            <div class="space-y-1">
+              <div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Topic</div>
+              <div v-if="topicText" class="whitespace-pre-wrap leading-snug">{{ topicText }}</div>
+              <div v-else class="text-muted-foreground">No topic yet.</div>
             </div>
-            <div v-else-if="errorMessage" class="text-destructive">{{ errorMessage }}</div>
-            <div v-else-if="summary?.status === 'empty' || summary?.status === 'failed'" class="text-muted-foreground">
-              No speaker opinions yet.
-            </div>
-            <template v-else-if="summary?.status === 'ready' || summary?.status === 'pending'">
-              <div
-                v-if="summary.status === 'pending' && loading"
-                class="mb-1 text-[10px] text-muted-foreground"
-              >
-                Updating…
+            <div class="space-y-2 border-t pt-3">
+              <div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Speaker opinions</div>
+              <div v-if="loading && !speakersFromSummary(summary).length" class="text-muted-foreground">
+                Building summary…
               </div>
-              <div
-                v-for="(speaker, speakerIndex) in speakersFromSummary(summary)"
-                :key="`${speaker.speaker_id}-${speakerIndex}`"
-                class="space-y-2 border-b pb-2 last:border-b-0 last:pb-0"
-              >
-                <div class="font-medium leading-snug">{{ speaker.speaker_name || speaker.speaker_id }}</div>
-                <div
-                  v-for="(claim, claimIndex) in speaker.claims"
-                  :key="`${speaker.speaker_id}-claim-${claimIndex}`"
-                  class="space-y-1 pl-2"
-                >
-                  <div class="leading-snug">{{ claim.text }}</div>
-                  <ul
-                    v-for="(reason, reasonIndex) in claim.reasons || []"
-                    :key="`${speaker.speaker_id}-reason-${claimIndex}-${reasonIndex}`"
-                    class="space-y-0.5 pl-2"
-                  >
-                    <li class="text-[12px] leading-snug text-muted-foreground">
-                      {{ reason.text }}
-                    </li>
-                    <li
-                      v-for="(explanation, explanationIndex) in reason.explanations || []"
-                      :key="`${speaker.speaker_id}-exp-${claimIndex}-${reasonIndex}-${explanationIndex}`"
-                      class="truncate pl-2 text-[11px] leading-snug text-muted-foreground"
-                      :title="explanationLine(explanation)"
-                    >
-                      {{ explanationLabel(explanation.type) }}: {{ explanation.text }}
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <div
-                v-if="!speakersFromSummary(summary).length && summary.status === 'ready'"
-                class="text-muted-foreground"
-              >
+              <div v-else-if="errorMessage" class="text-destructive">{{ errorMessage }}</div>
+              <div v-else-if="summary?.status === 'empty' || summary?.status === 'failed'" class="text-muted-foreground">
                 No speaker opinions yet.
               </div>
-            </template>
+              <template v-else-if="summary?.status === 'ready' || summary?.status === 'pending'">
+                <div
+                  v-if="summary.status === 'pending' && loading"
+                  class="mb-1 text-[10px] text-muted-foreground"
+                >
+                  Updating…
+                </div>
+                <div
+                  v-for="(speaker, speakerIndex) in speakersFromSummary(summary)"
+                  :key="`${speaker.speaker_id}-${speakerIndex}`"
+                  class="space-y-2 border-b pb-2 last:border-b-0 last:pb-0"
+                >
+                  <div class="font-medium leading-snug">{{ speaker.speaker_name || speaker.speaker_id }}</div>
+                  <div
+                    v-for="(claim, claimIndex) in speaker.claims"
+                    :key="`${speaker.speaker_id}-claim-${claimIndex}`"
+                    class="space-y-1 pl-2"
+                  >
+                    <div class="leading-snug">{{ claim.text }}</div>
+                    <ul
+                      v-for="(reason, reasonIndex) in claim.reasons || []"
+                      :key="`${speaker.speaker_id}-reason-${claimIndex}-${reasonIndex}`"
+                      class="space-y-0.5 pl-2"
+                    >
+                      <li class="text-[12px] leading-snug text-muted-foreground">
+                        {{ reason.text }}
+                      </li>
+                      <li
+                        v-for="(explanation, explanationIndex) in reason.explanations || []"
+                        :key="`${speaker.speaker_id}-exp-${claimIndex}-${reasonIndex}-${explanationIndex}`"
+                        class="truncate pl-2 text-[11px] leading-snug text-muted-foreground"
+                        :title="explanationLine(explanation)"
+                      >
+                        {{ explanationLabel(explanation.type) }}: {{ explanation.text }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <div
+                  v-if="!speakersFromSummary(summary).length && summary.status === 'ready'"
+                  class="text-muted-foreground"
+                >
+                  No speaker opinions yet.
+                </div>
+              </template>
+            </div>
           </div>
         </div>
       </template>
