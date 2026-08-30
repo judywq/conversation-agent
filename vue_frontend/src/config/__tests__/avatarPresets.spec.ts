@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
   AVATAR_DEFAULT_ZOOM,
+  AVATAR_GLOBAL_OFFSET_X,
+  AVATAR_GLOBAL_OFFSET_Y,
   AVATAR_GLOBAL_ZOOM,
   avatarPresetByUrl,
   avatarPresetForAgent,
   FEMALE_AVATAR_PRESETS,
   MALE_AVATAR_PRESETS,
   normalizeAvatarBody,
+  resolveAvatarOffset,
   resolveAvatarZoom,
 } from '../avatarPresets'
 
@@ -44,5 +47,16 @@ describe('avatarPresets', () => {
     expect(resolveAvatarZoom(undefined)).toBe(AVATAR_DEFAULT_ZOOM * AVATAR_GLOBAL_ZOOM)
     expect(resolveAvatarZoom(2)).toBe(2 * AVATAR_GLOBAL_ZOOM)
     expect(resolveAvatarZoom(2, 1.5)).toBe(2 * AVATAR_GLOBAL_ZOOM * 1.5)
+  })
+
+  it('resolves offset by adding global to per-model', () => {
+    expect(resolveAvatarOffset()).toEqual({
+      offsetX: AVATAR_GLOBAL_OFFSET_X,
+      offsetY: AVATAR_GLOBAL_OFFSET_Y,
+    })
+    expect(resolveAvatarOffset(10, -20)).toEqual({
+      offsetX: 10 + AVATAR_GLOBAL_OFFSET_X,
+      offsetY: -20 + AVATAR_GLOBAL_OFFSET_Y,
+    })
   })
 })

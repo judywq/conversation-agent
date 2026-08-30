@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { avatarPresetByUrl, avatarPresetForAgent, resolveAvatarZoom } from '@/config/avatarPresets'
+import {
+  avatarPresetByUrl,
+  avatarPresetForAgent,
+  resolveAvatarOffset,
+  resolveAvatarZoom,
+} from '@/config/avatarPresets'
 import {
   gesturesForUrl,
   resolveRandomGestureMotion,
@@ -47,6 +52,7 @@ const preset = computed(() => {
   return {
     ...base,
     zoom: resolveAvatarZoom(base.zoom, props.zoomScale ?? 1),
+    ...resolveAvatarOffset(base.offsetX, base.offsetY),
     slots: props.slotCount,
     slot: props.slotIndex,
   }

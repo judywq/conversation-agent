@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { AvatarPreset } from '@/config/avatarPresets'
-import { AVATAR_DEFAULT_ZOOM } from '@/config/avatarPresets'
+import { AVATAR_DEFAULT_ZOOM, resolveAvatarOffset } from '@/config/avatarPresets'
 import {
   LIVE2D_GESTURES_LIST,
   gesturesForUrl,
@@ -66,8 +66,7 @@ const offsetYLabel = computed(() => String(Math.round(offsetY.value)))
 const activePreset = computed(() => ({
   ...props.preset,
   zoom: zoom.value * (props.globalZoom ?? 1),
-  offsetX: offsetX.value,
-  offsetY: offsetY.value,
+  ...resolveAvatarOffset(offsetX.value, offsetY.value),
 }))
 const photoBusy = computed(() => photoCountdown.value != null)
 const photoCountdownLabel = computed(() => {

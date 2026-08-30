@@ -5,14 +5,31 @@ export type AvatarBody = 'M' | 'F'
 export type AvatarPreset = Live2DPresetInput
 
 /** Multiplier applied to every model's zoom (pre-game, in-game, debug). */
-export const AVATAR_GLOBAL_ZOOM = 1
+export const AVATAR_GLOBAL_ZOOM = 1.5
+
+/** Px added to every model's X after fit (pre-game, in-game, debug). */
+export const AVATAR_GLOBAL_OFFSET_X = 0
+
+/** Px added to every model's Y after fit (pre-game, in-game, debug). */
+export const AVATAR_GLOBAL_OFFSET_Y = 300
 
 /** Fallback per-model zoom when a preset omits `zoom`. */
-export const AVATAR_DEFAULT_ZOOM = 2.0
+export const AVATAR_DEFAULT_ZOOM = 1.0
 
 /** Effective zoom: (modelZoom ?? default) × global × optional user size slider. */
 export function resolveAvatarZoom(modelZoom?: number, userScale = 1): number {
   return (modelZoom ?? AVATAR_DEFAULT_ZOOM) * AVATAR_GLOBAL_ZOOM * userScale
+}
+
+/** Effective offset: (model offset ?? 0) + global. */
+export function resolveAvatarOffset(
+  modelX?: number,
+  modelY?: number,
+): { offsetX: number; offsetY: number } {
+  return {
+    offsetX: (modelX ?? 0) + AVATAR_GLOBAL_OFFSET_X,
+    offsetY: (modelY ?? 0) + AVATAR_GLOBAL_OFFSET_Y,
+  }
 }
 
 // Live2D official sample models (see public/live2d/README.md for setup + license).
@@ -22,8 +39,8 @@ export const FEMALE_AVATAR_PRESETS: AvatarPreset[] = [
   { url: '/live2d/haru/Haru.model3.json' },
   { url: '/live2d/mao/Mao.model3.json', zoom: 4.8 },
   { url: '/live2d/epsilon/Epsilon_free.model3.json', zoom: 1.4 },
-  { url: '/live2d/hibiki/hibiki.model3.json' },
-  { url: '/live2d/shizuku/shizuku.model3.json', zoom: 1.3 },
+  { url: '/live2d/hibiki/hibiki.model3.json', offsetY: 40 },
+  { url: '/live2d/shizuku/shizuku.model3.json', zoom: 0.6, offsetY: 30 },
   { url: '/live2d/kei/kei_basic_free.model3.json', zoom: 0.9 },
 ]
 
