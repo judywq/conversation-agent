@@ -239,9 +239,9 @@ const authStore = useAuthStore()
 const { toast } = useToast()
 
 const steps = [
-  { step: 1, title: 'About you' },
-  { step: 2, title: 'Personality' },
-  { step: 3, title: 'English proficiency'},
+  { step: 1, title: 'About you', description: 'Name and major' },
+  { step: 2, title: 'Personality', description: 'Self-evaluation' },
+  { step: 3, title: 'English proficiency', description: 'Listening level' },
 ]
 
 const stepIndex = ref<ProfileStep>(firstIncompleteStep(authStore.user))

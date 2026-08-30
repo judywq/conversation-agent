@@ -214,7 +214,8 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     const gen = ++loadGen
     activePreset = preset
     const autoFocus = options?.autoFocus ?? true
-    const thisInit = (async () => {
+    let thisInit: Promise<boolean> | null = null
+    thisInit = (async () => {
       const stage = stageRef.value
       if (!stage) return false
 
@@ -279,7 +280,7 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
         return false
       } finally {
         // Only clear if we still own the slot — a newer init() after dispose() must keep its promise.
-        if (initPromise === thisInit) initPromise = null
+        if (thisInit && initPromise === thisInit) initPromise = null
       }
     })()
     initPromise = thisInit

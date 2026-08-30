@@ -3,7 +3,7 @@
     <FormField
       v-for="trait in OCEAN_TRAITS"
       :key="trait.key"
-      v-slot="{ componentField, error }"
+      v-slot="{ componentField, errorMessage }"
       :name="trait.key"
     >
       <FormItem>
@@ -13,7 +13,7 @@
           <FormControl>
             <SelectTrigger
               class="w-full"
-              :class="error && 'border-destructive focus:ring-destructive'"
+              :class="errorMessage && 'border-destructive focus:ring-destructive'"
             >
               <SelectValue placeholder="Select a level" />
             </SelectTrigger>
@@ -81,8 +81,10 @@ async function validateAndApply(): Promise<Record<OceanTraitKey, string> | null>
     agreeableness: OCEAN_UNSET,
     neuroticism: OCEAN_UNSET,
   }
+  const values = result.values
+  if (!values) return null
   for (const { key } of OCEAN_TRAITS) {
-    const v = result.values[key as keyof OceanFormValues]
+    const v = values[key as keyof OceanFormValues]
     if (v) next[key] = v
   }
   return next
