@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { MotionPriority } from 'untitled-pixi-live2d-engine/cubism'
 import {
   avatarPresetByUrl,
   avatarPresetForAgent,
@@ -92,6 +93,8 @@ async function playLogicalGesture(gesture: Live2DGesture): Promise<boolean> {
   if (!resolved) return false
   return playMotion(resolved.group, resolved.index, {
     loop: gesture === 'idle',
+    // FORCE startMotion disposes currentAudio; NORMAL will not cut speak() audio.
+    ...(gesture === 'speak' ? { priority: MotionPriority.NORMAL } : {}),
   })
 }
 
@@ -138,10 +141,7 @@ onUnmounted(() => {
 async function speakTurn(audioUrl: string, lipsync: LipSyncPayload): Promise<boolean> {
   await ensureInit()
   if (status.value === 'error') return false
-  void (async () => {
-    const done = await playLogicalGesture('speak')
-    if (done && status.value === 'speaking') restoreIdle()
-  })()
+  void playLogicalGesture('speak')
   const ok = await speak(audioUrl, lipsync)
   restoreIdle()
   return ok

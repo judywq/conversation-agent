@@ -376,6 +376,14 @@ function stillOwnsManualReplay(abort: AbortController): boolean {
 }
 
 function stopManualTurnAudio() {
+  if (
+    !manualReplayAbortController &&
+    !manualReplayActive.value &&
+    !manualReplayTurnKey.value
+  ) {
+    return
+  }
+  const usedAvatar = manualReplayUsesAvatar.value
   manualReplayAbortController?.abort()
   manualReplayAbortController = null
   if (currentAudio.value) {
@@ -383,7 +391,9 @@ function stopManualTurnAudio() {
     currentAudio.value.currentTime = 0
     currentAudio.value = null
   }
-  avatarGridRef.value?.setIdleAll?.()
+  if (usedAvatar) {
+    avatarGridRef.value?.setIdleAll?.()
+  }
   manualReplayTurnKey.value = null
   manualReplayPaused.value = false
   manualReplayActive.value = false
