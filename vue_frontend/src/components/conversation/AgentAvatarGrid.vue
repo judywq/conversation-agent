@@ -190,12 +190,12 @@ defineExpose({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-    <!-- Dialog bar (visual-novel style): one half-transparent bar across the lower
-         stage so it never covers a character's face. bottom-32 clears the mic cluster
-         (the stage now reaches the viewport bottom). -->
+    <!-- Dialog bar (visual-novel style): fixed under the top chrome so it does not
+         cover bottom-anchored characters. top-24 clears the header row and the
+         name chip (-top-3); sm:right matches the Topic & opinions inset. -->
     <div
       v-if="bubbleText"
-      class="pointer-events-none absolute inset-x-0 bottom-32 z-10 flex justify-center px-4"
+      class="pointer-events-none fixed inset-x-0 top-24 z-10 flex justify-center px-4 sm:right-[calc(min(22rem,calc(100vw-2rem))+2rem)]"
     >
       <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
       <div
