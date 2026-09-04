@@ -25,6 +25,10 @@ from backend.conversation.services.facilitator import build_facilitator_plan
 from backend.conversation.services.names import pick_voice_preset_for_persona
 from backend.conversation.services.names import provider_voice_id
 from backend.conversation.services.retrieval import persist_turn_retrieval_safely
+from backend.conversation.services.simulated_student import SIMULATED_TURN_SOURCE
+from backend.conversation.services.simulated_student import generate_simulated_student_utterance
+from backend.conversation.services.simulated_student import simulated_student_enabled
+from backend.conversation.services.simulated_student import simulated_student_skip_tts
 from backend.conversation.services.tts import synthesize_speech_with_lipsync
 from backend.conversation.services.tts import tts_provider_timeouts
 from backend.conversation.services.turn_manager import decide_next_speaker
@@ -296,10 +300,13 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json(
                 {"type": "participants", "participants": await self._participants_payload(session.id)},
             )
-            if need_user_turn:
+            if need_user_turn and not simulated_student_enabled():
                 await self.send_json({"type": "need_user_turn", "reason": "resume_pending_user_turn"})
-            else:
-                self._ensure_advance_loop_running()
+                return
+            if need_user_turn:
+                # Experiment mode: nobody is at the keyboard, so answer and carry on.
+                await self._append_simulated_student_turn(session)
+            self._ensure_advance_loop_running()
             return
 
         if msg_type == "first_turn_choice":
@@ -309,8 +316,13 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             speak_first = bool(content.get("speak_first"))
             self.first_turn_choice = speak_first
             if speak_first:
-                await self.send_json({"type": "need_user_turn", "reason": "first_turn_user"})
-                return
+                if not simulated_student_enabled():
+                    await self.send_json({"type": "need_user_turn", "reason": "first_turn_user"})
+                    return
+                # Experiment mode: the LLM opens on the learner's behalf, from the topic.
+                session = await self._get_session(self.session_id)
+                if session is not None:
+                    await self._append_simulated_student_turn(session)
             self._ensure_advance_loop_running()
             return
 
@@ -381,10 +393,21 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
 
         await self.send_json({"type": "error", "message": f"Unknown message type: {msg_type}"})
 
+    async def _append_simulated_student_turn(self, session: ConversationSession) -> None:
+        """Experiment mode: an LLM speaks for the learner, then the turn is broadcast."""
+        utterance = await database_sync_to_async(generate_simulated_student_utterance)(session)
+        turn = await self._append_user_turn(
+            session.id,
+            utterance=utterance,
+            source=SIMULATED_TURN_SOURCE,
+        )
+        await self.send_json({"type": "turn", "turn": await self._turn_to_dict(turn)})
+
     async def _advance_loop(self):
         """
         Advances the conversation by generating the next non-user turns (agent).
-        If a user turn is needed, it will emit a `need_user_turn` event and stop.
+        If a user turn is needed, it will emit a `need_user_turn` event and stop,
+        unless SIMULATED_STUDENT_ENABLED is on, in which case an LLM answers instead.
         """
         if self.session_id is None:
             return
@@ -446,6 +469,11 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
                     await self._set_pending_forced_user_turn(session.id, pending=True)
                 # Clear any raise-hand override once we've handed the floor to the user.
                 await self._set_user_override_requested(session.id, requested=False)
+                if simulated_student_enabled():
+                    # Experiment mode: an LLM speaks for the learner and the engine keeps
+                    # going, instead of handing the floor to the browser and stopping.
+                    await self._append_simulated_student_turn(session)
+                    continue
                 await self.send_json({"type": "need_user_turn", "reason": decision.reason})
                 return
 
@@ -915,10 +943,14 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
             plan=plan,
         )
         voice = prep["voice"]
-        audio_url, lipsync, t_tts_ms = await self._synthesize_agent_audio(
-            text=prep["utterance_tts"],
-            voice=voice,
-        )
+        if simulated_student_enabled() and simulated_student_skip_tts():
+            # Nobody is listening during an unattended experiment run.
+            audio_url, lipsync, t_tts_ms = None, None, None
+        else:
+            audio_url, lipsync, t_tts_ms = await self._synthesize_agent_audio(
+                text=prep["utterance_tts"],
+                voice=voice,
+            )
         return await self._finalize_agent_llm_turn(
             prep,
             audio_url=audio_url,

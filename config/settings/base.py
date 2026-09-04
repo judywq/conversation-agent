@@ -50,6 +50,15 @@ CONVERSATION_AGENT_COUNT = env.int("CONVERSATION_AGENT_COUNT", default=3)
 # For quick testing, you can override via env var CONVERSATION_MAX_TURNS.
 CONVERSATION_MAX_TURNS = env.int("CONVERSATION_MAX_TURNS", default=20)
 CONVERSATION_MAX_EXTENSION_TURNS = env.int("CONVERSATION_MAX_EXTENSION_TURNS", default=4)
+# Short-term memory window: how many recent turn_index groups are put into LLM prompts.
+CONVERSATION_SHORT_TERM_TURNS = env.int("CONVERSATION_SHORT_TERM_TURNS", default=3)
+# When True, prompts get the entire transcript and CONVERSATION_SHORT_TERM_TURNS is ignored.
+CONVERSATION_FULL_CONTEXT = env.bool("CONVERSATION_FULL_CONTEXT", default=False)
+# Experiment runs only: an LLM answers on the learner's behalf instead of waiting for the
+# browser. MUST stay False anywhere real participants use the system.
+SIMULATED_STUDENT_ENABLED = env.bool("SIMULATED_STUDENT_ENABLED", default=False)
+# Agent audio is dead weight in an unattended run; only consulted while simulating.
+SIMULATED_STUDENT_SKIP_TTS = env.bool("SIMULATED_STUDENT_SKIP_TTS", default=True)
 AGENT_UTTERANCE_DUPLICATE_THRESHOLD = env.float("AGENT_UTTERANCE_DUPLICATE_THRESHOLD", default=0.75)
 AGENT_UTTERANCE_DUPLICATE_MIN_TOKENS = env.int("AGENT_UTTERANCE_DUPLICATE_MIN_TOKENS", default=4)
 AGENT_UTTERANCE_DUPLICATE_RECENT_LIMIT = env.int("AGENT_UTTERANCE_DUPLICATE_RECENT_LIMIT", default=20)
@@ -502,25 +511,9 @@ FIXED_TEMPERATURE_LLM_MODELS = [
 INIT_LLM_MODELS = [
     {
         "llm_type": "openai",
-        "name": "gpt-5.3-chat-latest",
-        "display_name": "GPT-5.3 Chat",
-        "is_default": True,
-        "is_active": True,
-        "order": 10,
-    },
-    {
-        "llm_type": "openai",
-        "name": "gpt-5.4-2026-03-05",
-        "display_name": "GPT-5.4",
-        "is_default": False,
-        "is_active": True,
-        "order": 11,
-    },
-    {
-        "llm_type": "openai",
         "name": "gpt-5.5-2026-04-23",
         "display_name": "GPT-5.5",
-        "is_default": False,
+        "is_default": True,
         "is_active": True,
         "order": 12,
     },

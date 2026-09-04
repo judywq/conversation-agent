@@ -640,7 +640,7 @@ def build_facilitator_plan(session: ConversationSession, *, agent: AgentProfile)
     if is_ending or is_winding_down:
         history = build_numbered_transcript(session)
     else:
-        turns = get_short_term_turns(session, limit=3)
+        turns = get_short_term_turns(session)
         context = turns_to_messages(turns)
         history = json.dumps(context, ensure_ascii=False, indent=2)
     participants = ["user", *list(session.agent_profiles.order_by("agent_id").values_list("agent_id", flat=True))]

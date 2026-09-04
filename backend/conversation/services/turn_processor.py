@@ -64,7 +64,7 @@ def classify_user_speech_act(
     audio_url: str | None = None,
 ) -> dict:
     """LLM classifies the user's latest utterance (transcript) into a speech-act plan shape."""
-    turns = get_short_term_turns(session, limit=3)
+    turns = get_short_term_turns(session)
     context = turns_to_messages(turns)
     speech_act_options = ALLOWED_TAXONOMY
     template = load_speech_act_classifier_prompt()

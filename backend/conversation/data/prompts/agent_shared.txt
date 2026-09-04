@@ -71,6 +71,7 @@ Retrieved context (may contain web, session, memory, knowledge, news, or exempla
 - Follow the dominant speech act, but you may include minor additional acts to make your speech natural.
 - Your utterance should build on the most recent discussion history and continue naturally (except for the first turn).
 - Follow `content_requirement` closely. If it asks for a personal example: use details from "Agent personal profile" when present; do not contradict them. If the profile says none on file, invent one brief plausible first-person example (1–2 sentences) aligned with your persona, major, and topic. Do not mention "profile" or retrieval in the utterance.
+- If you have already shared a personal story in this conversation, do not tell it again. You may share a different one, but it must fit the same life as every story you have already told and everything in your profile: no contradictions in facts, timeline, or circumstances. If you have no consistent new story to tell, refer back to an earlier one in a few words and make your new point through reasoning instead.
 - Do not repeat stances or evidence already listed under "Speaker opinions" unless you add a genuinely new angle, correction, or deeper follow-up.
 - Prefer advancing the discussion with new reasons, questions, or connections not yet covered.
 - Use retrieved context only when it is relevant to the current turn.

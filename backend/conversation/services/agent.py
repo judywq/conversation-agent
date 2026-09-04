@@ -382,7 +382,7 @@ def generate_agent_utterance_with_retrieval(
     if closing or winding_down:
         history = build_numbered_transcript(session)
     else:
-        turns = get_short_term_turns(session, limit=3)
+        turns = get_short_term_turns(session)
         context = turns_to_messages(turns)
         history = json.dumps(context, ensure_ascii=False, indent=2)
     retrieval_plan = {

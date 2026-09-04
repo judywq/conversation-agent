@@ -19,6 +19,7 @@ from backend.conversation.models import TurnRetrieval
 from backend.conversation.models import UserMemory
 from backend.conversation.services.embeddings import build_user_memory_embedding_text
 from backend.conversation.services.embeddings import generate_embedding
+from backend.conversation.services.memory import full_context_enabled
 from backend.conversation.services.speaker_memories import langmem_enabled
 from backend.conversation.services.speaker_memories import search_user_memories
 from backend.conversation.services.web_search import fetch_web_search_context
@@ -1143,7 +1144,10 @@ def retrieve(  # noqa: C901, PLR0913
                     top_k=top_k,
                 )
         elif source == "session":
-            if session.user_id != getattr(user, "id", None):
+            if full_context_enabled():
+                # The whole transcript is already in the prompt; searching it again adds nothing.
+                found, status = [], SOURCE_SKIPPED
+            elif session.user_id != getattr(user, "id", None):
                 found, status = [], SOURCE_SKIPPED
             else:
                 found, status = _retrieve_session(session, query, top_k=top_k)

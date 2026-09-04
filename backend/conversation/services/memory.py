@@ -1,13 +1,33 @@
 from typing import Iterable
 
+from django.conf import settings
+
 from backend.conversation.models import ConversationSession
 from backend.conversation.models import AgentProfile
 from backend.conversation.models import TurnRecord
 
 
-def get_short_term_turns(session: ConversationSession, *, limit: int = 10) -> list[TurnRecord]:
+def full_context_enabled() -> bool:
+    """When CONVERSATION_FULL_CONTEXT is on, prompts get the whole transcript instead of a window."""
+    return bool(getattr(settings, "CONVERSATION_FULL_CONTEXT", False))
+
+
+def short_term_turn_limit() -> int:
+    """Default short-term memory window, in turn_index groups. Override via CONVERSATION_SHORT_TERM_TURNS."""
+    value = getattr(settings, "CONVERSATION_SHORT_TERM_TURNS", 3)
+    if value in (None, ""):
+        return 3
+    return int(value)
+
+
+def get_short_term_turns(session: ConversationSession, *, limit: int | None = None) -> list[TurnRecord]:
     # "Short term memory" is the previous N turns (turn_index groups), including any appendices
     # (makeshift subturns). Ordered oldest -> newest.
+    # Callers that pass an explicit limit keep it; only the default window follows the settings.
+    if limit is None:
+        if full_context_enabled():
+            return list(session.turns.order_by("turn_index", "subturn_index"))
+        limit = short_term_turn_limit()
     if limit <= 0:
         return []
 

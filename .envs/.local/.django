@@ -29,3 +29,12 @@ USER_MEMORY_EXTRACTION_ENABLED=True
 # Conversation
 # ------------------------------------------------------------------------------
 CONVERSATION_MAX_TURNS=10
+# Short-term memory window: how many recent turns are put into LLM prompts.
+CONVERSATION_SHORT_TERM_TURNS=3
+# Set to True to give agents the whole transcript instead of the window above.
+CONVERSATION_FULL_CONTEXT=False
+# Experiment runs only: an LLM answers on the learner's behalf instead of the browser.
+# MUST stay False anywhere real participants use the system.
+SIMULATED_STUDENT_ENABLED=False
+# Skip agent text-to-speech while simulating (only consulted when simulating).
+SIMULATED_STUDENT_SKIP_TTS=True
