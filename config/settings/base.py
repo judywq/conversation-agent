@@ -511,9 +511,17 @@ FIXED_TEMPERATURE_LLM_MODELS = [
 INIT_LLM_MODELS = [
     {
         "llm_type": "openai",
+        "name": "gpt-5.4-2026-03-05",
+        "display_name": "GPT-5.4",
+        "is_default": True,
+        "is_active": True,
+        "order": 11,
+    },
+    {
+        "llm_type": "openai",
         "name": "gpt-5.5-2026-04-23",
         "display_name": "GPT-5.5",
-        "is_default": True,
+        "is_default": False,
         "is_active": True,
         "order": 12,
     },
