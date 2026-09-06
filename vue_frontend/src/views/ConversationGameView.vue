@@ -7,6 +7,8 @@ import {
   LogOut,
   Mic,
   NotebookPen,
+  Pause,
+  Play,
   Settings,
   Smartphone,
   Square,
@@ -370,6 +372,8 @@ const manualReplayPaused = ref(false)
 const manualReplayActive = ref(false)
 /** True while replaying via avatar speak (word lipsync). */
 const manualReplayUsesAvatar = ref(false)
+/** True while agent audio is paused mid-utterance (not the session-level isPaused). */
+const agentAudioPaused = ref(false)
 
 function stillOwnsManualReplay(abort: AbortController): boolean {
   return manualReplayAbortController === abort
@@ -398,6 +402,7 @@ function stopManualTurnAudio() {
   manualReplayPaused.value = false
   manualReplayActive.value = false
   manualReplayUsesAvatar.value = false
+  agentAudioPaused.value = false
 }
 
 async function playTurnAudioManual(turn: Turn, key: string) {
@@ -412,6 +417,7 @@ async function playTurnAudioManual(turn: Turn, key: string) {
   ) {
     manualReplayPaused.value = false
     manualReplayActive.value = true
+    agentAudioPaused.value = false
     await currentAudio.value.play()
     return
   }
@@ -437,7 +443,6 @@ async function playTurnAudioManual(turn: Turn, key: string) {
     const played = await playAgentTurnAudio(turn)
     // Superseded by another replay/stop — do not touch shared flags.
     if (!stillOwnsManualReplay(abort)) return
-    // Avatar "pause" stops speak; keep turn key so Replay can restart.
     if (manualReplayPaused.value) return
     if (abort.signal.aborted) {
       manualReplayActive.value = false
@@ -470,6 +475,7 @@ async function playTurnAudioManual(turn: Turn, key: string) {
 
   manualReplayTurnKey.value = null
   manualReplayActive.value = false
+  agentAudioPaused.value = false
 }
 
 function stopAllAudioPlayback() {
@@ -487,6 +493,7 @@ function stopAllAudioPlayback() {
   }
   stopManualTurnAudio()
   avatarGridRef.value?.setIdleAll?.()
+  agentAudioPaused.value = false
 }
 
 function resetAvatars() {
@@ -617,6 +624,7 @@ async function processTurnPlaybackQueue() {
     liveSpeakingTurnKey.value = null
     avatarSpeaking.value = false
     playbackAbortController = null
+    agentAudioPaused.value = false
 
     if (abort.signal.aborted) {
       break
@@ -693,12 +701,47 @@ function replayAgentLastTurn(agentId: string) {
   void playTurnAudioManual(turn, turnKey(turn))
 }
 
+function inFlightAgentTurnKey(): string | null {
+  if (liveSpeakingTurnKey.value) {
+    const turn = turns.value.find((t) => turnKey(t) === liveSpeakingTurnKey.value)
+    if (turn && isAgentTurn(turn)) return liveSpeakingTurnKey.value
+  }
+  if (manualReplayActive.value && manualReplayTurnKey.value) {
+    const turn = turns.value.find((t) => turnKey(t) === manualReplayTurnKey.value)
+    if (turn && isAgentTurn(turn)) return manualReplayTurnKey.value
+  }
+  return null
+}
+
+const canControlAgentAudio = computed(() => inFlightAgentTurnKey() !== null)
+
+function pauseAgentAudio() {
+  if (!inFlightAgentTurnKey() || agentAudioPaused.value) return
+  currentAudio.value?.pause()
+  avatarGridRef.value?.pauseSpeaking()
+  agentAudioPaused.value = true
+  if (manualReplayActive.value) manualReplayPaused.value = true
+}
+
+function resumeAgentAudio() {
+  if (!agentAudioPaused.value) return
+  if (currentAudio.value) void currentAudio.value.play()
+  avatarGridRef.value?.resumeSpeaking()
+  agentAudioPaused.value = false
+  manualReplayPaused.value = false
+}
+
+function toggleAgentAudioPause() {
+  if (agentAudioPaused.value) resumeAgentAudio()
+  else pauseAgentAudio()
+}
+
 /** The agent turn shown in the speech bubble (text + anchor derived together). */
 const speakingBubbleTurn = computed(() => {
   if (!showSpeechBubble.value) return null
   const key =
     liveSpeakingTurnKey.value ??
-    (manualReplayActive.value && !manualReplayPaused.value ? manualReplayTurnKey.value : null)
+    (manualReplayActive.value ? manualReplayTurnKey.value : null)
   if (!key) return null
   const turn = turns.value.find((t) => turnKey(t) === key)
   return turn && isAgentTurn(turn) ? turn : null
@@ -1414,6 +1457,21 @@ onUnmounted(() => {
       @click="exitConfirmOpen = true"
     >
       <Square class="h-5 w-5 fill-current" />
+    </Button>
+
+    <!-- Pause/resume agent audio (enabled only while a partner is speaking) -->
+    <Button
+      v-if="sessionInProgress"
+      variant="secondary"
+      size="icon"
+      class="absolute left-[8.5rem] top-4 h-11 w-11 border border-white/30 bg-white/85 text-foreground shadow-lg backdrop-blur hover:bg-white"
+      :disabled="!canControlAgentAudio"
+      :aria-label="agentAudioPaused ? 'Resume' : 'Pause'"
+      :title="agentAudioPaused ? 'Resume' : 'Pause'"
+      @click="toggleAgentAudioPause"
+    >
+      <Play v-if="agentAudioPaused" class="h-5 w-5 fill-current" />
+      <Pause v-else class="h-5 w-5 fill-current" />
     </Button>
 
     <!-- Status pill (top-center) -->

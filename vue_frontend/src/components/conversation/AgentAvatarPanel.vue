@@ -43,6 +43,8 @@ const {
   speak,
   playMotion,
   setIdle,
+  pauseSpeaking,
+  resumeSpeaking,
   dispose,
 } = useLive2D(stageRef)
 
@@ -155,6 +157,8 @@ function setIdleAndRestore() {
 defineExpose({
   speakTurn,
   setIdle: setIdleAndRestore,
+  pauseSpeaking,
+  resumeSpeaking,
   dispose,
   ensureInit,
   status,

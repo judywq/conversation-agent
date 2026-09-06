@@ -31,7 +31,11 @@ const fakeModel = {
       },
       mouthSync: vi.fn(() => 0.42),
       currentAudio: undefined as
-        | { isPlaying: boolean; duration: number; instances: { progress: number }[] }
+        | {
+            isPlaying: boolean
+            duration: number
+            instances: { progress: number; paused?: boolean }[] | null
+          }
         | undefined,
       once: vi.fn(),
       off: vi.fn(),
@@ -316,6 +320,41 @@ describe('useLive2D', () => {
     expect(status.value).toBe('ready')
     expect(appInstance.stage.addChild).toHaveBeenCalledWith(modelB)
     expect(modelB.destroy).not.toHaveBeenCalled()
+  })
+
+  it('pauseSpeaking pauses instances without settling speak(); resumeSpeaking unpauses them', async () => {
+    let finish: (() => void) | undefined
+    fakeModel.speak.mockImplementation((_url: string, opts: { onFinish: () => void }) => {
+      finish = opts.onFinish
+    })
+    const { init, speak, pauseSpeaking, resumeSpeaking, status } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    const speakPromise = speak('/audio.mp3')
+    const instance = { progress: 0.1, paused: false }
+    fakeModel.internalModel.motionManager.currentAudio = {
+      isPlaying: true,
+      duration: 1,
+      instances: [instance],
+    }
+    pauseSpeaking()
+    expect(instance.paused).toBe(true)
+    expect(fakeModel.stopSpeaking).not.toHaveBeenCalled()
+    expect(status.value).toBe('speaking')
+    resumeSpeaking()
+    expect(instance.paused).toBe(false)
+    finish!()
+    await expect(speakPromise).resolves.toBe(true)
+  })
+
+  it('resumeSpeaking does not throw when currentAudio instances were destroyed', async () => {
+    const { init, resumeSpeaking } = useLive2D(makeStage())
+    await init({ url: '/m.model3.json' })
+    fakeModel.internalModel.motionManager.currentAudio = {
+      isPlaying: false,
+      duration: 1,
+      instances: null,
+    }
+    expect(() => resumeSpeaking()).not.toThrow()
   })
 
   it('setIdle settles an in-flight speak() with false when the engine never calls onFinish/onError', async () => {

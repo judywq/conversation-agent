@@ -27,11 +27,16 @@ export function snapshotExtractResolution(ratio?: number): number | undefined {
   return clampSnapshotRatio(ratio)
 }
 
-/** Minimal shape of @pixi/sound Sound used for word-timed mouth sync. */
+/** Minimal shape of @pixi/sound Sound used for word-timed mouth sync and pause. */
+type PlayingSoundInstance = {
+  progress: number
+  paused?: boolean
+}
+
 type PlayingSound = {
   isPlaying: boolean
   duration: number
-  instances: { progress: number }[]
+  instances: PlayingSoundInstance[] | null
 }
 
 type MouthSyncMotionManager = {
@@ -168,8 +173,8 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     mm.mouthSync = () => {
       const audio = mm.currentAudio
       if (!audio?.isPlaying) return 0
-      const inst = audio.instances[0]
-      if (!inst) return 0
+      const inst = audio.instances?.[0]
+      if (!inst || inst.paused) return 0
       const tMs = inst.progress * (audio.duration || 0) * 1000
       return mouthOpenFromWords(tMs, lipsync)
     }
@@ -411,6 +416,36 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     model.value?.internalModel.motionManager.expressionManager?.resetExpression()
   }
 
+  function speakingAudio(): PlayingSound | undefined {
+    const mm = model.value?.internalModel.motionManager as unknown as
+      | MouthSyncMotionManager
+      | undefined
+    return mm?.currentAudio
+  }
+
+  /**
+   * Pause/resume playing instances, not Sound.pause().
+   * Sound.pause() flips isPlaying off; Live2D idle/FORCE motions then dispose()
+   * the Sound (_instances = null) and Sound.resume() crashes on .length.
+   */
+  function forEachSoundInstance(fn: (inst: PlayingSoundInstance) => void) {
+    const instances = speakingAudio()?.instances
+    if (!instances) return
+    for (const inst of instances) fn(inst)
+  }
+
+  function pauseSpeaking() {
+    forEachSoundInstance((inst) => {
+      inst.paused = true
+    })
+  }
+
+  function resumeSpeaking() {
+    forEachSoundInstance((inst) => {
+      inst.paused = false
+    })
+  }
+
   function setIdle() {
     if (status.value === 'speaking') {
       model.value?.stopSpeaking()
@@ -519,6 +554,8 @@ export function useLive2D(stageRef: Ref<HTMLElement | null>) {
     setExpression,
     resetExpression,
     setIdle,
+    pauseSpeaking,
+    resumeSpeaking,
     setAutoFocus,
     downloadSnapshot,
     dispose,

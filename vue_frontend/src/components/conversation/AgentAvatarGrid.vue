@@ -110,6 +110,18 @@ function setIdleAll() {
   }
 }
 
+function pauseSpeaking() {
+  for (const panel of Object.values(panelRefs.value)) {
+    panel?.pauseSpeaking()
+  }
+}
+
+function resumeSpeaking() {
+  for (const panel of Object.values(panelRefs.value)) {
+    panel?.resumeSpeaking()
+  }
+}
+
 async function ensureAllInitialized() {
   await Promise.all(
     Object.values(panelRefs.value).map((panel) => panel?.ensureInit?.() ?? Promise.resolve()),
@@ -121,6 +133,8 @@ defineExpose({
   disposeAll,
   ensureAllInitialized,
   setIdleAll,
+  pauseSpeaking,
+  resumeSpeaking,
 })
 </script>
 
@@ -199,7 +213,7 @@ defineExpose({
     >
       <!-- pointer-events-auto: the card must catch wheel/drag so overflow-y-auto is scrollable -->
       <div
-        class="pointer-events-auto relative max-h-48 w-[min(56rem,100%)] overflow-visible rounded-2xl border border-primary/15 bg-white/60 px-6 py-5 pr-14 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
+        class="pointer-events-auto relative max-h-48 w-[min(56rem,100%)] overflow-visible rounded-2xl border border-primary/15 bg-white/60 px-6 py-5 text-lg text-foreground shadow-xl backdrop-blur-md sakura-petals"
       >
         <div
           class="absolute -top-3 left-5 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground shadow"
@@ -207,13 +221,6 @@ defineExpose({
           <SakuraMark :size="14" class="text-primary-foreground" />
           {{ bubbleAgentName }}
         </div>
-        <button
-          type="button"
-          class="absolute right-3 top-3 rounded-md border border-foreground/15 bg-white/80 px-2.5 py-1 text-sm font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
-          @click="emit('stopReplay')"
-        >
-          Stop
-        </button>
         <div class="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
           {{ bubbleText }}
         </div>
